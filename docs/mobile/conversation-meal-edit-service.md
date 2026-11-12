@@ -12,6 +12,27 @@ timestamps and unknown database columns, reaches the SQL comparison unchanged.
 Undo delegates restoration to SQL's recorded beforeimage. It does not calculate
 inverse nutrient ratios. Original registration feedback and receipts stay intact.
 
+### Display quantities after a quantity-only Save
+
+The existing preparation uses `reconcilePendingMealEdit`: calories round to one
+decimal and macros to two. The read-only Nutrition window must recognize that
+exact projection when following the immutable edit lineage back to the original
+display quantity. For example, 206 g / 200 mL of milk at 125.7 kcal becomes
+185.4 g / approximately 180 mL at 113.1 kcal. Demanding 113.13 kcal would discard
+the valid mL reference even though the saved facts are correct.
+
+`nutrition_window_quantity_rounding` changes only that private display proof.
+It follows the same binary64 plus EPSILON rounding already enforced by C11:
+calories at one decimal and macros at two. This matters at half-way boundaries:
+206 → 72.1 g / 70 mL produces 2.34 g of fat in the official JavaScript writer,
+while decimal arithmetic alone would expect 2.35 g.
+
+The previously accepted complete decimal two-place vector remains valid too.
+Mixing individual nutrients from those two rounding models does not qualify.
+There is no arbitrary tolerance, new nutrient calculation, density lookup, data rewrite, or change to
+the owner, food, source, current-group and edit-audit checks. Undo restores the
+recorded beforeimage and its original display reference.
+
 There is one write attempt. A lost write response permits one read of that same
 operation. Without a proven winner the result requires reconciliation; the
 service does not resend, generate another UUID or claim that saving failed.

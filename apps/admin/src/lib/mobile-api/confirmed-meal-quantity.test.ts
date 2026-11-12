@@ -225,6 +225,44 @@ export function registerQuantityProvenanceRegressions(
 
     for (const golden of [
       {
+        oldQuantity: 206,
+        oldKcal: 125.7,
+        oldProtein: 6.49,
+        oldCarbs: 9.89,
+        oldFat: 6.7,
+        quantity: 72.1,
+        kcal: 44,
+        protein: 2.27,
+        carbs: 3.46,
+        fat: 2.34,
+      },
+      {
+        oldQuantity: 206,
+        oldKcal: 125.7,
+        oldProtein: 6.49,
+        oldCarbs: 9.89,
+        oldFat: 6.7,
+        quantity: 113.3,
+        kcal: 69.1,
+        protein: 3.57,
+        carbs: 5.44,
+        fat: 3.68,
+      },
+      {
+        // The same literal persisted values exercise the SQL display-unit
+        // regression. A display proof must not demand a different kcal round.
+        oldQuantity: 206,
+        oldKcal: 125.7,
+        oldProtein: 6.49,
+        oldCarbs: 9.89,
+        oldFat: 6.7,
+        quantity: 185.4,
+        kcal: 113.1,
+        protein: 5.84,
+        carbs: 8.9,
+        fat: 6.03,
+      },
+      {
         oldQuantity: 100,
         oldKcal: 11.1,
         oldProtein: 2.01,

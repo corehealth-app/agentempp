@@ -54,3 +54,24 @@ negotiation, default-off capability, fresh dispatch, revocation and real typed
 facade RPC fencing. Controlled external Auth/database/provider ports are not a
 connected upload/worker/native acceptance test. Keep this capability disabled
 until those remaining gates pass; do not claim build 17 supports photo or audio.
+
+## Native response bridge (capture still pending)
+
+The new iOS codec selects provenance only for an original neutral `.media`
+POST/reconciliation ticket. Text, session, journal, legacy meal and unrelated
+requests emit no media negotiation. Every successful selected-media transport
+requires the exact echo and `Cache-Control: no-store`, including held v1 outcomes.
+An unsolicited response header cannot select the decoder.
+
+The v2 selected envelope requires a closed projection: parent intake/input hash,
+epoch, source/decision hashes, valid claim UUID, original media owner/asset,
+compatible media kind, bounded processing clocks and processing-hash format, and
+the actual child input hash. Ticket matching checks the original asset as well as
+the existing owner/epoch/intake/hash binding. A v1 selected media envelope cannot
+be upgraded to a saved ACK. A genuine typed saved receipt remains mandatory;
+non-performed, question, held and pending outcomes do not become registrations.
+
+This native protocol bridge does not add capture controls or enable generic
+`conversation_photo`. Upload→worker→ordinary-photo lineage/retention, visible
+capture/composer, connected multimodal registration, cold journal/edit/panel
+agreement and release qualification remain required before shipping modalities.

@@ -1,0 +1,344 @@
+{
+  "provenance": "Public codec specimens derived from actual synthetic local PostgreSQL rollback selections and receipt fields; not new HTTP/provider/native E2E evidence. Meal payload validated by production projector; workout payload retains exact existing public service receipt-field projection. Outer media projection validated by production driver conformance test. No invented record association or nutrition.",
+  "source_sha256": "b532447af49dcc6b03d03025b553af9d94aab15612f6ff97216c2b7f4ea47a27",
+  "cases": [
+    {
+      "label": "audio_workout",
+      "input": {
+        "intake_protocol": "conversation.intake.v1",
+        "intake_id": "09628505-2703-4388-801e-7013eda7f40c",
+        "source": {
+          "caption": "Fiz 30 minutos de caminhada leve",
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "60038fd6-af21-49d2-a3b5-79578809a5d0"
+        }
+      },
+      "binding": {
+        "epoch": "b9f70064-6fab-42d4-8913-b8914e04029d",
+        "owner_id": "3d072dbe-9d79-4b3d-adb0-0474a58f3756",
+        "intake_id": "09628505-2703-4388-801e-7013eda7f40c",
+        "input_hash": "0c5d4017ba14b6094277b88de05000efc952a1725457de9bbede97def14dea99",
+        "admitted_at": "2026-11-06T02:17:23.926286Z"
+      },
+      "response": {
+        "schema": "conversation.intake-result.v2",
+        "status": "selected",
+        "intake": {
+          "epoch": "b9f70064-6fab-42d4-8913-b8914e04029d",
+          "owner_id": "3d072dbe-9d79-4b3d-adb0-0474a58f3756",
+          "intake_id": "09628505-2703-4388-801e-7013eda7f40c",
+          "input_hash": "0c5d4017ba14b6094277b88de05000efc952a1725457de9bbede97def14dea99",
+          "admitted_at": "2026-11-06T02:17:23.926286Z"
+        },
+        "selection": {
+          "source_hash": "845f902161509a615fb113ae30aee3776201eb1cdb7a6b3bac2ccef5508c4a23",
+          "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a",
+          "selected_at": "2026-11-06T02:17:24.016344Z",
+          "media_projection": {
+            "media": {
+              "kind": "audio_note",
+              "asset_id": "60038fd6-af21-49d2-a3b5-79578809a5d0",
+              "owner_id": "3d072dbe-9d79-4b3d-adb0-0474a58f3756",
+              "updated_at": "2026-11-06T02:17:23.889172Z",
+              "processed_at": "2026-11-06T02:17:23.924480Z",
+              "processing_hash": "373e9c832db27de94f9c81a28e0d23c9c42df0b2ea0a045c1fcae1ee672cf18f"
+            },
+            "origin": {
+              "epoch": "b9f70064-6fab-42d4-8913-b8914e04029d",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "3f244f53-1653-488a-aae7-4589bef59b2a",
+              "intake_id": "09628505-2703-4388-801e-7013eda7f40c",
+              "input_hash": "0c5d4017ba14b6094277b88de05000efc952a1725457de9bbede97def14dea99",
+              "source_hash": "845f902161509a615fb113ae30aee3776201eb1cdb7a6b3bac2ccef5508c4a23",
+              "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "1d339eb916a8f296ea991750daae29177d4da106b8466f4be4667cc8bc54d838"
+          },
+          "kind": "workout.report",
+          "command": {
+            "kind": "workout.report",
+            "epoch": "b9f70064-6fab-42d4-8913-b8914e04029d",
+            "owner_id": "3d072dbe-9d79-4b3d-adb0-0474a58f3756",
+            "command_id": "c5959188-dbf0-4e52-9edb-d2f8e8e90989",
+            "input_hash": "1d339eb916a8f296ea991750daae29177d4da106b8466f4be4667cc8bc54d838",
+            "admitted_at": "2026-11-06T02:17:24.001245Z"
+          }
+        },
+        "result": {
+          "schema": "conversation.workout-command-result.v1",
+          "status": "saved",
+          "owner_id": "3d072dbe-9d79-4b3d-adb0-0474a58f3756",
+          "command_id": "c5959188-dbf0-4e52-9edb-d2f8e8e90989",
+          "input_hash": "1d339eb916a8f296ea991750daae29177d4da106b8466f4be4667cc8bc54d838",
+          "epoch": "b9f70064-6fab-42d4-8913-b8914e04029d",
+          "registration": {
+            "provenance": "conversation.workout.v1",
+            "registration_id": "c5959188-dbf0-4e52-9edb-d2f8e8e90989",
+            "workout_id": "f27983a7-a51b-4efa-96f3-f326319b79d8",
+            "performed_at": "2026-11-06T02:17:24.001245Z",
+            "local_date": "2026-11-06",
+            "time_zone": "UTC",
+            "committed_at": "2026-11-06T02:17:24.112912Z",
+            "effect_version": 1
+          },
+          "activity": {
+            "kind": "workout",
+            "log_id": "f27983a7-a51b-4efa-96f3-f326319b79d8",
+            "intensity": "leve",
+            "duration_min": 30,
+            "workout_type": "caminhada",
+            "estimated_kcal": null
+          },
+          "feedback": null
+        }
+      }
+    },
+    {
+      "label": "meal_photo",
+      "input": {
+        "intake_protocol": "conversation.intake.v1",
+        "intake_id": "38a0dc49-ffe4-44e0-809f-6791e7c4f784",
+        "source": {
+          "caption": "Comi arroz",
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "cb651a17-17e9-422d-a6a6-42de9c589772"
+        }
+      },
+      "binding": {
+        "epoch": "0a84b847-e4b3-40e4-9955-76fe9d421fea",
+        "owner_id": "6109cd1d-404c-4094-a774-95b8defc60fe",
+        "intake_id": "38a0dc49-ffe4-44e0-809f-6791e7c4f784",
+        "input_hash": "cf28b4757df00600e3fb2d91f51fe4f866e188be252504a67998eb3b9fd2044b",
+        "admitted_at": "2026-11-06T02:17:24.133332Z"
+      },
+      "response": {
+        "schema": "conversation.intake-result.v2",
+        "status": "selected",
+        "intake": {
+          "epoch": "0a84b847-e4b3-40e4-9955-76fe9d421fea",
+          "owner_id": "6109cd1d-404c-4094-a774-95b8defc60fe",
+          "intake_id": "38a0dc49-ffe4-44e0-809f-6791e7c4f784",
+          "input_hash": "cf28b4757df00600e3fb2d91f51fe4f866e188be252504a67998eb3b9fd2044b",
+          "admitted_at": "2026-11-06T02:17:24.133332Z"
+        },
+        "selection": {
+          "source_hash": "04ad0467277a3b64e90522eae87e26b3a3bd3944832c7bc700445ba8576fefa8",
+          "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7",
+          "selected_at": "2026-11-06T02:17:24.212444Z",
+          "media_projection": {
+            "media": {
+              "kind": "meal_photo",
+              "asset_id": "cb651a17-17e9-422d-a6a6-42de9c589772",
+              "owner_id": "6109cd1d-404c-4094-a774-95b8defc60fe",
+              "updated_at": "2026-11-06T02:17:23.889172Z",
+              "processed_at": "2026-11-06T02:17:24.132891Z",
+              "processing_hash": "5db7f69e71c48202bb67db4aaa0b5b64434a80816eee5d649bc44d7f8657be89"
+            },
+            "origin": {
+              "epoch": "0a84b847-e4b3-40e4-9955-76fe9d421fea",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "c053ae8a-50ad-4efe-b191-143b4cf0c3a3",
+              "intake_id": "38a0dc49-ffe4-44e0-809f-6791e7c4f784",
+              "input_hash": "cf28b4757df00600e3fb2d91f51fe4f866e188be252504a67998eb3b9fd2044b",
+              "source_hash": "04ad0467277a3b64e90522eae87e26b3a3bd3944832c7bc700445ba8576fefa8",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "6d2e6c915886d3d53edbf97d0910908ea4ee1a634a2556335253ca5f3d4785ec"
+          },
+          "kind": "meal.report",
+          "command": {
+            "kind": "meal.report",
+            "epoch": "0a84b847-e4b3-40e4-9955-76fe9d421fea",
+            "owner_id": "6109cd1d-404c-4094-a774-95b8defc60fe",
+            "command_id": "f708468b-7dc7-4174-9bf5-b0d0238c958d",
+            "input_hash": "6d2e6c915886d3d53edbf97d0910908ea4ee1a634a2556335253ca5f3d4785ec",
+            "admitted_at": "2026-11-06T02:17:24.197687Z"
+          }
+        },
+        "result": {
+          "schema": "conversation.meal-command-result.v1",
+          "status": "saved",
+          "owner_id": "6109cd1d-404c-4094-a774-95b8defc60fe",
+          "command_id": "f708468b-7dc7-4174-9bf5-b0d0238c958d",
+          "input_hash": "6d2e6c915886d3d53edbf97d0910908ea4ee1a634a2556335253ca5f3d4785ec",
+          "epoch": "0a84b847-e4b3-40e4-9955-76fe9d421fea",
+          "admitted_at": "2026-11-06T02:17:24.197687Z",
+          "receipt": {
+            "schema": "conversation.meal-effect.v1",
+            "log_ids": [
+              "eeca0490-fe7d-4d6a-a8f2-f16d7d359d28"
+            ],
+            "owner_id": "6109cd1d-404c-4094-a774-95b8defc60fe",
+            "timezone": "UTC",
+            "meal_type": "almoco",
+            "command_id": "f708468b-7dc7-4174-9bf5-b0d0238c958d",
+            "input_hash": "6d2e6c915886d3d53edbf97d0910908ea4ee1a634a2556335253ca5f3d4785ec",
+            "local_date": "2026-11-06",
+            "consumed_at": "2026-11-06T02:17:24.345996Z",
+            "provider_key": "conversation.meal/6109cd1d-404c-4094-a774-95b8defc60fe/f708468b-7dc7-4174-9bf5-b0d0238c958d",
+            "effect_version": "cmeal1:4daaa51c8ea5d4676ffd586903b5323e9472536a19faa605d291653b586ce24c",
+            "registration_id": "b56ae1d2-466d-4f18-b4f2-37c8ef60a69f"
+          },
+          "feedback": null
+        }
+      }
+    },
+    {
+      "label": "audio_note_not_performed",
+      "input": {
+        "intake_protocol": "conversation.intake.v1",
+        "intake_id": "a15a653d-38f3-4a47-8ae1-7804a408d464",
+        "source": {
+          "caption": "Fiz 30 minutos de caminhada leve",
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "b09c5698-77af-4204-9f0b-65bf054aef7b"
+        }
+      },
+      "binding": {
+        "epoch": "f094c4d4-34bf-4990-be2d-62f009630aee",
+        "owner_id": "50d17636-5ab6-4f6b-8ad0-ed009e5e6c4c",
+        "intake_id": "a15a653d-38f3-4a47-8ae1-7804a408d464",
+        "input_hash": "9f382bb46b1acf7c4e81c610348f2e27239666f2ac3c3a2c22e7d6f9dfa8707d",
+        "admitted_at": "2026-11-06T02:17:24.402571Z"
+      },
+      "response": {
+        "schema": "conversation.intake-result.v2",
+        "status": "selected",
+        "intake": {
+          "epoch": "f094c4d4-34bf-4990-be2d-62f009630aee",
+          "owner_id": "50d17636-5ab6-4f6b-8ad0-ed009e5e6c4c",
+          "intake_id": "a15a653d-38f3-4a47-8ae1-7804a408d464",
+          "input_hash": "9f382bb46b1acf7c4e81c610348f2e27239666f2ac3c3a2c22e7d6f9dfa8707d",
+          "admitted_at": "2026-11-06T02:17:24.402571Z"
+        },
+        "selection": {
+          "source_hash": "7aeaf482cfb6226f767ca3736b7f6e495483e7797ac3cfd82f44bc1bdb1d78e0",
+          "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a",
+          "selected_at": "2026-11-06T02:17:24.476127Z",
+          "media_projection": {
+            "media": {
+              "kind": "audio_note",
+              "asset_id": "b09c5698-77af-4204-9f0b-65bf054aef7b",
+              "owner_id": "50d17636-5ab6-4f6b-8ad0-ed009e5e6c4c",
+              "updated_at": "2026-11-06T02:17:23.889172Z",
+              "processed_at": "2026-11-06T02:17:24.402161Z",
+              "processing_hash": "ff20d90c3d69537ab5eb9c2793d98692e21c80b3333769e34310028a75c21090"
+            },
+            "origin": {
+              "epoch": "f094c4d4-34bf-4990-be2d-62f009630aee",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "1989e28e-eadc-41f5-bc65-73688b15d9b4",
+              "intake_id": "a15a653d-38f3-4a47-8ae1-7804a408d464",
+              "input_hash": "9f382bb46b1acf7c4e81c610348f2e27239666f2ac3c3a2c22e7d6f9dfa8707d",
+              "source_hash": "7aeaf482cfb6226f767ca3736b7f6e495483e7797ac3cfd82f44bc1bdb1d78e0",
+              "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "8ed2814758a15bba916ab6f3a540b6fcbf6ee65f1ebd6bc5efb09e762b4dc401"
+          },
+          "kind": "workout.report",
+          "command": {
+            "kind": "workout.report",
+            "epoch": "f094c4d4-34bf-4990-be2d-62f009630aee",
+            "owner_id": "50d17636-5ab6-4f6b-8ad0-ed009e5e6c4c",
+            "command_id": "0208bb1b-e33e-4ee2-8ad9-a4346bc39509",
+            "input_hash": "8ed2814758a15bba916ab6f3a540b6fcbf6ee65f1ebd6bc5efb09e762b4dc401",
+            "admitted_at": "2026-11-06T02:17:24.464154Z"
+          }
+        },
+        "result": {
+          "schema": "conversation.workout-command-state.v1",
+          "status": "not_recorded",
+          "owner_id": "50d17636-5ab6-4f6b-8ad0-ed009e5e6c4c",
+          "command_id": "0208bb1b-e33e-4ee2-8ad9-a4346bc39509",
+          "input_hash": "8ed2814758a15bba916ab6f3a540b6fcbf6ee65f1ebd6bc5efb09e762b4dc401",
+          "epoch": "f094c4d4-34bf-4990-be2d-62f009630aee",
+          "reason": "non_performed_or_conflicting_source"
+        }
+      }
+    },
+    {
+      "label": "gym_photo_not_performed",
+      "input": {
+        "intake_protocol": "conversation.intake.v1",
+        "intake_id": "c424eee8-318a-4b50-89ad-ea27fcf04b1f",
+        "source": {
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "4125ab3e-b01d-4ee1-9aa8-0663a1ee7cea"
+        }
+      },
+      "binding": {
+        "epoch": "f496faa3-7b7a-463b-8367-84987c51e179",
+        "owner_id": "c1a336b5-fa32-4be1-a712-819f8be062db",
+        "intake_id": "c424eee8-318a-4b50-89ad-ea27fcf04b1f",
+        "input_hash": "ca2304a1e65a625f81a86d0a54a51d147db4509c4233d20d6053a6ae2ea22c47",
+        "admitted_at": "2026-11-06T02:17:24.508664Z"
+      },
+      "response": {
+        "schema": "conversation.intake-result.v2",
+        "status": "selected",
+        "intake": {
+          "epoch": "f496faa3-7b7a-463b-8367-84987c51e179",
+          "owner_id": "c1a336b5-fa32-4be1-a712-819f8be062db",
+          "intake_id": "c424eee8-318a-4b50-89ad-ea27fcf04b1f",
+          "input_hash": "ca2304a1e65a625f81a86d0a54a51d147db4509c4233d20d6053a6ae2ea22c47",
+          "admitted_at": "2026-11-06T02:17:24.508664Z"
+        },
+        "selection": {
+          "source_hash": "a454e461621f5d4d557a4f3ab4e1ca19f3cdd02c334a7db0ad04b71c670a3cdd",
+          "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a",
+          "selected_at": "2026-11-06T02:17:24.581991Z",
+          "media_projection": {
+            "media": {
+              "kind": "gym_photo",
+              "asset_id": "4125ab3e-b01d-4ee1-9aa8-0663a1ee7cea",
+              "owner_id": "c1a336b5-fa32-4be1-a712-819f8be062db",
+              "updated_at": "2026-11-06T02:17:23.889172Z",
+              "processed_at": "2026-11-06T02:17:24.508268Z",
+              "processing_hash": "7357e02e2e97c452c6d74d91676c357a88a7735d23098b35ae09e2e7ebb53cbf"
+            },
+            "origin": {
+              "epoch": "f496faa3-7b7a-463b-8367-84987c51e179",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "ab1f30ba-5b93-41cd-b6b5-d5e66f7296a5",
+              "intake_id": "c424eee8-318a-4b50-89ad-ea27fcf04b1f",
+              "input_hash": "ca2304a1e65a625f81a86d0a54a51d147db4509c4233d20d6053a6ae2ea22c47",
+              "source_hash": "a454e461621f5d4d557a4f3ab4e1ca19f3cdd02c334a7db0ad04b71c670a3cdd",
+              "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "fc68c365be19582dc4e2b7af71bc2957596a11d4f9b012fc929483b000e4390a"
+          },
+          "kind": "workout.report",
+          "command": {
+            "kind": "workout.report",
+            "epoch": "f496faa3-7b7a-463b-8367-84987c51e179",
+            "owner_id": "c1a336b5-fa32-4be1-a712-819f8be062db",
+            "command_id": "6343f7c7-0522-4c9f-9236-0b4645aaeb6d",
+            "input_hash": "fc68c365be19582dc4e2b7af71bc2957596a11d4f9b012fc929483b000e4390a",
+            "admitted_at": "2026-11-06T02:17:24.569676Z"
+          }
+        },
+        "result": {
+          "schema": "conversation.workout-command-state.v1",
+          "status": "needs_reply",
+          "owner_id": "c1a336b5-fa32-4be1-a712-819f8be062db",
+          "command_id": "6343f7c7-0522-4c9f-9236-0b4645aaeb6d",
+          "input_hash": "fc68c365be19582dc4e2b7af71bc2957596a11d4f9b012fc929483b000e4390a",
+          "epoch": "f496faa3-7b7a-463b-8367-84987c51e179",
+          "question": {
+            "key": "9bfdac1e226507e7df761c29c62e329dd56da7f09a0fdcdfbf1e18584b8c2125",
+            "text": "Qual atividade você realizou e por quantos minutos?",
+            "field": "activity"
+          }
+        }
+      }
+    }
+  ]
+}

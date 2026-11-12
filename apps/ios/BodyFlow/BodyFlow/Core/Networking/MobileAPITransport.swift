@@ -136,7 +136,8 @@ struct MobileAPITransport: Sendable {
                 result: firstResult,
                 lease: lease,
                 closedEnvelope: request.conversation != nil,
-                feedbackPresentation: request.feedbackPresentation
+                feedbackPresentation: request.feedbackPresentation,
+                intakeMediaProvenance: request.conversation?.intakeMediaProvenance
             )
         }
 
@@ -155,7 +156,8 @@ struct MobileAPITransport: Sendable {
                 data: firstResult.data,
                 response: firstResult.response,
                 closedEnvelope: request.conversation != nil,
-                feedbackPresentation: request.feedbackPresentation
+                feedbackPresentation: request.feedbackPresentation,
+                intakeMediaProvenance: request.conversation?.intakeMediaProvenance
             )
         }
 
@@ -171,7 +173,8 @@ struct MobileAPITransport: Sendable {
             result: secondResult,
             lease: refreshedLease,
             closedEnvelope: request.conversation != nil,
-            feedbackPresentation: request.feedbackPresentation
+            feedbackPresentation: request.feedbackPresentation,
+                intakeMediaProvenance: request.conversation?.intakeMediaProvenance
         )
     }
 
@@ -202,7 +205,8 @@ struct MobileAPITransport: Sendable {
         result: NetworkResult,
         lease: SessionLease,
         closedEnvelope: Bool,
-        feedbackPresentation: ConversationFeedbackPresentationSelection?
+        feedbackPresentation: ConversationFeedbackPresentationSelection?,
+        intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection?
     ) async throws -> MobileAPIHTTPResponse<Response> {
         do {
             try await sessionLifecycle.validate(lease)
@@ -216,7 +220,8 @@ struct MobileAPITransport: Sendable {
             data: result.data,
             response: result.response,
             closedEnvelope: closedEnvelope,
-            feedbackPresentation: feedbackPresentation
+            feedbackPresentation: feedbackPresentation,
+            intakeMediaProvenance: intakeMediaProvenance
         )
     }
 
@@ -395,11 +400,15 @@ struct MobileAPITransport: Sendable {
         data: Data,
         response: HTTPURLResponse,
         closedEnvelope: Bool,
-        feedbackPresentation: ConversationFeedbackPresentationSelection?
+        feedbackPresentation: ConversationFeedbackPresentationSelection?,
+        intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection?
     ) throws -> MobileAPIHTTPResponse<Response> {
         let decoder = ConversationFeedbackPresentationSelection.decoder(selection: .negotiated(
             request: feedbackPresentation,
             echo: response.value(forHTTPHeaderField: ConversationFeedbackPresentationSelection.header)))
+        ConversationIntakeMediaProvenanceSelection.configure(decoder, selection: .negotiated(
+            request: intakeMediaProvenance,
+            echo: response.value(forHTTPHeaderField: ConversationIntakeMediaProvenanceSelection.header)))
         if (200...299).contains(response.statusCode) {
             do {
                 if closedEnvelope {

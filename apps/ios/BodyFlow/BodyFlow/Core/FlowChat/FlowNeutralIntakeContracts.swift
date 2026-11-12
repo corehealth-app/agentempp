@@ -1,5 +1,23 @@
 import Foundation
 
+/// Representation negotiation only; it is never an upload or recording grant.
+enum ConversationIntakeMediaProvenanceSelection: String, Sendable {
+  case v1 = "1"
+  static let header = "X-Conversation-Media-Provenance"
+  private static let key = CodingUserInfoKey(
+    rawValue: "conversation.intake.media-provenance.selection")!
+  static func selected(from decoder: any Decoder) -> Self? {
+    guard let value = decoder.userInfo[key] as? String else { return nil }
+    return Self(rawValue: value)
+  }
+  static func negotiated(request: Self?, echo: String?) -> Self? {
+    request == .v1 && echo == Self.v1.rawValue ? .v1 : nil
+  }
+  static func configure(_ decoder: JSONDecoder, selection: Self?) {
+    decoder.userInfo[key] = selection?.rawValue
+  }
+}
+
 /// Literal intent only. Choosing a domain and admitting its child are server work.
 /// No timestamp, patient identity or clinical fact is generated here.
 struct FlowNeutralIntakeInput: Sendable, CustomStringConvertible, CustomReflectable {
@@ -167,14 +185,63 @@ struct FlowNeutralIntakeSelection: Sendable {
   let sourceHash: String
   let decisionHash: String
   let selectedAt: String
-  fileprivate init(_ raw: ConversationMealEditJSON, binding: FlowNeutralIntakeBinding) throws {
-    let o = try raw.object(["kind", "source_hash", "decision_hash", "selected_at", "command"])
+  let mediaProjection: FlowNeutralIntakeMediaProjection?
+  fileprivate init(
+    _ raw: ConversationMealEditJSON, binding: FlowNeutralIntakeBinding, mediaRequired: Bool = false
+  ) throws {
+    var keys: Set<String> = ["kind", "source_hash", "decision_hash", "selected_at", "command"]
+    if mediaRequired { keys.insert("media_projection") }
+    let o = try raw.object(keys)
     sourceHash = try o.required("source_hash").hash()
     decisionHash = try o.required("decision_hash").hash()
     selectedAt = try o.required("selected_at").string()
     _ = try neutralInstant(selectedAt)
     child = try .init(o.required("command"), binding: binding, selectedAt: selectedAt)
     try neutralRequire(o.required("kind").string() == child.kind.rawValue)
+    mediaProjection =
+      try mediaRequired
+      ? .init(
+        o.required("media_projection"), binding: binding, child: child,
+        sourceHash: sourceHash, decisionHash: decisionHash, selectedAt: selectedAt) : nil
+  }
+}
+
+/// Closed public lineage from the SQL-owned parent selection. No media URL,
+/// analysis, transcript or private child command is accepted by this codec.
+struct FlowNeutralIntakeMediaProjection: Sendable {
+  let assetID: UUID
+  fileprivate init(
+    _ raw: ConversationMealEditJSON, binding: FlowNeutralIntakeBinding,
+    child: FlowNeutralIntakeChild, sourceHash: String, decisionHash: String, selectedAt: String
+  ) throws {
+    let o = try raw.object(["schema", "origin", "media", "child_input_hash"])
+    try neutralRequire(o.required("schema").string() == "conversation.intake-media-projection.v1")
+    let origin = try o.required("origin").object([
+      "schema", "intake_id", "input_hash", "source_hash", "epoch", "claim_id", "decision_hash",
+    ])
+    try neutralRequire(
+      origin.required("schema").string() == "conversation.intake-media-origin.v1"
+        && origin.required("intake_id").uuid() == binding.intakeID
+        && origin.required("input_hash").hash() == binding.inputHash
+        && origin.required("source_hash").hash() == sourceHash
+        && origin.required("epoch").uuid() == binding.epoch
+        && origin.required("decision_hash").hash() == decisionHash
+        && o.required("child_input_hash").hash() == child.inputHash)
+    _ = try origin.required("claim_id").uuid()
+    let media = try o.required("media").object([
+      "asset_id", "owner_id", "kind", "processed_at", "updated_at", "processing_hash",
+    ])
+    assetID = try media.required("asset_id").uuid()
+    let kind = try media.required("kind").string()
+    try neutralRequire(
+      media.required("owner_id").uuid() == binding.ownerID
+        && (child.kind == .meal ? ["meal_photo", "audio_note"] : ["gym_photo", "audio_note"])
+          .contains(kind)
+    )
+    _ = try media.required("processing_hash").hash()
+    for key in ["processed_at", "updated_at"] {
+      try neutralRequire(neutralInstant(media.required(key).string()) <= neutralInstant(selectedAt))
+    }
   }
 }
 
@@ -343,16 +410,20 @@ struct FlowNeutralIntakeResponseSnapshot: Decodable, Sendable {
         "intake", "lookup", "selection", "result", "reason", "question", "source_hash",
         "decision_hash",
       ])
-    try neutralRequire(root.required("schema").string() == "conversation.intake-result.v1")
+    let schema = try root.required("schema").string()
+    let mediaRequired = schema == "conversation.intake-result.v2"
+    try neutralRequire(schema == "conversation.intake-result.v1"
+      || (mediaRequired && ConversationIntakeMediaProvenanceSelection.selected(from: decoder) == .v1))
     guard let status = Status(rawValue: try root.required("status").string()) else {
       throw FlowNeutralIntakeInvalid.value
     }
     self.status = status
+    try neutralRequire(!mediaRequired || status == .selected)
     switch status {
     case .selected:
       _ = try raw.object(["schema", "status", "intake", "selection", "result"])
       let binding = try FlowNeutralIntakeBinding(root.required("intake"))
-      let selected = try FlowNeutralIntakeSelection(root.required("selection"), binding: binding)
+      let selected = try FlowNeutralIntakeSelection(root.required("selection"), binding: binding, mediaRequired: mediaRequired)
       let payload = try root.required("result")
       let child = selected.child
       switch child.kind {
@@ -442,15 +513,18 @@ struct FlowNeutralIntakeResponseSnapshot: Decodable, Sendable {
     }
   }
   func matches(_ ticket: FlowNeutralIntakeTicket) -> Bool {
-    intake?.matches(ticket) ?? lookup?.matches(ticket) ?? false
+    guard intake?.matches(ticket) ?? lookup?.matches(ticket) ?? false else { return false }
+    guard status == .selected, let selection else { return true }
+    switch ticket.input.source {
+    case .text: return selection.mediaProjection == nil
+    case .media(let assetID, _): return selection.mediaProjection?.assetID == assetID
+    }
   }
   func factualAcknowledgement(for ticket: FlowNeutralIntakeTicket)
     -> FlowNeutralIntakeFactualAcknowledgement?
   {
-    guard status == .selected, matches(ticket), selection != nil, case .text = ticket.input.source
+    guard status == .selected, matches(ticket), selection != nil
     else { return nil }
-    // Media stays recoverable, but this text-only slice cannot prove a genuine
-    // domain media projection. A later negotiated contract must establish it.
     switch result {
     case .meal(.saved(let saved)): return .meal(saved)
     case .workout(.saved(let saved)): return .workout(saved)

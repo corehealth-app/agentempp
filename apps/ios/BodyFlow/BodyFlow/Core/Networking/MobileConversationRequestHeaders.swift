@@ -23,6 +23,16 @@ enum MobileConversationRequestHeaders: Sendable {
   case mealEdit(epoch: UUID, ownerID: UUID, inputHash: String)
   case mealEditReconciliation(epoch: UUID, ownerID: UUID, inputHash: String)
 
+  /// Only an original neutral media ticket selects this response codec.
+  var intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection? {
+    switch self {
+    case .intakeSubmit(let ticket), .intakeReconciliation(let ticket):
+      if case .media = ticket.input.source { return .v1 }
+      return nil
+    default: return nil
+    }
+  }
+
   func validate(
     method: HTTPMethod, path: String, query: [URLQueryItem], body: Data?, key: IdempotencyKey?,
     replay: MobileAPIUnauthorizedReplay
@@ -184,8 +194,16 @@ enum MobileConversationRequestHeaders: Sendable {
       guard response.value(forHTTPHeaderField: "X-Conversation-Protocol") == "intake-v1" else { throw MobileAPITransportError.invalidResponse }
     default: break
     }
+    if let selected = intakeMediaProvenance {
+      guard response.value(forHTTPHeaderField: ConversationIntakeMediaProvenanceSelection.header) == selected.rawValue,
+        response.value(forHTTPHeaderField: "Cache-Control") == "no-store"
+      else { throw MobileAPITransportError.invalidResponse }
+    }
   }
   func apply(to request: inout URLRequest) {
+    if let selected = intakeMediaProvenance {
+      request.setValue(selected.rawValue, forHTTPHeaderField: ConversationIntakeMediaProvenanceSelection.header)
+    }
     switch self {
     case .mealLinkedOrigin: request.setValue("meal-linked-origin-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     case .intakeQuestionOrigins: request.setValue("intake-question-origins-v1", forHTTPHeaderField: "X-Conversation-Protocol")

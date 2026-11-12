@@ -12,7 +12,7 @@
       BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates
     }
     var body: some View {
-      if model.canRequestMealDetails(commandID: commandID) {
+      if model.canLoadMealDetails(commandID: commandID) {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
           if let group = model.currentGroup(commandID: commandID) {
             FlowConversationMealGroupView(

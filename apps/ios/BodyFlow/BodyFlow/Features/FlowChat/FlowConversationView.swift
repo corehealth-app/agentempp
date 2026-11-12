@@ -246,7 +246,7 @@ struct FlowConversationView: View {
         ForEach(Array(model.unifiedRows.reversed()), id: \.eventID) { entry in
           FlowConversationJournalV3Content(
             entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english)
-          if let commandID = model.unifiedMealControlsCommandID(eventID: entry.eventID) {
+          if let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID) {
             FlowConversationMealControlsContent(model: model, commandID: commandID)
           }
         }

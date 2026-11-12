@@ -407,6 +407,71 @@ describe('source-preserving semantic labels', () => {
     expect(food?.quantity && text.slice(food.quantity.start, food.quantity.end)).toBe('200')
     expect(food?.unit && text.slice(food.unit.start, food.unit.end)).toBe('mL')
   })
+  function milkReport(prefix: string) {
+    const text = prefix + '200 mL de leite com 1 medida de whey.',
+      input = source(text),
+      packet = api.prepareConversationMealSourceLabels(input),
+      tokens = packet.input.sources[0]?.tokens
+    if (!tokens) throw new Error('Missing literal source tokens')
+    const quantity = tokens.findIndex(([, value]) => value === '200')
+    if (quantity < 1) throw new Error('Missing literal quantity')
+    const labels = Object.fromEntries(
+      tokens.map(([key], i) => [
+        key,
+        i < quantity
+          ? label('report')
+          : i === quantity
+            ? label('quantity', 0)
+            : i === quantity + 1
+              ? label('unit', 0)
+              : i === quantity + 2 || i === tokens.length - 1
+                ? label('separator')
+                : label('food', 0),
+      ]),
+    )
+    const model = {
+      ...rice(),
+      reason: 'explicit_report',
+      sources: {
+        command_text: { classification: 'reported', labels },
+      },
+    }
+    return {
+      text,
+      input,
+      result: validateConversationMealInterpretationModel(packet.materialize(model), input),
+    }
+  }
+  it.each([
+    'No café da manhã de hoje, consumi ',
+    'No almoço de hoje, comi ',
+    'No jantar de hoje, bebi ',
+    'No café da manhã de hoje, eu consumi ',
+    'No almoço de hoje, acabei de comer ',
+  ])('preserves current consumed-meal evidence with the meal prefix: %s', (prefix) => {
+    const { text, result } = milkReport(prefix),
+      food = result.foods[0]
+    expect(result.decision).toBe('reported_meal')
+    expect(result.reason).toBe('explicit_report')
+    expect(result.sources[0]?.spans.map((s) => text.slice(s.start, s.end)).join('')).toBe(text)
+    expect(food?.name && text.slice(food.name.start, food.name.end)).toBe(
+      'leite com 1 medida de whey',
+    )
+    expect(food?.quantity && text.slice(food.quantity.start, food.quantity.end)).toBe('200')
+    expect(food?.unit && text.slice(food.unit.start, food.unit.end)).toBe('mL')
+  })
+  it.each([
+    'No café da manhã de amanhã, consumi ',
+    'No café da manhã de ontem, consumi ',
+    'No café da manhã de hoje, não consumi ',
+    'No café da manhã de hoje, vou consumir ',
+    'No café da manhã de hoje, geralmente consumo ',
+    'No café da manhã de hoje, sonhei que consumi ',
+    'No café da manhã de hoje, minha filha consumiu ',
+    'No café da manhã de hoje, posso consumir ',
+  ])('does not upgrade unsafe discourse merely because it names a meal: %s', (prefix) => {
+    expect(milkReport(prefix).result.decision).toBe('clarification_required')
+  })
   it.each([
     'missing token',
     'extra token',

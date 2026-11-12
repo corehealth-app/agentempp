@@ -27,6 +27,15 @@ Technical bounds reuse the command/media/candidate surfaces: 2,000 UTF-16 units 
 
 The prompt considers actual first-person reports and bare nominal lists such as `arroz200g; feijão100g` without requiring a verb. It distinguishes dream, future, habit, negation, third party/quotation, question, mixed discourse, and ambiguity. Backend validators establish mechanical full-source coverage and occurrence association, then conservatively downgrade unsupported positive framing to clarification. Invalid references and malformed output fail with a redacted unavailable error. Truncated responses, tool calls, duplicate JSON keys, unknown fields, nonfinite numbers, omissions, and provider failures never become successful interpretations.
 
+The observed explicit report span may include a supported meal prefix with the
+current-day adjunct, such as `No café da manhã de hoje, consumi`. This has the
+same framing as `No café da manhã, consumi`; it still requires a positive model
+judgment, the explicit consumption predicate and complete original-source
+coverage. It does not assign a meal slot/date, upgrade a negative model result,
+or permit future, habitual, negated, dreamed, third-party or mixed discourse.
+A previously sealed ambiguous result remains immutable; qualification of a new
+version uses a new synthetic original rather than replaying that old attempt.
+
 `reported_meal` is an internal sourced model judgment, not mathematical proof of consumption or food identity. Lexical screening and parser/model agreement cannot prove arbitrary prose is a food name. Before any writer can use it, actual whole-name food resolution and the separate command/preparation/SQL proof fences must qualify the original spans. Unfamiliar discourse must not become authority through fuzzy catalog matching. These requirements also apply to processed visual names. This leaf contains no `complete_source`, `consumed_meal` proof, nutrition, current clinical authorization, or public presentation authority.
 
 The real seam is the existing `OpenRouterLLM.complete` with the existing `MEAL_TEXT_EXTRACTION_MODEL` (`anthropic/claude-haiku-4.5`), temperature zero, JSON object response, no tool registry/executor, `maxRetries: 0`, and timeout `min(45_000, remainingMs)`. Output is explicitly capped at the existing provider default of 8,192 tokens because the old 800-token food extractor cap cannot represent 30 occurrences plus complete span partitions. An exhausted budget is refused before transport. There is no new model, dependency, pricing assumption, or USD cap. Real provider latency, token consumption, cost, and output conformance remain unverified until an authorized bounded provider QA.

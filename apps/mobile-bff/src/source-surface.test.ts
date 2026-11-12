@@ -172,7 +172,9 @@ function runtimeExactStringRoutes(value: string): string[] {
 // is sealed below; module11098 is newly certified in full, with the other17
 // compiled bodies still byte-identical. No old raw module body is claimed here.
 function certifyNutritionJournalSplitContent(text: string): void {
-  // T52 extends only the closed leading meal-context regex in module65556.
+  // T52 and R79 extend only the closed leading meal-context regex in module65556.
+  // R79 adds the optional current-day adjunct; reversing that sole compiled delta
+  // reproduces the prior module hash exactly. No other module body changed.
   // Seal the reviewed validator source before accepting its complete compiled body;
   // the other18 module identities, table/count and negative controls stay literal.
   expect(
@@ -186,7 +188,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('dab833993fa52de4be2ab4c972dea9b9e5a79626f3badc156915a82c36a9fc8a')
+  ).toBe('7825ebde51a52a34ba843a8e9637fedb59a2fae7a863877c69864515363f6650')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -235,7 +237,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:91295e46a70e1a076a28beeaa80e55cbdde0dae039795791fdbb16f5f27b3b42',
+      '65556:5b66822423585afa2884a4458f5b23298d95a1d10f627adfccc776a6cff3852b',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',

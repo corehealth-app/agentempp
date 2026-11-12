@@ -396,12 +396,13 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '567c9a25484d2c8a0603fa1f47e64dab1f843dca44759bffe5f0b98419ac1022',
+    '6732534c7ccbae1517844150777846decb11cf9ceb4ecf8933da334e4a91df56',
   )
   // R80 adds closed enum/count observations only for completed ambiguities.
   // R81 adds closed screening reason codes and JSON encoding of this safe projection.
-  // The reviewed source remains sealed; all363 other captured unique-ID entries,
-  // helper bytes, route consumers and global scans remain unchanged.
+  // R83 changes only the literal role-boundary prompt; source identity stays sealed.
+  // A retained233-file physical baseline proves the prompt/loader deltas only.
+  // Helper bytes, exact route consumers and global scans remain enforced.
   // T53 replaces private literal replay with source-owned token labels on the same edge.
   expect(
     createHash('sha256')
@@ -451,19 +452,14 @@ function certifyPhotoPurposeEdgesR62() {
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab'],
-    ['63867', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
+    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
+    ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
-  const geminiCurrent = bodies.get('84359') ?? ''
-  // R82's fresh build renumbers the byte-identical provider helper. Reverse
-  // exactly this one import before retaining the independent historical proofs.
-  const helperLinkR82 = 'd=c(63867)'
-  expect(geminiCurrent.split(helperLinkR82)).toHaveLength(2)
-  const gemini = geminiCurrent.replace(helperLinkR82, 'd=c(86248)')
+  const gemini = bodies.get('84359') ?? ''
   // T51's explicit OpenAI Zod helper changes only the one SDK loader link.
   // Reverse it to the preserved full R62 body before the independent R59 proof.
   const sdkLinkT51 = 'e=c(43296)'

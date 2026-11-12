@@ -25,6 +25,8 @@ Technical bounds reuse the command/media/candidate surfaces: 2,000 UTF-16 units 
 
 ## Semantic limits and provider policy
 
+Source-role instructions distinguish grammatical connectors outside separately quantified ingredients from connectors within food/preparation/brand names. For example, `200 mL de leite com 1 medida de whey` assigns `de`/the inter-ingredient `com` to separators while preserving `doce de leite`, `arroz com frango` and `De Cecco` as full names. The transport does not trim or rewrite names after the model responds; canonical source validation and whole-name calculation qualification still decide whether a write is allowed.
+
 The prompt considers actual first-person reports and bare nominal lists such as `arroz200g; feijão100g` without requiring a verb. It distinguishes dream, future, habit, negation, third party/quotation, question, mixed discourse, and ambiguity. Backend validators establish mechanical full-source coverage and occurrence association, then conservatively downgrade unsupported positive framing to clarification. A span labeled `other` may contain only inert punctuation/whitespace from the existing separator alphabet (` ,;:.!/`); question marks, quotes, words and numbers still need semantic accounting. The original spans and food references remain unchanged, and this exception never upgrades a model refusal. Invalid references and malformed output fail with a redacted unavailable error. Truncated responses, tool calls, duplicate JSON keys, unknown fields, nonfinite numbers, omissions, and provider failures never become successful interpretations.
 
 The observed explicit report span may include a supported meal prefix with the

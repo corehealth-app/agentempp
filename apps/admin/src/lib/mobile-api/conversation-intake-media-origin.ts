@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
+import { conversationPhotoDomainAllowed } from './conversation-photo-observations'
 
 const uuid = z
   .string()
@@ -53,7 +54,7 @@ export const conversationIntakeMediaProjectionSchema = z
       .object({
         asset_id: uuid,
         owner_id: uuid,
-        kind: z.enum(['meal_photo', 'audio_note', 'gym_photo']),
+        kind: z.enum(['meal_photo', 'audio_note', 'gym_photo', 'conversation_photo']),
         processed_at: clock,
         updated_at: clock,
         processing_hash: hash,
@@ -129,6 +130,11 @@ export function assertConversationIntakeMediaCapture(
     projection.media.owner_id !== command.ownerId ||
     media.owner_id !== command.ownerId ||
     projection.media.kind !== media.kind ||
+    !conversationPhotoDomainAllowed(
+      media.kind,
+      media.processing_result,
+      context.schema === 'conversation.meal-source.v2' ? 'meal.report' : 'workout.report',
+    ) ||
     projection.media.processing_hash !== hash ||
     instant(projection.media.processed_at) !== instant(media.processed_at) ||
     instant(projection.media.updated_at) !== instant(media.updated_at)

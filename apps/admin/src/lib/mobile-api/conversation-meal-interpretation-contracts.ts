@@ -13,6 +13,7 @@ import {
   assertConversationIntakeMediaCapture,
   conversationIntakeMediaProjectionSchema,
 } from './conversation-intake-media-origin'
+import { conversationMealMediaAnalysis } from './conversation-photo-observations'
 import { MobileApiError } from './http'
 
 export const MEAL_INTERPRETER_VERSION = 'conversation.meal-interpreter.v1' as const
@@ -178,7 +179,7 @@ export function parseConversationMealInterpretation(
 const mediaSchema = z
   .object({
     asset_id: uuid,
-    kind: z.enum(['meal_photo', 'audio_note']),
+    kind: z.enum(['meal_photo', 'audio_note', 'conversation_photo']),
     status: z.literal('processed'),
     processed_at: z.string().datetime({ offset: true }),
     updated_at: z.string().datetime({ offset: true }),
@@ -199,7 +200,7 @@ export const mealInterpretationSourceSchema = z
     media_binding: z
       .object({
         asset_id: uuid,
-        kind: z.enum(['meal_photo', 'audio_note']),
+        kind: z.enum(['meal_photo', 'audio_note', 'conversation_photo']),
         processed_at: z.string(),
         updated_at: z.string(),
         processing_hash: hash,
@@ -325,7 +326,11 @@ export function buildConversationMealInterpretationSource(
     )
       return interpretationUnavailable()
     if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, c)
-    else if (c.schema !== 'conversation.meal-source.v1' || c.intake_projection !== undefined)
+    else if (
+      c.schema !== 'conversation.meal-source.v1' ||
+      c.intake_projection !== undefined ||
+      c.media?.kind === 'conversation_photo'
+    )
       return interpretationUnavailable()
     const sources: ConversationMealInterpretationSource['sources'] = []
     let media_binding: ConversationMealInterpretationSource['media_binding'] = null
@@ -359,7 +364,7 @@ export function buildConversationMealInterpretationSource(
           : evidence.context_text !== undefined)
       )
         return interpretationUnavailable()
-      const result = z.record(json).parse(m.processing_result)
+      const result = z.record(json).parse(conversationMealMediaAnalysis(m))
       if (evidence.caption !== null && evidence.caption.replace(/^ +| +$/gu, '').length > 0)
         sources.push({ unit: 'media_caption', text: evidence.caption, visual_items: [] })
       if (
@@ -382,15 +387,17 @@ export function buildConversationMealInterpretationSource(
         if (
           evidence.transcript !== null ||
           !Array.isArray(result.items) ||
-          result.items.length < 1 ||
+          (result.items.length === 0 &&
+            (m.kind !== 'conversation_photo' || sources.length === 0)) ||
           result.items.length > 30
         )
           return interpretationUnavailable()
-        sources.push({
-          unit: 'vision_items',
-          text: null,
-          visual_items: structuredClone(result.items),
-        })
+        if (result.items.length > 0)
+          sources.push({
+            unit: 'vision_items',
+            text: null,
+            visual_items: structuredClone(result.items),
+          })
       }
       if (
         !isDeepStrictEqual(

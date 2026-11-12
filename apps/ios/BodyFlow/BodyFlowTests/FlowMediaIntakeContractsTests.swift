@@ -5,6 +5,33 @@ import Testing
 
 @Suite("Negotiated neutral media binds the original attachment to the factual child")
 struct FlowMediaIntakeContractsTests {
+  @Test(arguments: [
+    "ordinary_meal", "ordinary_equipment_not_performed", "ordinary_label_missing_portion",
+  ])
+  func ordinaryPurposeSelectionRetainsOriginalPhotoWithoutInventingASavedReceipt(_ label: String)
+    throws
+  {
+    let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+      "Fixtures/ConversationOrdinaryPhotoFixtures.json")
+    let root = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as! [String: Any]
+    let unit = try #require(
+      (root["cases"] as! [[String: Any]]).first { $0["label"] as? String == label })
+    let ticket = try mediaIntakeTicket(unit)
+    let packet = unit["response"]!
+    let reply = try mediaIntakeDecode(packet)
+    #expect(reply.matches(ticket))
+    #expect(reply.factualAcknowledgement(for: ticket) == nil)
+    #expect(throws: (any Error).self) { try mediaIntakeDecode(packet, selection: nil) }
+    var changed = packet as! [String: Any]
+    var selected = changed["selection"] as! [String: Any]
+    var projection = selected["media_projection"] as! [String: Any]
+    var media = projection["media"] as! [String: Any]
+    media["kind"] = "body_checkin_photo"
+    projection["media"] = media
+    selected["media_projection"] = projection
+    changed["selection"] = selected
+    #expect(throws: (any Error).self) { try mediaIntakeDecode(changed) }
+  }
   @Test(arguments: ["meal_photo", "audio_workout"])
   func actualSQLMediaReceiptAcknowledgesOnlyTheOriginalTicket(_ label: String) throws {
     let unit = try mediaIntakeUnit(label)

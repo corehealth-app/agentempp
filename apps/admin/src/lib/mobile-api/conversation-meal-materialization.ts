@@ -1,5 +1,6 @@
 /** Private source-bound materialization. No model call, old intent/parser gate,
  * calculation, clinical authority, receipt, proof, analytics or domain write. */
+
 import { isDeepStrictEqual } from 'node:util'
 import {
   consumedFoodDefault,
@@ -33,6 +34,7 @@ import {
 import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
 import { createBoundConversationMealCorrectionReader } from './conversation-meal-personal-correction'
 import type { CapturedConversationMealSource } from './conversation-meal-source'
+import { conversationMealMediaAnalysis } from './conversation-photo-observations'
 import { MobileApiError } from './http'
 import type { MealDraft } from './meal-draft-service'
 import {
@@ -943,7 +945,12 @@ async function materializeConversationMealCore(
     }
     if (!inputs.length) return clarify('missing_quantity', [])
     const media = record(context.media),
-      processing = record(media?.processing_result)
+      processing = media
+        ? conversationMealMediaAnalysis({
+            kind: String(media.kind),
+            processing_result: media.processing_result,
+          })
+        : null
     return freezeInterpretation({
       status: 'materialized',
       schema: 'conversation.meal-materialization.v1',

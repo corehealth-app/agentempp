@@ -2,6 +2,7 @@
  * selection; only the genuine domain service can establish a saved record. */
 import { isDeepStrictEqual } from 'node:util'
 import { type LLMResult, OpenRouterLLM } from '@mpp/providers'
+import { parseConversationImageResult } from '@mpp/providers/vision/conversation-image-result'
 import { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai'
 import { z } from 'zod'
 import {
@@ -174,10 +175,18 @@ function discourse(source: CapturedConversationIntakeSource) {
       sources.push({ unit: 'media_caption', text: input.source.caption })
     if (media.context_text !== null)
       sources.push({ unit: 'media_context', text: workoutText(2000).parse(media.context_text) })
-    const result = media.processing_result
+    let result = media.processing_result
+    if (media.kind === 'conversation_photo') {
+      const classified = parseConversationImageResult(result)
+      if (classified.status !== 'ready') return unavailable()
+      result = classified.analysis
+    }
     if (media.kind === 'audio_note')
       sources.push({ unit: 'media_transcript', text: workoutText(2000).parse(result.text) })
-    else if (media.kind === 'meal_photo') {
+    else if (
+      media.kind === 'meal_photo' ||
+      (media.kind === 'conversation_photo' && result.type === 'meal')
+    ) {
       const visual = z
         .object({
           type: z.literal('meal'),
@@ -192,13 +201,15 @@ function discourse(source: CapturedConversationIntakeSource) {
                 })
                 .strip(),
             )
-            .min(1)
+            .min(media.kind === 'conversation_photo' ? 0 : 1)
             .max(30),
           meal_context: workoutText(2000).optional(),
         })
         .strip()
         .parse(result)
       sources.push({ unit: 'vision_meal', visual })
+    } else if (media.kind === 'conversation_photo' && result.type === 'nutrition_label') {
+      sources.push({ unit: 'vision_nutrition_label', visual: result })
     } else {
       const visual = z
         .object({
@@ -258,6 +269,56 @@ export function createOpenRouterConversationIntakeRouter(
       let phase: FailurePhase = 'discourse',
         finishReason: FinishReason | undefined
       try {
+        if (source.context.media?.kind === 'conversation_photo') {
+          const image = parseConversationImageResult(source.context.media.processing_result)
+          if (image.status === 'unsupported')
+            return intakeSnapshot({
+              schema: 'conversation.intake-routing.v1',
+              kind: 'clarification_required',
+              reason: 'image_not_supported_for_conversation',
+              question: {
+                field: 'description',
+                text: 'Descreva o alimento e a quantidade consumida ou a atividade que realizou; esta imagem não permite identificar esse registro.',
+              },
+            })
+          if (
+            image.status === 'ready' &&
+            image.classification === 'nutrition_label' &&
+            image.analysis.type === 'nutrition_label' &&
+            (typeof image.analysis.product_name !== 'string' ||
+              !image.analysis.product_name.trim() ||
+              image.analysis.product_name.length > 240)
+          )
+            return intakeSnapshot({
+              schema: 'conversation.intake-routing.v1',
+              kind: 'clarification_required',
+              reason: 'label_product_required',
+              question: {
+                field: 'description',
+                text: 'Qual é o alimento ou produto deste rótulo? Não consegui identificar o nome.',
+              },
+            })
+          if (
+            image.status === 'ready' &&
+            image.classification === 'meal' &&
+            image.analysis.type === 'meal' &&
+            image.analysis.items.length === 0 &&
+            !(
+              source.intake.input.source.channel === 'media' &&
+              source.intake.input.source.caption?.trim()
+            ) &&
+            !source.context.media.context_text?.trim()
+          )
+            return intakeSnapshot({
+              schema: 'conversation.intake-routing.v1',
+              kind: 'clarification_required',
+              reason: 'image_description_required',
+              question: {
+                field: 'description',
+                text: 'Não consegui identificar os alimentos na foto. O que você consumiu e em qual quantidade?',
+              },
+            })
+        }
         const payload = discourse(source)
         phase = 'provider'
         const response = await complete({

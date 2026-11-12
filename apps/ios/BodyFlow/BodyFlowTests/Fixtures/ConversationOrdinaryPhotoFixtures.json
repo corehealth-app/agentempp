@@ -1,0 +1,226 @@
+{
+  "provenance": "Actual local PG R102 capture/seal, production-equivalent pending public shape (no saved receipt fabricated).",
+  "cases": [
+    {
+      "label": "ordinary_meal",
+      "input": {
+        "intake_protocol": "conversation.intake.v1",
+        "intake_id": "8f687728-d3db-451c-8578-d173d6dc863b",
+        "source": {
+          "caption": "Comi arroz 100 g",
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "e498bf98-c594-42f3-a2c7-72105f7e8b4d"
+        }
+      },
+      "binding": {
+        "epoch": "0ebcce1c-a264-4418-bffe-b1c28b360280",
+        "owner_id": "774e11bb-219f-4ab4-8bf2-c902f6c20846",
+        "intake_id": "8f687728-d3db-451c-8578-d173d6dc863b",
+        "input_hash": "d55c70c5fa367ae5e6556b85580da79e030029e3419da1b35cfad90b3171d2fb",
+        "admitted_at": "2026-11-12T16:52:38.202451Z"
+      },
+      "response": {
+        "schema": "conversation.intake-result.v2",
+        "status": "selected",
+        "intake": {
+          "epoch": "0ebcce1c-a264-4418-bffe-b1c28b360280",
+          "owner_id": "774e11bb-219f-4ab4-8bf2-c902f6c20846",
+          "intake_id": "8f687728-d3db-451c-8578-d173d6dc863b",
+          "input_hash": "d55c70c5fa367ae5e6556b85580da79e030029e3419da1b35cfad90b3171d2fb",
+          "admitted_at": "2026-11-12T16:52:38.202451Z"
+        },
+        "selection": {
+          "source_hash": "7b6cc13a2d09d34a36329c60ff44d37f62d2c30f20d5987b67b123ebca63714f",
+          "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7",
+          "selected_at": "2026-11-12T16:52:38.323433Z",
+          "media_projection": {
+            "media": {
+              "kind": "conversation_photo",
+              "asset_id": "e498bf98-c594-42f3-a2c7-72105f7e8b4d",
+              "owner_id": "774e11bb-219f-4ab4-8bf2-c902f6c20846",
+              "updated_at": "2026-11-12T16:52:38.116121Z",
+              "processed_at": "2026-11-12T16:52:38.199729Z",
+              "processing_hash": "8687f4e4fbff9a216232b0cfb36f0f2b1d773461c40f964f4a3102e997717b7d"
+            },
+            "origin": {
+              "epoch": "0ebcce1c-a264-4418-bffe-b1c28b360280",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "899c301b-e86a-4870-b004-5ad3643219e2",
+              "intake_id": "8f687728-d3db-451c-8578-d173d6dc863b",
+              "input_hash": "d55c70c5fa367ae5e6556b85580da79e030029e3419da1b35cfad90b3171d2fb",
+              "source_hash": "7b6cc13a2d09d34a36329c60ff44d37f62d2c30f20d5987b67b123ebca63714f",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "494a4ffc9be10f1536eda30e113ebb1e0ac42f9d06301b1acf6d30265cd9bd46"
+          },
+          "kind": "meal.report",
+          "command": {
+            "kind": "meal.report",
+            "epoch": "0ebcce1c-a264-4418-bffe-b1c28b360280",
+            "owner_id": "774e11bb-219f-4ab4-8bf2-c902f6c20846",
+            "command_id": "b0cda37b-4ee2-4841-9845-9d8b282d9198",
+            "input_hash": "494a4ffc9be10f1536eda30e113ebb1e0ac42f9d06301b1acf6d30265cd9bd46",
+            "admitted_at": "2026-11-12T16:52:38.311491Z"
+          }
+        },
+        "result": {
+          "schema": "conversation.meal-command-state.v1",
+          "status": "pending",
+          "owner_id": "774e11bb-219f-4ab4-8bf2-c902f6c20846",
+          "command_id": "b0cda37b-4ee2-4841-9845-9d8b282d9198",
+          "input_hash": "494a4ffc9be10f1536eda30e113ebb1e0ac42f9d06301b1acf6d30265cd9bd46",
+          "epoch": "0ebcce1c-a264-4418-bffe-b1c28b360280"
+        }
+      }
+    },
+    {
+      "label": "ordinary_label_missing_portion",
+      "input": {
+        "intake_protocol": "conversation.intake.v1",
+        "intake_id": "a5a03ef8-ee63-4cc2-92eb-7ed16beeb7c3",
+        "source": {
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "e8fe1ffa-78fa-44af-8c5f-ced66a4f803c"
+        }
+      },
+      "binding": {
+        "epoch": "90158522-5143-408a-b024-479fba3ef8f4",
+        "owner_id": "9c09bab0-1977-4643-a2ed-a1876ff9333f",
+        "intake_id": "a5a03ef8-ee63-4cc2-92eb-7ed16beeb7c3",
+        "input_hash": "c06b06dfe31414ba604b2e7e0b348e36b771affb9200e748ff15ab98a76d9ade",
+        "admitted_at": "2026-11-12T16:52:38.381014Z"
+      },
+      "response": {
+        "schema": "conversation.intake-result.v2",
+        "status": "selected",
+        "intake": {
+          "epoch": "90158522-5143-408a-b024-479fba3ef8f4",
+          "owner_id": "9c09bab0-1977-4643-a2ed-a1876ff9333f",
+          "intake_id": "a5a03ef8-ee63-4cc2-92eb-7ed16beeb7c3",
+          "input_hash": "c06b06dfe31414ba604b2e7e0b348e36b771affb9200e748ff15ab98a76d9ade",
+          "admitted_at": "2026-11-12T16:52:38.381014Z"
+        },
+        "selection": {
+          "source_hash": "268d489dedc65e2360ea2904b070e316420db8cb4ce5c80129888fbd7e22298f",
+          "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7",
+          "selected_at": "2026-11-12T16:52:38.450279Z",
+          "media_projection": {
+            "media": {
+              "kind": "conversation_photo",
+              "asset_id": "e8fe1ffa-78fa-44af-8c5f-ced66a4f803c",
+              "owner_id": "9c09bab0-1977-4643-a2ed-a1876ff9333f",
+              "updated_at": "2026-11-12T16:52:38.116121Z",
+              "processed_at": "2026-11-12T16:52:38.380631Z",
+              "processing_hash": "12409c0c8a643fde668038e89e981e5914036e1b75f99874cd35839286cc663a"
+            },
+            "origin": {
+              "epoch": "90158522-5143-408a-b024-479fba3ef8f4",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "94a3fbae-961b-460b-9e6d-d6cb5a8ede6a",
+              "intake_id": "a5a03ef8-ee63-4cc2-92eb-7ed16beeb7c3",
+              "input_hash": "c06b06dfe31414ba604b2e7e0b348e36b771affb9200e748ff15ab98a76d9ade",
+              "source_hash": "268d489dedc65e2360ea2904b070e316420db8cb4ce5c80129888fbd7e22298f",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "8ad6781ea7590c7ebb1d0a7488e0e2047367e4e281a78d9c1234428f5f618f16"
+          },
+          "kind": "meal.report",
+          "command": {
+            "kind": "meal.report",
+            "epoch": "90158522-5143-408a-b024-479fba3ef8f4",
+            "owner_id": "9c09bab0-1977-4643-a2ed-a1876ff9333f",
+            "command_id": "a353e850-85a5-4455-9953-7af10ceeae12",
+            "input_hash": "8ad6781ea7590c7ebb1d0a7488e0e2047367e4e281a78d9c1234428f5f618f16",
+            "admitted_at": "2026-11-12T16:52:38.438508Z"
+          }
+        },
+        "result": {
+          "schema": "conversation.meal-command-state.v1",
+          "status": "pending",
+          "owner_id": "9c09bab0-1977-4643-a2ed-a1876ff9333f",
+          "command_id": "a353e850-85a5-4455-9953-7af10ceeae12",
+          "input_hash": "8ad6781ea7590c7ebb1d0a7488e0e2047367e4e281a78d9c1234428f5f618f16",
+          "epoch": "90158522-5143-408a-b024-479fba3ef8f4"
+        }
+      }
+    },
+    {
+      "label": "ordinary_equipment_not_performed",
+      "input": {
+        "intake_protocol": "conversation.intake.v1",
+        "intake_id": "b5a87a32-c549-48b3-9f9b-ee5a8939c8a4",
+        "source": {
+          "channel": "media",
+          "user_action": "report_actual_record",
+          "media_asset_id": "1a7e061a-6d28-4f53-9fa5-c175f67334f8"
+        }
+      },
+      "binding": {
+        "epoch": "25d28ec0-a309-4954-99b4-a71018987f60",
+        "owner_id": "46f43620-9549-4afd-80ed-260b44118e18",
+        "intake_id": "b5a87a32-c549-48b3-9f9b-ee5a8939c8a4",
+        "input_hash": "a8ca18d299b8f8afbd89ff037f078416200fabcbbd14de00fd673fe0f02fb517",
+        "admitted_at": "2026-11-12T16:52:38.491519Z"
+      },
+      "response": {
+        "schema": "conversation.intake-result.v2",
+        "status": "selected",
+        "intake": {
+          "epoch": "25d28ec0-a309-4954-99b4-a71018987f60",
+          "owner_id": "46f43620-9549-4afd-80ed-260b44118e18",
+          "intake_id": "b5a87a32-c549-48b3-9f9b-ee5a8939c8a4",
+          "input_hash": "a8ca18d299b8f8afbd89ff037f078416200fabcbbd14de00fd673fe0f02fb517",
+          "admitted_at": "2026-11-12T16:52:38.491519Z"
+        },
+        "selection": {
+          "source_hash": "8b0abcb829bb3848c7a5a64cf8ccbb9f63e40e7dc6a761f12645ae7f2069ba1b",
+          "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a",
+          "selected_at": "2026-11-12T16:52:38.558990Z",
+          "media_projection": {
+            "media": {
+              "kind": "conversation_photo",
+              "asset_id": "1a7e061a-6d28-4f53-9fa5-c175f67334f8",
+              "owner_id": "46f43620-9549-4afd-80ed-260b44118e18",
+              "updated_at": "2026-11-12T16:52:38.116121Z",
+              "processed_at": "2026-11-12T16:52:38.491154Z",
+              "processing_hash": "4d286e0c860d6d166fe79bfe7e6aa7c3650e54e2dd8eb4aff52044653a772f9f"
+            },
+            "origin": {
+              "epoch": "25d28ec0-a309-4954-99b4-a71018987f60",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "f5be55d2-91aa-4499-b826-d550f1ed2afd",
+              "intake_id": "b5a87a32-c549-48b3-9f9b-ee5a8939c8a4",
+              "input_hash": "a8ca18d299b8f8afbd89ff037f078416200fabcbbd14de00fd673fe0f02fb517",
+              "source_hash": "8b0abcb829bb3848c7a5a64cf8ccbb9f63e40e7dc6a761f12645ae7f2069ba1b",
+              "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "0c70ab35fa233f04e6523eef820556cf7ba7003464d7c6429a7740245b3bca7f"
+          },
+          "kind": "workout.report",
+          "command": {
+            "kind": "workout.report",
+            "epoch": "25d28ec0-a309-4954-99b4-a71018987f60",
+            "owner_id": "46f43620-9549-4afd-80ed-260b44118e18",
+            "command_id": "c01183f6-5af0-4e7c-8956-2e93aaa0bef6",
+            "input_hash": "0c70ab35fa233f04e6523eef820556cf7ba7003464d7c6429a7740245b3bca7f",
+            "admitted_at": "2026-11-12T16:52:38.547537Z"
+          }
+        },
+        "result": {
+          "schema": "conversation.workout-command-state.v1",
+          "status": "pending",
+          "owner_id": "46f43620-9549-4afd-80ed-260b44118e18",
+          "command_id": "c01183f6-5af0-4e7c-8956-2e93aaa0bef6",
+          "input_hash": "0c70ab35fa233f04e6523eef820556cf7ba7003464d7c6429a7740245b3bca7f",
+          "epoch": "25d28ec0-a309-4954-99b4-a71018987f60",
+          "reason": "writer_reconciliation_required"
+        }
+      }
+    }
+  ]
+}

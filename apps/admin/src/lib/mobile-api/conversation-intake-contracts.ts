@@ -83,7 +83,7 @@ const mediaSchema = z
   .object({
     asset_id: workoutUUID,
     owner_id: workoutUUID,
-    kind: z.enum(['meal_photo', 'audio_note', 'gym_photo']),
+    kind: z.enum(['meal_photo', 'audio_note', 'gym_photo', 'conversation_photo']),
     status: z.literal('processed'),
     processed_at: workoutClock,
     updated_at: workoutClock,
@@ -324,8 +324,8 @@ export function parseConversationIntakeSelection(
         at(p.media.processed_at) <= at(value.selected_at) &&
         at(p.media.updated_at) <= at(value.selected_at) &&
         (typed.command.kind === 'meal.report'
-          ? ['meal_photo', 'audio_note'].includes(p.media.kind)
-          : ['gym_photo', 'audio_note'].includes(p.media.kind)),
+          ? ['meal_photo', 'audio_note', 'conversation_photo'].includes(p.media.kind)
+          : ['gym_photo', 'audio_note', 'conversation_photo'].includes(p.media.kind)),
     )
   }
   if (typed.command.kind === 'meal.report')

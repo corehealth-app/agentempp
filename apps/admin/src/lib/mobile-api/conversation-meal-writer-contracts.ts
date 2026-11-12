@@ -13,6 +13,7 @@ import {
   conversationIntakeMediaProjectionSchema,
 } from './conversation-intake-media-origin'
 import type { CapturedConversationMealSource } from './conversation-meal-source'
+import { conversationMealMediaAnalysis } from './conversation-photo-observations'
 import { MobileApiError } from './http'
 
 const uuid = z
@@ -56,7 +57,7 @@ const sourceUnit = z.enum(['command_text', 'media_caption', 'media_transcript', 
 const mediaSchema = z
   .object({
     asset_id: uuid,
-    kind: z.enum(['meal_photo', 'audio_note']),
+    kind: z.enum(['meal_photo', 'audio_note', 'conversation_photo']),
     status: z.literal('processed'),
     processed_at: conversationWriterClock,
     updated_at: conversationWriterClock,
@@ -275,7 +276,8 @@ export function parseConversationMealStoredSource(
     )
       return conversationWriterUnavailable()
     if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, c)
-    else if (c.schema !== 'conversation.meal-source.v1') return conversationWriterUnavailable()
+    else if (c.schema !== 'conversation.meal-source.v1' || c.media?.kind === 'conversation_photo')
+      return conversationWriterUnavailable()
     if (command.command.source.channel === 'text') {
       if (
         !isDeepStrictEqual(c.source_units, ['command_text']) ||
@@ -289,7 +291,7 @@ export function parseConversationMealStoredSource(
         !m ||
         m.asset_id !== command.command.source.media_asset_id ||
         m.status !== 'processed' ||
-        !['meal_photo', 'audio_note'].includes(String(m.kind))
+        !['meal_photo', 'audio_note', 'conversation_photo'].includes(String(m.kind))
       )
         return conversationWriterUnavailable()
       const caption =
@@ -312,7 +314,14 @@ export function parseConversationMealStoredSource(
       ) {
         if (m.context_text !== null) units.push('media_context')
       }
-      units.push(m.kind === 'audio_note' ? 'media_transcript' : 'vision_items')
+      if (m.kind === 'audio_note') units.push('media_transcript')
+      else if (m.kind === 'conversation_photo') {
+        const analysis = conversationMealMediaAnalysis(m)
+        if (!Array.isArray(analysis.items) || analysis.items.length > 30)
+          return conversationWriterUnavailable()
+        if (analysis.items.length > 0) units.push('vision_items')
+        else if (units.length === 0) return conversationWriterUnavailable()
+      } else units.push('vision_items')
       if (
         !isDeepStrictEqual(c.source_units, units) ||
         !isDeepStrictEqual(c.source_evidence, {

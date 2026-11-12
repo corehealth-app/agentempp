@@ -68,8 +68,10 @@ function setup(content = JSON.stringify(decision)) {
   return { complete, provider, router, diagnostic }
 }
 function mediaSource(
-  kind: 'audio_note' | 'meal_photo' | 'gym_photo',
+  kind: 'audio_note' | 'meal_photo' | 'gym_photo' | 'conversation_photo',
   result: Record<string, unknown>,
+  caption: string | null = 'O que acha desta refeição?',
+  context: string | null = 'Ainda não consumi.',
 ) {
   const input = bindConversationIntake(owner, `cintake1:${id}`, {
       intake_protocol: 'conversation.intake.v1',
@@ -78,7 +80,7 @@ function mediaSource(
         channel: 'media',
         media_asset_id: 'c3cc0000-0000-4000-8000-000000000053',
         user_action: 'report_actual_record',
-        caption: 'O que acha desta refeição?',
+        ...(caption === null ? {} : { caption }),
       },
     }),
     binding = {
@@ -104,7 +106,7 @@ function mediaSource(
         status: 'processed',
         processed_at: '2026-11-05T12:59:59Z',
         updated_at: '2026-11-05T12:59:59Z',
-        context_text: 'Ainda não consumi.',
+        context_text: context,
         processing_result: result,
       },
     },
@@ -461,5 +463,124 @@ describe('safe routing failure diagnostics without changing the durable outcome'
     } finally {
       log.mockRestore()
     }
+  })
+})
+
+describe('ordinary photos retain their validated classification and literal discourse', () => {
+  it.each([
+    'meal',
+    'equipment',
+  ] as const)('routes %s observations without retagging the asset', async (classification) => {
+    const analysis =
+      classification === 'meal'
+        ? { type: 'meal', items: [{ name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 }] }
+        : {
+            type: 'equipment',
+            equipment: ['esteira'],
+            location: 'academia_completa',
+            confidence: 0.9,
+          }
+    const f = setup(),
+      source = mediaSource('conversation_photo', {
+        schema: 'conversation.image-result.v1',
+        status: 'ready',
+        classification,
+        analysis,
+      })
+    await f.router.route(source)
+    const sent = JSON.parse(String(f.complete.mock.calls[0]?.[0].messages[0]?.content))
+    expect(sent.media_kind).toBe('conversation_photo')
+    expect(sent.sources).toContainEqual({
+      unit: classification === 'meal' ? 'vision_meal' : 'vision_equipment',
+      visual: analysis,
+    })
+    expect(sent.sources).toContainEqual({
+      unit: 'media_caption',
+      text: 'O que acha desta refeição?',
+    })
+    expect(sent.sources).toContainEqual({ unit: 'media_context', text: 'Ainda não consumi.' })
+  })
+  it.each([
+    'body',
+    'scale',
+    'other',
+    'unknown',
+  ])('does not request model interpretation of unsupported %s pixels', async (classification) => {
+    const f = setup(),
+      result = await f.router.route(
+        mediaSource('conversation_photo', {
+          schema: 'conversation.image-result.v1',
+          status: 'unsupported',
+          classification,
+          reason: 'image_not_supported_for_conversation',
+        }),
+      )
+    expect(result).toMatchObject({
+      kind: 'clarification_required',
+      reason: 'image_not_supported_for_conversation',
+      question: { field: 'description' },
+    })
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+})
+
+describe('reviewed missing ordinary observations preserve sufficient literal reports', () => {
+  const macros = { kcal: null, protein_g: null, carbs_g: null, fat_g: null }
+  it.each([
+    null,
+    '',
+    ' ',
+    'x'.repeat(241),
+  ])('asks for label identity before creating an unusable child (%#)', async (product_name) => {
+    const f = setup(),
+      raw = {
+        schema: 'conversation.image-result.v1',
+        status: 'ready',
+        classification: 'nutrition_label',
+        analysis: {
+          type: 'nutrition_label',
+          product_name,
+          serving_size_g: 30,
+          per_serving: macros,
+          per_100g: macros,
+          confidence: 0.9,
+        },
+      }
+    expect(await f.router.route(mediaSource('conversation_photo', raw, null, null))).toMatchObject({
+      kind: 'clarification_required',
+      reason: 'label_product_required',
+      question: { field: 'description' },
+    })
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+  it('routes a complete caption when the ordinary meal image has no identifiable items', async () => {
+    const f = setup(),
+      raw = {
+        schema: 'conversation.image-result.v1',
+        status: 'ready',
+        classification: 'meal',
+        analysis: { type: 'meal', items: [] },
+      }
+    expect(
+      await f.router.route(mediaSource('conversation_photo', raw, 'Comi arroz 100 g', null)),
+    ).toEqual(decision)
+    expect(f.complete).toHaveBeenCalledOnce()
+    const sent = JSON.parse(String(f.complete.mock.calls[0]?.[0].messages[0]?.content))
+    expect(sent.sources).toContainEqual({ unit: 'media_caption', text: 'Comi arroz 100 g' })
+  })
+  it('asks a specific food question when neither image nor literal text supplies observations', async () => {
+    const f = setup(),
+      raw = {
+        schema: 'conversation.image-result.v1',
+        status: 'ready',
+        classification: 'meal',
+        analysis: { type: 'meal', items: [] },
+      }
+    expect(await f.router.route(mediaSource('conversation_photo', raw, null, null))).toMatchObject({
+      kind: 'clarification_required',
+      reason: 'image_description_required',
+      question: { field: 'description' },
+    })
+    expect(f.complete).not.toHaveBeenCalled()
   })
 })

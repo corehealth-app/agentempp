@@ -328,7 +328,11 @@ export function createConversationMealStoredSourcePorts(
     )
       return refuse()
     if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, context)
-    else if (context.schema !== 'conversation.meal-source.v1') return refuse()
+    else if (
+      context.schema !== 'conversation.meal-source.v1' ||
+      context.media?.kind === 'conversation_photo'
+    )
+      return refuse()
     const asOf = captured.captured_at,
       cutoff = instant(asOf)
     const receipts = new Map<string, ConversationMealSourceReceipt>()

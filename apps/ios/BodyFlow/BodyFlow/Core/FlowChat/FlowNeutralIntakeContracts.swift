@@ -235,7 +235,7 @@ struct FlowNeutralIntakeMediaProjection: Sendable {
     let kind = try media.required("kind").string()
     try neutralRequire(
       media.required("owner_id").uuid() == binding.ownerID
-        && (child.kind == .meal ? ["meal_photo", "audio_note"] : ["gym_photo", "audio_note"])
+        && (child.kind == .meal ? ["meal_photo", "audio_note", "conversation_photo"] : ["gym_photo", "audio_note", "conversation_photo"])
           .contains(kind)
     )
     _ = try media.required("processing_hash").hash()

@@ -159,10 +159,62 @@ function runtimeExactStringRoutes(value: string): string[] {
     .sort()
 }
 
+/** R102 intentionally extends the closed ordinary-purpose observation seam.
+ * Pin every changed runtime source; no legacy provider/worker/writer capability
+ * or physical graph edge is exempted by the complete body certificates. */
+function certifyOrdinaryPhotoSourcesR102(): void {
+  for (const [name, hash] of [
+    [
+      'conversation-intake-contracts.ts',
+      'c37a0d57c17f236aa247925a9f2edbbd5a322789c5149ae19262da61692927c6',
+    ],
+    [
+      'conversation-intake-media-origin.ts',
+      '5ee3e02da419d2763d965b8f951c7a09bbd7bd865fdf84a8260f0ea5e49795da',
+    ],
+    [
+      'conversation-intake-router.ts',
+      '8115a94b482b96f9f97b0a1b054c2765446995c67252b624648b5dee8aa399d7',
+    ],
+    [
+      'conversation-meal-interpretation-contracts.ts',
+      'da551a890a824c75df16d6563920c811b86bf4acc83adfcd142b8cefd0ed588c',
+    ],
+    [
+      'conversation-meal-materialization.ts',
+      '88a501b17a1fa1667d868a76753138ae4941ae0db4e63e602256f00cd265ae7a',
+    ],
+    [
+      'conversation-meal-source.ts',
+      '1fe53d5e5f25a6896c92d3d8c5c1c7efdca8225b1b9ede3c697c856d48f5763e',
+    ],
+    [
+      'conversation-meal-writer-contracts.ts',
+      '6085f9076990de801ec388e36d60563e9a014929642b2bb1ebfd837899400487',
+    ],
+    [
+      'conversation-workout-contracts.ts',
+      '990941bc8761a32e9ab3b0e717adcd63de7dee8eaa067e74916da4d0374c9df4',
+    ],
+    [
+      'conversation-photo-observations.ts',
+      '669909481ebd34f04c2bf423c33029319aa0486b120647cc67f8aed56ce7780f',
+    ],
+  ])
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name ?? '')))
+        .digest('hex'),
+    ).toBe(hash)
+}
+
 // Exact T36 extraction: all16 previously certified module bodies are byte-identical.
 // Default existing-account Auth additionally co-locates the unchanged reply-scope
 // aliases and readonly runtime (previously in reply/edit chunks). No source body
 // or physical route/NFT consumer was discarded by this packaging translation.
+// R102 adds one pure ordinary-photo observation helper to this exact table.
+// Three existing source/interpretation bodies intentionally change; the other16
+// stay byte-identical, and all complete identities/negative controls remain.
 // These bodies include dormant writer adapters; this certificate never declares
 // them absent and never exempts any physical code from the global scans.
 // T40 exposes three existing pure Auth decoders for the request-owned refusal
@@ -172,6 +224,7 @@ function runtimeExactStringRoutes(value: string): string[] {
 // is sealed below; module11098 is newly certified in full, with the other17
 // compiled bodies still byte-identical. No old raw module body is claimed here.
 function certifyNutritionJournalSplitContent(text: string): void {
+  certifyOrdinaryPhotoSourcesR102()
   // T52/R79 extend the report prefix; R82 also permits pure punctuation in `other`.
   // R81 records closed guard reasons; R82 changes only its punctuation predicate.
   // Reversing the R82 compiled predicate restores the R81 module byte-exactly.
@@ -226,7 +279,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         throw new Error('Unexpected nutrition-shared module shape')
       return { id: property.name.getText(source), body: property.initializer.getText(source) }
     }) ?? []
-  expect(bodies, 'certified nutrition-shared module count').toHaveLength(19)
+  expect(bodies, 'certified nutrition-shared module count').toHaveLength(20)
   expect(
     bodies.map(({ id, body }) => `${id}:${createHash('sha256').update(body).digest('hex')}`).sort(),
     'certified nutrition-shared module contents',
@@ -237,17 +290,18 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '93639:ce2fe7a229147bad36167351267198cbd255aa881701566612da47ce193e2e04',
       '49634:fc711f099281a69d5ecf62a254ec8ffcfe202d33a181bcefae7d82d7e7e7dfe6',
       '85685:41deccfd9e90c2b6a6de3cf6e0493c94e9776c8a1bbc1f5fe4ee3bfe76475b1a',
-      '13300:038a23c34b65eb1d040fa3bdf37dc2ca1f9da72a3b4460f16b263cf7b7880ccf',
+      '13300:6447848bbd6a737c168e7027e61dc5c57a12e9881a8104ffbc9829810b07122c',
       '19514:a189839890f820d1a04f8f29b5dd89af51577d935e8af5e7a344cc8a5a9344fd',
       '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
       '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
-      '36693:0c869a1e452f5f2f166dc854005dc68c8113771fe7c761aaeefcdf45f52d42dd',
+      '36693:a67fde03374f03e52ce2cc12031cb0be06174e20443bb57226f2ef986828389c',
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
-      '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
+      '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
       '65556:bc8a85d99b59cacdfaa40f396e9b30a23ac696f60563c519a8c28bff12e3f81b',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
+      '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
       '78013:384b82901395609752c82c968d6bcd54d37d7680cbf4c165b7c8d44d328810d4',
       '89813:4efdc6ad1e8da72c83ac441a24930a99fc63ac573bdebc1ae0564f434615206d',
@@ -300,9 +354,11 @@ function certifyExactSharedTable(
 /** R99 adds opt-in media projection and request-owned fencing. R101 corrects
  * temporary-capability/unselected-original recovery; GET remains read-only.
  * Certify the complete reviewed sources and current executable body. The other
- * three shared modules retain their prior byte-exact pins; no global scan or
+ * two unchanged shared modules retain their byte-exact pins; R102 also
+ * recertifies the ordinary-kind workout codec in full. No global scan or
  * physical consumer assertion is exempted by this certificate. */
-function certifyIntakeMediaBridgeR101(body: string): void {
+function certifyIntakeMediaBridgeR102(body: string): void {
+  certifyOrdinaryPhotoSourcesR102()
   for (const [name, hash] of [
     [
       'conversation-intake-driver.ts',
@@ -327,9 +383,9 @@ function certifyIntakeMediaBridgeR101(body: string): void {
         .digest('hex'),
     ).toBe(hash)
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    'edc7aa83194ad3c443cef165f0b2ccbf64e35438d7d09f6a19c3ee31d48e0b01',
+    'e5a83319c16c8c143001215de4824db60fd1e9b27472edc1593070057d3641d1',
   )
-  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>am,K:()=>ap});')).toBe(true)
+  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>an,K:()=>aq});')).toBe(true)
   for (const marker of [
     'X-Conversation-Media-Provenance',
     'MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED',
@@ -478,14 +534,22 @@ function certifyPhotoPurposeEdgesR62() {
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab'],
-    ['63867', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
+    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
+    ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
-  const rawGeminiR101 = bodies.get('84359') ?? ''
+  const rawGeminiR102 = bodies.get('84359') ?? ''
+  // The R102 reviewed writer now shares the pure observation helper. Webpack
+  // relocates the byte-identical parser to86248; reverse exactly one loader
+  // link to the complete R101 body before retaining every older proof below.
+  expect(rawGeminiR102.split('d=c(86248)')).toHaveLength(2)
+  const rawGeminiR101 = rawGeminiR102.replace('d=c(86248)', 'd=c(63867)')
+  expect(createHash('sha256').update(rawGeminiR101).digest('hex')).toBe(
+    '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab',
+  )
   // R101 restores the exact R98 packaging (parser63867). Normalize its one
   // loader link to R99, retaining the entire historical proof below.
   expect(rawGeminiR101.split('d=c(63867)')).toHaveLength(2)
@@ -886,20 +950,22 @@ describe('authoritative Mobile API source surface', () => {
     const bodies = certifyExactSharedTable(chunks[0] ?? '', [
         ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-        ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-        ['6535', 'edc7aa83194ad3c443cef165f0b2ccbf64e35438d7d09f6a19c3ee31d48e0b01'],
+        ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
+        ['6535', 'e5a83319c16c8c143001215de4824db60fd1e9b27472edc1593070057d3641d1'],
       ]),
       body = bodies.get('6535') ?? ''
-    expect(() => certifyIntakeMediaBridgeR101(body)).not.toThrow()
+    expect(() => certifyIntakeMediaBridgeR102(body)).not.toThrow()
     for (const changed of [
-      body.replace('o:()=>am,', ''),
-      body.replace('o:()=>am,', 'o:()=>am,x:()=>am,'),
+      body.replace('o:()=>an,', ''),
+      body.replace('o:()=>an,', 'o:()=>an,x:()=>an,'),
       body.replace('MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'),
       body.replace('X-Conversation-Media-Provenance', 'X-Unapproved-Provenance'),
       body.replace('conversation.intake-result.v2', 'conversation.intake-result.v1'),
       body.replace('media_temporarily_unavailable', 'media_projection_required'),
+      body.replace('label_product_required', 'routing_unavailable'),
+      body.replace('image_description_required', 'routing_unavailable'),
     ])
-      expect(() => certifyIntakeMediaBridgeR101(changed)).toThrow()
+      expect(() => certifyIntakeMediaBridgeR102(changed)).toThrow()
   })
   test('distinguishes an exact legacy RPC from its v3 successor and invalidates changed-file cache', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'performe-exact-rpc-')),
@@ -1404,6 +1470,12 @@ describe('authoritative Mobile API source surface', () => {
     expect(() => certifyNutritionJournalSplitContent(text.replace('13300:', '999999:'))).toThrow(
       /certified nutrition-shared module contents/,
     )
+    expect(text.split('quantity_g_estimate:0,confidence:')).toHaveLength(2)
+    expect(() =>
+      certifyNutritionJournalSplitContent(
+        text.replace('quantity_g_estimate:0,confidence:', 'quantity_g_estimate:30,confidence:'),
+      ),
+    ).toThrow(/certified nutrition-shared module contents/)
   })
 
   test('keeps ordinary media validation off the model SDK barrel', () => {
@@ -1419,6 +1491,12 @@ describe('authoritative Mobile API source surface', () => {
       'onboarding/body-photos/[id]/complete',
     ])
       expect(providerRoutes).not.toContain(`/api/mobile/v1/${suffix}/route`)
+  })
+
+  test('keeps ordinary image validation from adding image execution to readonly nutrition or workout routes', () => {
+    const routes = runtimeMarkerRoutes('analyzeConversationImage')
+    for (const route of [nutritionWindowAppPath, ...conversationWorkoutAppPaths])
+      expect(routes).not.toContain(route)
   })
 
   test('keeps the photo-purpose opt-in local to its upload transport', () => {
@@ -1991,7 +2069,9 @@ describe('authoritative Mobile API source surface', () => {
     // R62 qualifies the router's closed failure diagnostics and existing SDK
     // error-class imports against this exact source and complete module body.
     // Independent R59 body: 1ad24d6589b874c420dbfc09b405b86c331378f98a646adf764ea0e8bf60a855.
-    // The other three modules stay byte-exact; no physical/global scan changes.
+    // R102 adds ordinary classified observations and refuses unsupported images.
+    // Router/workout codec bodies are recertified in full; two other shared
+    // modules remain byte-exact. No physical/global scan is bypassed.
     expect(
       createHash('sha256')
         .update(
@@ -2000,14 +2080,14 @@ describe('authoritative Mobile API source surface', () => {
           ),
         )
         .digest('hex'),
-    ).toBe('59468451392c18de6c80d7e4820d1bdb43eee9f5e9043996ecd5e70c8226a044')
+    ).toBe('8115a94b482b96f9f97b0a1b054c2765446995c67252b624648b5dee8aa399d7')
     const intakeBodies = certifyExactSharedTable(intakeChunk, [
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-      ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-      ['6535', 'edc7aa83194ad3c443cef165f0b2ccbf64e35438d7d09f6a19c3ee31d48e0b01'],
+      ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
+      ['6535', 'e5a83319c16c8c143001215de4824db60fd1e9b27472edc1593070057d3641d1'],
     ])
-    certifyIntakeMediaBridgeR101(intakeBodies.get('6535') ?? '')
+    certifyIntakeMediaBridgeR102(intakeBodies.get('6535') ?? '')
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.
     certifySharedModule(
@@ -2134,9 +2214,22 @@ describe('authoritative Mobile API source surface', () => {
       [journalRoute, 125 + 1],
       ...editRoutes.map((route) => [route, 124 + 1] as const),
       ...replyRoutes.map((route) => [route, 123 + 1] as const),
-      ...workoutRoutes.map((route) => [route, 117] as const),
+      ...workoutRoutes.map((route) => [route, 118] as const),
       ...intakeRoutes.map((route) => [route, route === originsRoute ? 125 + 1 : 124 + 1] as const),
     ])
+    // R102 adds only the providers package manifest on these four physical
+    // traces through the pure image-result leaf. Pin it and independently keep
+    // image execution off these routes; no extra JS/worker boundary is exempted.
+    const ordinaryManifest = realpathSync(resolve(appRoot, '../../packages/providers/package.json'))
+    expect(createHash('sha256').update(readFileSync(ordinaryManifest)).digest('hex')).toBe(
+      '705df5b7b1aec5addc632e8caf0d013bd7f7d9c7a0376ce588148140d6cc7c98',
+    )
+    for (const route of [...workoutRoutes, nutritionWindowAppPath]) {
+      expect(tracedTargets(route).filter((target) => target === ordinaryManifest)).toEqual([
+        ordinaryManifest,
+      ])
+      expect(runtimeMarkerRoutes('analyzeConversationImage')).not.toContain(route)
+    }
     expect([...currentCounts.keys()].sort()).toEqual(commandRoutes)
     for (const [route, count] of currentCounts)
       expect(tracedTargets(route), route).toHaveLength(count)
@@ -2169,7 +2262,7 @@ describe('authoritative Mobile API source surface', () => {
       [...allRoutes, webhookRoute].reduce((sum, route) => sum + tracedTargets(route).length, 0) +
         absorbedReferences(allRoutes),
     ).toBe(8202 + 16 + 104)
-    expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(115)
+    expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(116)
     // T48 extracts the three unchanged read-page modules certified above into
     // one new regular file, reached exactly once by each of the two readers.
     // Preserve the complete pre-T48 totals and account only for those two edges.
@@ -2183,9 +2276,9 @@ describe('authoritative Mobile API source surface', () => {
         122 +
         3 * 123 +
         2 * 122 +
-        3 * 117 +
+        3 * 118 +
         3 * 123 +
-        115 +
+        116 +
         28 +
         1 +
         2 +

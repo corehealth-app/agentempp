@@ -122,7 +122,7 @@ const mediaSchema = z
   .object({
     asset_id: workoutUUID,
     owner_id: workoutUUID,
-    kind: z.enum(['audio_note', 'gym_photo']),
+    kind: z.enum(['audio_note', 'gym_photo', 'conversation_photo']),
     status: z.literal('processed'),
     processed_at: workoutClock,
     updated_at: workoutClock,
@@ -219,7 +219,7 @@ export function parseConversationWorkoutSource(
   )
     throw new Error('Workout source identity unavailable')
   if ('intake_origin' in command.command) assertConversationIntakeMediaCapture(command, c)
-  else if (c.schema !== 'conversation.workout-source.v1')
+  else if (c.schema !== 'conversation.workout-source.v1' || c.media?.kind === 'conversation_photo')
     throw new Error('Changed workout source version')
   const sources: { unit: WorkoutSourceUnit; text: string }[] = []
   if (command.command.source.channel === 'text') {

@@ -356,6 +356,7 @@ const photoPurposeRoutesR59 = [
   '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/route',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/meal/route',
+  '/api/mobile/v1/conversation/meal-commands/[commandId]/origin/route',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/route',
   '/api/mobile/v1/conversation/meal-commands/route',
   '/api/mobile/v1/conversation/session/route',
@@ -436,6 +437,7 @@ function certifyStructuredMealHelperT51() {
     '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/reconcile/route',
     '/api/mobile/v1/conversation/meal-commands/[commandId]/edits/[operationId]/route',
     '/api/mobile/v1/conversation/meal-commands/[commandId]/meal/route',
+    '/api/mobile/v1/conversation/meal-commands/[commandId]/origin/route',
     '/api/mobile/v1/conversation/meal-commands/[commandId]/route',
     '/api/mobile/v1/conversation/meal-commands/route',
     '/api/mobile/v1/conversation/session/route',
@@ -864,16 +866,23 @@ describe('authoritative Mobile API source surface', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
-  test('keeps the additive 91-route manifest and exact prior88 and prior85 export streams', () => {
+  test('keeps the additive 92-route manifest and exact prior88 and prior85 export streams', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(91)
-    expect(hash).toBe('161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7')
-    const beforeOrigins = records.map((record) =>
+    expect(records).toHaveLength(92)
+    expect(hash).toBe('d59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152')
+    const beforeLinked = records.filter(
+      (record) => record.path !== 'conversation/meal-commands/[commandId]/origin/route.ts',
+    )
+    expect(beforeLinked).toHaveLength(91)
+    expect(hashRecords(beforeLinked)).toBe(
+      '161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7',
+    )
+    const beforeOrigins = beforeLinked.map((record) =>
       record.path === 'conversation/intakes/route.ts'
         ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
         : record,
@@ -1179,21 +1188,27 @@ describe('authoritative Mobile API source surface', () => {
     console.info(`BUILD_MIDDLEWARE_COUNT=${surface.middlewareEntries.length}`)
     console.info(`BUILD_SERVER_ACTION_REFERENCE_COUNT=${surface.serverActionReferences.length}`)
 
-    expect(surface.routePaths).toHaveLength(92)
+    expect(surface.routePaths).toHaveLength(93)
     expect(surface.routePathHash).toBe(
-      '797033352a07011df4c7b3a15092077e086562815d39ad40aa5ac529f9d58e52',
+      'e5d968718a4e2130b59bea56f3e9050d1cdbcc099b74bed5da94825c0308858e',
     )
-    expect(surface.mobileRoutePaths).toHaveLength(91)
+    expect(surface.mobileRoutePaths).toHaveLength(92)
     expect(surface.mobileRoutePathHash).toBe(
-      '619cb940b40c0218985aa4da7869fd87d00ce703c5ef80cb6a5805ebac789156',
+      'e040081491bac0281bba6c8694893386c0d41958ed70767fea712d16212d5e54',
     )
     expect(surface.mobileRoutePaths.filter((path) => conversationIntakeURLs.has(path))).toEqual(
       [...conversationIntakeURLs].sort(),
     )
     const prior88Mobile = surface.mobileRoutePaths.filter(
-        (path) => !conversationIntakeURLs.has(path),
+        (path) =>
+          path !== '/api/mobile/v1/conversation/meal-commands/[commandId]/origin' &&
+          !conversationIntakeURLs.has(path),
       ),
-      prior89All = surface.routePaths.filter((path) => !conversationIntakeURLs.has(path))
+      prior89All = surface.routePaths.filter(
+        (path) =>
+          path !== '/api/mobile/v1/conversation/meal-commands/[commandId]/origin' &&
+          !conversationIntakeURLs.has(path),
+      )
     expect(prior88Mobile).toHaveLength(88)
     expect(
       createHash('sha256')
@@ -1502,8 +1517,8 @@ describe('authoritative Mobile API source surface', () => {
         })
         expect(result.error).toBeUndefined()
         expect(result.status, result.stderr).toBe(extraRoute ? 1 : 0)
-        expect(result.stdout).toContain(`BUILD_MOBILE_ROUTE_PATH_COUNT=${extraRoute ? 92 : 91}`)
-        expect(result.stdout).toContain(`BUILD_ROUTE_PATH_COUNT=${extraRoute ? 93 : 92}`)
+        expect(result.stdout).toContain(`BUILD_MOBILE_ROUTE_PATH_COUNT=${extraRoute ? 93 : 92}`)
+        expect(result.stdout).toContain(`BUILD_ROUTE_PATH_COUNT=${extraRoute ? 94 : 93}`)
         if (extraRoute) {
           expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR88_MOBILE_ROUTE_COUNT:89')
           expect(result.stderr).toContain('BUILD_SURFACE_ERROR=PRIOR89_ALL_ROUTE_COUNT:90')
@@ -1532,10 +1547,10 @@ describe('authoritative Mobile API source surface', () => {
           expect(result.stdout).toContain('BUILD_PRIOR84_MOBILE_ROUTE_PATH_COUNT=84')
           expect(result.stdout).toContain('BUILD_PRIOR85_ALL_ROUTE_PATH_COUNT=85')
           expect(result.stdout).toContain(
-            'BUILD_MOBILE_ROUTE_PATH_STREAM_SHA256=619cb940b40c0218985aa4da7869fd87d00ce703c5ef80cb6a5805ebac789156',
+            'BUILD_MOBILE_ROUTE_PATH_STREAM_SHA256=e040081491bac0281bba6c8694893386c0d41958ed70767fea712d16212d5e54',
           )
           expect(result.stdout).toContain(
-            'BUILD_ROUTE_PATH_STREAM_SHA256=797033352a07011df4c7b3a15092077e086562815d39ad40aa5ac529f9d58e52',
+            'BUILD_ROUTE_PATH_STREAM_SHA256=e5d968718a4e2130b59bea56f3e9050d1cdbcc099b74bed5da94825c0308858e',
           )
         }
       } finally {
@@ -1608,7 +1623,7 @@ describe('authoritative Mobile API source surface', () => {
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(92)
+    expect(Object.keys(appPaths)).toHaveLength(93)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -1738,13 +1753,14 @@ describe('authoritative Mobile API source surface', () => {
     const currentMobileRoutes = allBuildRoutes.filter((route) =>
       route.startsWith('/api/mobile/v1/'),
     )
-    expect(currentMobileRoutes).toHaveLength(91)
+    expect(currentMobileRoutes).toHaveLength(92)
     expect(
       currentMobileRoutes
         .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
         .sort(),
     ).toEqual(
       [
+        '/api/mobile/v1/conversation/meal-commands/[commandId]/origin/route',
         ...conversationWorkoutAppPaths,
         ...conversationIntakeAppPaths,
         ...conversationReadEditAdditions.map(
@@ -1854,16 +1870,23 @@ describe('authoritative Mobile API source surface', () => {
     // Current conversation closure, certified physically in this actual build.
     // Historical meal counts are retained with only the explicitly qualified
     // extraction1098 and three new common2279 edges accounted for below.
+    const linkedOriginRoute = '/api/mobile/v1/conversation/meal-commands/[commandId]/origin/route'
     const commandRoutes = currentMobileRoutes
         .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
         .sort(),
       historicalMealCommandRoutes = commandRoutes.filter(
         (route) =>
-          !conversationWorkoutAppPaths.has(route) && !conversationIntakeAppPaths.has(route),
+          route !== linkedOriginRoute &&
+          !conversationWorkoutAppPaths.has(route) &&
+          !conversationIntakeAppPaths.has(route),
       ),
       workoutRoutes = [...conversationWorkoutAppPaths].sort(),
       intakeRoutes = [...conversationIntakeAppPaths].sort(),
-      mealCommandConsumers = [...historicalMealCommandRoutes, ...intakeRoutes].sort(),
+      mealCommandConsumers = [
+        ...historicalMealCommandRoutes,
+        ...intakeRoutes,
+        linkedOriginRoute,
+      ].sort(),
       workoutCommandConsumers = [...workoutRoutes, ...intakeRoutes].sort(),
       journalRoute = '/api/mobile/v1/conversation/journal/route',
       editRoutes = conversationReadEditAdditions
@@ -1878,7 +1901,7 @@ describe('authoritative Mobile API source surface', () => {
         '/api/mobile/v1/conversation/meal-commands/route',
         '/api/mobile/v1/conversation/session/route',
       ].sort()
-    expect(commandRoutes).toHaveLength(15)
+    expect(commandRoutes).toHaveLength(16)
     expect(historicalMealCommandRoutes).toEqual(
       [...rootRoutes, journalRoute, ...editRoutes, ...replyRoutes].sort(),
     )
@@ -2067,6 +2090,7 @@ describe('authoritative Mobile API source surface', () => {
         route,
       ).toHaveLength(count)
     const currentCounts = new Map([
+      [linkedOriginRoute, 123],
       ...rootRoutes.map((route) => [route, 122 + 1] as const),
       [journalRoute, 125 + 1],
       ...editRoutes.map((route) => [route, 124 + 1] as const),
@@ -2126,10 +2150,11 @@ describe('authoritative Mobile API source surface', () => {
         28 +
         1 +
         2 +
-        12,
+        12 +
+        123, // R93: exactly the new read-only origin route NFT edges.
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1)
-    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1)
+    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),

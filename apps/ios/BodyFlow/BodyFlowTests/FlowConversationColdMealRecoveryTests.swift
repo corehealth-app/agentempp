@@ -575,12 +575,17 @@ private actor ColdMealEditUnitServer {
     #expect(operation.expectedVersion == current["expected_version"] as? String)
     #expect(items.count == 1 && items[0].quantityG == 100)
     let next = "10000000-0000-4000-8000-000000000081"
+    let clock = ISO8601DateFormatter()
+    clock.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let observed = try #require(clock.date(from: value["observed_at"] as! String))
+    let appliedAt = clock.string(from: observed.addingTimeInterval(60))
     let effect: [String: Any] = [
       "schema": "conversation.meal-edit-effect-public.v1", "owner_id": value["owner_id"]!,
       "command_id": value["command_id"]!, "operation_id": id.uuidString.lowercased(),
       "input_hash": operation.operationInputHash, "kind": "saved", "revision": 1,
-      "applied_at": "2026-11-04T12:01:00.123456Z",
-      "undo_expires_at": "2026-11-04T12:06:00.123456Z", "target_operation_id": NSNull(),
+      "applied_at": appliedAt,
+      "undo_expires_at": clock.string(from: observed.addingTimeInterval(360)),
+      "target_operation_id": NSNull(),
       "removed_item_ids": [recordID.uuidString.lowercased()], "new_item_ids": [next],
       "next_record_id": next,
     ]
@@ -598,7 +603,7 @@ private actor ColdMealEditUnitServer {
     value["current"] = current
     value["revision"] = 1
     value["last_operation"] = effect
-    value["observed_at"] = "2026-11-04T12:02:00.000000Z"
+    value["observed_at"] = clock.string(from: observed.addingTimeInterval(120))
     value["actions"] = [
       "save": ["allowed": true],
       "undo_registration": ["allowed": false, "reason": "version_changed"],
@@ -613,5 +618,293 @@ private actor ColdMealEditUnitServer {
       "epoch": value["epoch"]!,
       "receipt": effect,
     ])
+  }
+}
+
+@MainActor @Suite("Cold linked meals keep genuine clarification origins", .serialized)
+struct FlowConversationColdLinkedMealRecoveryTests {
+  @Test(arguments: ["wrong-protocol", "cached"])
+  func originRequiresItsOwnUncachedResponseProtocol(_ attack: String) async throws {
+    let f = try await ColdLinkedMealFixture()
+    defer { f.disk.remove() }
+    await f.install(
+      originProtocol: attack == "wrong-protocol" ? "meal-command-v1" : "meal-linked-origin-v1",
+      cacheControl: attack == "cached" ? "public" : "no-store")
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    #expect(session.model.groupUnavailable(commandID: f.commandID))
+    #expect(session.model.currentGroup(commandID: f.commandID) == nil)
+    #expect(
+      await f.http.stub.requests.filter { $0.url?.path.hasSuffix("/origin") == true }.count == 1)
+    #expect(await f.http.stub.requests.allSatisfy { $0.url?.path.hasSuffix("/meal") != true })
+    await session.close()
+  }
+  @Test func closureDuringOriginReadCannotPublishEditingFactsOrStartAGroupRead() async throws {
+    let f = try await ColdLinkedMealFixture()
+    defer { f.disk.remove() }
+    let barrier = ConversationControllerBarrier()
+    await f.install(barrier: barrier)
+    let session = try await f.open()
+    await session.model.loadHistory()
+    let task = Task { await session.model.loadCurrentGroup(commandID: f.commandID) }
+    #expect(await barrier.waitEnteredOrFinished())
+    await session.close()
+    await barrier.release()
+    await task.value
+    #expect(session.model.currentGroup(commandID: f.commandID) == nil)
+    #expect(session.model.mealEditActions(commandID: f.commandID) == nil)
+    #expect(await f.http.stub.requests.allSatisfy { $0.url?.path.hasSuffix("/meal") != true })
+  }
+  @Test func reopeningRecoversLinkedOriginBeforeGroupWithoutFabricatingAnAcknowledgement()
+    async throws
+  {
+    let f = try await ColdLinkedMealFixture()
+    defer { f.disk.remove() }
+    let session = try await f.open()
+    await session.model.loadHistory()
+    let row = try #require(session.model.unifiedRows.first)
+    #expect(session.model.unifiedMealDetailsCommandID(eventID: row.eventID) == f.commandID)
+    #expect(session.model.mealEditActions(commandID: f.commandID) == nil)
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    let group = try #require(session.model.currentGroup(commandID: f.commandID))
+    #expect(group.originalReceipt.linked?.commandID == f.commandID)
+    #expect(session.model.mealEditActions(commandID: f.commandID) != nil)
+    #expect(session.model.savedRows.isEmpty && session.model.savedEffectRevision == 0)
+    let reads = await f.http.stub.requests.filter {
+      $0.url?.path.hasSuffix("/origin") == true || $0.url?.path.hasSuffix("/meal") == true
+    }
+    #expect(reads.count == 2 && reads[0].url?.path.hasSuffix("/origin") == true)
+    #expect(reads[0].value(forHTTPHeaderField: "X-Conversation-Input-Hash") == nil)
+    #expect(reads.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+    await session.close()
+  }
+  @Test(arguments: [
+    "owner_id", "epoch", "parent_decision_hash", "registration_id", "effect_version",
+    "parent_command_id", "private",
+  ])
+  func foreignOrContradictoryLinkedOriginDoesNotGrantEditing(_ field: String) async throws {
+    let f = try await ColdLinkedMealFixture()
+    defer { f.disk.remove() }
+    var origin = f.origin
+    switch field {
+    case "owner_id", "epoch": origin[field] = UUID().uuidString.lowercased()
+    case "parent_decision_hash": origin[field] = String(repeating: "a", count: 64)
+    case "private": origin["source"] = ["unsafe": true]
+    default:
+      var receipt = origin["receipt"] as! [String: Any]
+      receipt[field] =
+        field == "effect_version"
+        ? "cmeal1:" + String(repeating: "a", count: 64) : UUID().uuidString.lowercased()
+      origin["receipt"] = receipt
+    }
+    await f.install(origin: try neutralHTTP(origin))
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    #expect(session.model.currentGroup(commandID: f.commandID) == nil)
+    #expect(session.model.mealEditActions(commandID: f.commandID) == nil)
+    #expect(session.model.savedEffectRevision == 0)
+    #expect(
+      await f.http.stub.requests.allSatisfy {
+        $0.httpMethod == "GET" && $0.url?.path.hasSuffix("/meal") != true
+      })
+    #expect(
+      await f.http.stub.requests.filter { $0.url?.path.hasSuffix("/origin") == true }.count == 1)
+    await session.close()
+  }
+  @Test func failedOriginCanBeExplicitlyRetriedWithoutRegisteringAnotherMeal() async throws {
+    let f = try await ColdLinkedMealFixture()
+    defer { f.disk.remove() }
+    await f.install(origin: .failure(503, "unavailable"))
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    #expect(session.model.groupUnavailable(commandID: f.commandID))
+    await f.install()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    #expect(session.model.currentGroup(commandID: f.commandID) != nil)
+    #expect(session.model.savedRows.isEmpty && session.model.savedEffectRevision == 0)
+    #expect(
+      await f.http.stub.requests.filter { $0.url?.path.hasSuffix("/origin") == true }.count == 2)
+    await session.close()
+  }
+  @Test func freshGroupCannotSubstituteAnotherOtherwiseValidOriginalReceipt() async throws {
+    let f = try await ColdLinkedMealFixture()
+    defer { f.disk.remove() }
+    var group = f.group
+    var receipt = group["original_receipt"] as! [String: Any]
+    receipt["consumed_at"] = "2026-11-04T18:15:29.256012Z"
+    group["original_receipt"] = receipt
+    group["registration_undo_expires_at"] = "2026-11-04T18:20:29.256012Z"
+    var current = group["current"] as! [String: Any]
+    var items = current["items"] as! [[String: Any]]
+    items[0]["consumed_at"] = receipt["consumed_at"]
+    current["items"] = items
+    group["current"] = current
+    _ = try ConversationMealGroupSnapshot(data: JSONSerialization.data(withJSONObject: group))
+    await f.install(groupOverride: try neutralHTTP(group))
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    #expect(session.model.currentGroup(commandID: f.commandID) == nil)
+    #expect(session.model.mealEditActions(commandID: f.commandID) == nil)
+    await session.close()
+  }
+  @Test func linkedSaveUsesExistingControllerOnceAndSurvivesAnotherColdOpen() async throws {
+    let f = try await ColdLinkedMealFixture()
+    defer { f.disk.remove() }
+    let server = try ColdMealEditUnitServer(group: JSONSerialization.data(withJSONObject: f.group))
+    await f.install(editingServer: server)
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    let initial = try #require(session.model.currentGroup(commandID: f.commandID))
+    await session.model.beginMealEdit(
+      commandID: f.commandID, itemID: try #require(initial.current?.items.first?.id))
+    let editor = try #require(session.model.mealEditor)
+    #expect(editor.presentation != nil)
+    editor.setQuantityText("100", language: .portugueseBrazil)
+    await editor.save(language: .portugueseBrazil)
+    #expect(editor.lastSaved?.receipt.revision == 1)
+    #expect(session.model.savedRows.isEmpty && session.model.savedEffectRevision == 1)
+    await session.close()
+    let reopened = try await f.open()
+    await reopened.model.loadHistory()
+    await reopened.model.loadCurrentGroup(commandID: f.commandID)
+    let retained = try #require(reopened.model.currentGroup(commandID: f.commandID))
+    #expect(retained.revision == 1 && retained.current?.items.first?.quantityG == 100)
+    #expect(
+      retained.originalReceipt.linked?.registrationID
+        == initial.originalReceipt.linked?.registrationID)
+    #expect(reopened.model.mealEditActions(commandID: f.commandID) != nil)
+    #expect(reopened.model.savedEffectRevision == 0)
+    #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
+    await reopened.close()
+  }
+}
+
+@MainActor private struct ColdLinkedMealFixture {
+  let http: ConversationHTTPFixture
+  let disk: OutboxDiskFixture
+  let vault: ConversationOutboxKeyVault
+  let editVault: ConversationOutboxKeyVault
+  let commandID: UUID
+  let origin: [String: Any]
+  let group: [String: Any]
+  let page: [String: Any]
+  let mealSession: ConversationHTTPReply
+  let intakeSession: ConversationHTTPReply
+  init() async throws {
+    http = try ConversationHTTPFixture()
+    disk = try OutboxDiskFixture()
+    vault = .init(service: "cold-linked-unit", security: OutboxKeychainFake())
+    editVault = .init(
+      service: ConversationMealEditOutboxSession.keychainService, security: OutboxKeychainFake())
+    let lease = await http.lifecycle.leaseForRequest()
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures")
+    let sdk =
+      try JSONSerialization.jsonObject(
+        with: Data(
+          contentsOf: fixtures.appendingPathComponent("ConversationLinkedFeedbackSDKFixtures.json"))
+      ) as! [String: Any]
+    let rootGroup =
+      try JSONSerialization.jsonObject(
+        with: Data(
+          contentsOf: fixtures.appendingPathComponent(
+            "ConversationMealLinkedGroupPublicFixture.json"))) as! [String: Any]
+    group = rootGroup["group"] as! [String: Any]
+    let parent = sdk["parentBinding"] as! [String: Any]
+    let child = sdk["childBinding"] as! [String: Any]
+    let receipt = sdk["receipt"] as! [String: Any]
+    let owner = child["owner_id"]!
+    let epoch = child["epoch"]!
+    let parentID = parent["command_id"] as! String
+    let childID = child["command_id"] as! String
+    commandID = UUID(uuidString: childID)!
+    origin = [
+      "schema": "conversation.meal-linked-origin.v1", "auth_user_id": lease.userID,
+      "owner_id": owner, "epoch": epoch, "observed_at": group["observed_at"]!,
+      "parent_binding": parent, "child_binding": child,
+      "parent_decision_hash": sdk["parentDecisionHash"]!, "receipt": receipt,
+    ]
+    // Synthetic public row assembled from the real qualified binding/receipt golden.
+    var publicPage = try publicJournalV3Pages()[5]
+    publicPage["auth_user_id"] = lease.userID
+    publicPage["owner_id"] = owner
+    publicPage["epoch"] = epoch
+    publicPage["observed_at"] = group["observed_at"]!
+    var row = (publicPage["items"] as! [[String: Any]]).first {
+      $0["kind"] as? String == "fulfillment"
+    }!
+    row["event_id"] = "fulfillment/\(parentID)/\(childID)"
+    row["thread_id"] = parentID
+    row["at"] = receipt["consumed_at"]!
+    row["lineage"] = [
+      "kind": "meal.clarify", "intake_id": NSNull(), "command_id": childID,
+      "parent_command_id": parentID, "origin_epoch": epoch,
+    ]
+    row["outcome"] = [
+      "status": "registered", "feedback": NSNull(),
+      "record": [
+        "kind": "meal", "registration_id": receipt["registration_id"]!,
+        "meal_type": receipt["meal_type"]!, "local_date": receipt["local_date"]!,
+        "log_ids": receipt["log_ids"]!, "effect_version": receipt["effect_version"]!,
+      ],
+    ]
+    publicPage["items"] = [row]
+    page = publicPage
+    _ = try JSONDecoder().decode(
+      ConversationJournalV3PageSnapshot.self, from: JSONSerialization.data(withJSONObject: page))
+    _ = try ConversationMealGroupSnapshot(data: JSONSerialization.data(withJSONObject: group))
+    mealSession = try neutralHTTP([
+      "schema": "conversation.session.v1", "auth_user_id": lease.userID, "owner_id": owner,
+      "epoch": epoch, "observed_at": parent["admitted_at"]!,
+      "meal_command_protocol": "conversation.command.v1",
+    ])
+    intakeSession = try neutralHTTP([
+      "schema": "conversation.intake-session.v1", "auth_user_id": lease.userID, "owner_id": owner,
+      "epoch": epoch, "observed_at": parent["admitted_at"]!,
+      "intake_protocol": "conversation.intake.v1",
+    ])
+    await install()
+  }
+  func install(
+    origin: ConversationHTTPReply? = nil, groupOverride: ConversationHTTPReply? = nil,
+    editingServer: ColdMealEditUnitServer? = nil, originProtocol: String = "meal-linked-origin-v1",
+    cacheControl: String = "no-store", barrier: ConversationControllerBarrier? = nil
+  ) async {
+    let originReply = origin ?? (try! neutralHTTP(self.origin))
+    let pageReply = try! neutralHTTP(page)
+    let groupReply = groupOverride ?? (try! neutralHTTP(group))
+    let mealSession = self.mealSession
+    let intakeSession = self.intakeSession
+    await http.stub.respond { request, _ in
+      if request.url?.path.hasSuffix("/origin") == true {
+        if let barrier { await barrier.enter() }
+        var reply = originReply
+        reply.headers["X-Conversation-Protocol"] = originProtocol
+        reply.headers["Cache-Control"] = cacheControl
+        return reply
+      }
+      if request.url?.path.hasSuffix("/meal") == true
+        || request.url?.path.contains("/edits/") == true
+      {
+        if let editingServer { return try await editingServer.reply(request) }
+        return groupReply
+      }
+      if request.url?.path.hasSuffix("/journal") == true { return pageReply }
+      if request.url?.path == "/api/mobile/v1/conversation/intakes/session" { return intakeSession }
+      return mealSession
+    }
+  }
+  func open() async throws -> FlowConversationBoundSession {
+    let lease = await http.lifecycle.leaseForRequest()
+    return try await FlowConversationSessionSource(
+      transport: http.transport, lifecycle: http.lifecycle, media: nil, store: disk.store,
+      keyVault: vault, editing: .init(store: .init(directory: disk.directory), keyVault: editVault),
+      neutralIntakeEnabled: true
+    ).open(expectedUserID: lease.userID)
   }
 }

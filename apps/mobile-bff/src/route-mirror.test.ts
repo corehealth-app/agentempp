@@ -40,12 +40,15 @@ const addedIntakeRoutes = new Map([
 const nutritionWindowRoute = 'nutrition/window/route.ts'
 const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
 const originsRoute = 'conversation/intakes/route.ts'
+const linkedOriginRoute = 'conversation/meal-commands/[commandId]/origin/route.ts'
 function beforeOriginsGET(records: RouteRecord[]): RouteRecord[] {
-  return records.map((record) =>
-    record.path === originsRoute
-      ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
-      : record,
-  )
+  return records
+    .filter((record) => record.path !== linkedOriginRoute)
+    .map((record) =>
+      record.path === originsRoute
+        ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
+        : record,
+    )
 }
 function beforeMealQuestionGET(records: RouteRecord[]): RouteRecord[] {
   return beforeOriginsGET(records).map((record) =>
@@ -56,6 +59,7 @@ function beforeMealQuestionGET(records: RouteRecord[]): RouteRecord[] {
 }
 const boundedConversationRoutes = new Set([
   'conversation/meal-commands/route.ts',
+  linkedOriginRoute,
   ...addedReadEditRoutes,
   ...addedReplyRoutes,
   ...addedWorkoutRoutes,
@@ -291,9 +295,9 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
   })
   test('adds only three closed neutral intake exports and preserves every prior88 export', () => {
     for (const records of [sourceRecords(), wrapperRecords()]) {
-      expect(records).toHaveLength(91)
+      expect(records).toHaveLength(92)
       expect(hashRecords(records)).toBe(
-        '161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7',
+        'd59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152',
       )
       expect(hashRecords(beforeOriginsGET(records))).toBe(
         '1aee269695cf61901f5ecb802e8509ae9004481024926043353d1f7cf32db9f7',
@@ -356,6 +360,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       })
       const prior84 = beforeMealQuestionGET(records).filter(
         (record) =>
+          record.path !== linkedOriginRoute &&
           record.path !== nutritionWindowRoute &&
           !addedWorkoutRoutes.has(record.path) &&
           !addedIntakeRoutes.has(record.path),
@@ -386,7 +391,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
             `${surface}_PRIOR84_ROUTE_EXPORT_STREAM_SHA256=092bd3ded789b200042cf29119e279e22d6900f8cdc86889108f28d2764673f3`,
           )
         } else {
-          expect(result.stderr).toContain(`ROUTE_MIRROR_ERROR=${surface}_COUNT:92`)
+          expect(result.stderr).toContain(`ROUTE_MIRROR_ERROR=${surface}_COUNT:93`)
           expect(result.stderr).toContain(`ROUTE_MIRROR_ERROR=${surface}_PRIOR84_COUNT:85`)
           expect(result.stderr).toContain(`ROUTE_MIRROR_ERROR=${surface}_PRIOR84_HASH:`)
         }
@@ -402,7 +407,10 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       exports: ['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'],
     })
     const legacy = records.filter(
-      (record) => record.path !== nutritionWindowRoute && !record.path.startsWith('conversation/'),
+      (record) =>
+        record.path !== linkedOriginRoute &&
+        record.path !== nutritionWindowRoute &&
+        !record.path.startsWith('conversation/'),
     )
     expect(legacy).toHaveLength(75)
     expect(hashRecords(legacy)).toBe(
@@ -419,6 +427,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     for (const records of [sourceRecords(), wrapperRecords()]) {
       const previous = records.filter(
         (record) =>
+          record.path !== linkedOriginRoute &&
           record.path !== nutritionWindowRoute &&
           !addedWorkoutRoutes.has(record.path) &&
           !addedIntakeRoutes.has(record.path) &&
@@ -436,6 +445,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     for (const records of [sourceRecords(), wrapperRecords()]) {
       const previous = records.filter(
         (record) =>
+          record.path !== linkedOriginRoute &&
           record.path !== nutritionWindowRoute &&
           !addedWorkoutRoutes.has(record.path) &&
           !addedIntakeRoutes.has(record.path) &&
@@ -469,7 +479,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       count: 84,
       hash: 'c3635c150461af36b4593ce6c2f7621e59a19a2e45482b50ad82f1f6c022cd2b',
       prior88Hash: '11cb5dc130ca668a61a0c3a8d692c3a82ee66b9090e199ba2313aef3a1e81010',
-      currentHash: '7bdf1d9d8197552d45937b3ce0d6ef86a41419adac10710c4280938e2c1c3ab3',
+      currentHash: '9498372c66602830c3b7a5a6467a7949bf05ba30e3e3639ff27a41e5b9b45ff1',
     },
     {
       name: 'Unapproved Auth added alongside clarification',
@@ -477,7 +487,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       count: 85,
       hash: '18329037e36d0abc3dc1cf713945338caffce15b37fd214fd50567484c3dcc91',
       prior88Hash: 'c31e1667bb9a9056a820f87f669f4c7dca3400ca13c15b8eb904931244080805',
-      currentHash: '47057eb1c2abf6439f67dbb56fc82d44d94e0fed97d1d15b877e80675baf5529',
+      currentHash: '9cfe4e1c8cb739093b37825683deb22256e63a66f8d6f4283d6a4910ae5b116a',
     },
   ])('rejects $name through the closed inventory', ({
     replace,
@@ -491,7 +501,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(1)
       for (const surface of ['SOURCE', 'WRAPPER']) {
-        expect(result.stdout).toContain(`${surface}_ROUTE_EXPORT_COUNT=${count + 7}`)
+        expect(result.stdout).toContain(`${surface}_ROUTE_EXPORT_COUNT=${count + 8}`)
         expect(result.stdout).toContain(`${surface}_ROUTE_EXPORT_STREAM_SHA256=${currentHash}`)
         expect(result.stderr).toContain(`ROUTE_MIRROR_ERROR=${surface}_HASH:${currentHash}`)
         expect(result.stdout).toContain(`${surface}_PRIOR88_ROUTE_EXPORT_COUNT=${count + 4}`)
@@ -521,11 +531,11 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=91')
-    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=91')
+    expect(result.stdout).toContain('SOURCE_ROUTE_EXPORT_COUNT=92')
+    expect(result.stdout).toContain('WRAPPER_ROUTE_EXPORT_COUNT=92')
     for (const surface of ['SOURCE', 'WRAPPER']) {
       expect(result.stdout).toContain(
-        `${surface}_ROUTE_EXPORT_STREAM_SHA256=161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7`,
+        `${surface}_ROUTE_EXPORT_STREAM_SHA256=d59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152`,
       )
     }
     for (const surface of ['SOURCE', 'WRAPPER']) {
@@ -548,7 +558,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     const wrappers = wrapperRecords()
 
     console.info(`WRAPPER_ROUTE_EXPORT_COUNT=${wrappers.length}`)
-    expect(wrappers, `expected91 wrappers but observed ${wrappers.length}`).toHaveLength(91)
+    expect(wrappers, `expected92 wrappers but observed ${wrappers.length}`).toHaveLength(92)
 
     expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(sources)
 
@@ -559,7 +569,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
 
     const hash = hashRecords(wrappers)
     console.info(`WRAPPER_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
-    expect(hash).toBe('161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7')
+    expect(hash).toBe('d59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152')
   })
 
   test.each([...boundedConversationRoutes])('declares bounded timeout locally for %s', (path) => {

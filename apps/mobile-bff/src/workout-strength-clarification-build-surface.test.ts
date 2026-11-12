@@ -80,16 +80,27 @@ describe('current-authority clarification in the fresh mobile server build', () 
     expect(
       source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
-    expect(source).toHaveLength(91)
+    expect(source).toHaveLength(92)
     expect(
       createHash('sha256')
         .update(source.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
         .digest('hex'),
-    ).toBe('161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7')
+    ).toBe('d59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152')
     expect(
       source.find((record) => record.path === 'conversation/intakes/route.ts')?.exports,
     ).toEqual(['GET', 'POST', 'maxDuration', 'runtime'])
-    const beforeOrigins = source.map((record) =>
+    const beforeLinked = source.filter(
+      (record) => record.path !== 'conversation/meal-commands/[commandId]/origin/route.ts',
+    )
+    expect(beforeLinked).toHaveLength(91)
+    expect(
+      createHash('sha256')
+        .update(
+          beforeLinked.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''),
+        )
+        .digest('hex'),
+    ).toBe('161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7')
+    const beforeOrigins = beforeLinked.map((record) =>
       record.path === 'conversation/intakes/route.ts'
         ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
         : record,

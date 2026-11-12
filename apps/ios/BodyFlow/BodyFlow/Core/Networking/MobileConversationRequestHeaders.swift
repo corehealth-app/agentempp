@@ -16,6 +16,7 @@ enum MobileConversationRequestHeaders: Sendable {
   case submit(epoch: UUID, ownerID: UUID)
   case reconciliation(epoch: UUID, ownerID: UUID, inputHash: String)
   case mealGroup(epoch: UUID, ownerID: UUID, inputHash: String)
+  case mealLinkedOrigin(epoch: UUID, ownerID: UUID)
   case journal(epoch: UUID, ownerID: UUID)
   case threadJournal(epoch: UUID, ownerID: UUID)
   case unifiedJournal(epoch: UUID, ownerID: UUID)
@@ -130,6 +131,13 @@ enum MobileConversationRequestHeaders: Sendable {
         let command = try? ConversationMealCommand(wireBody: body), command.wireBody == body,
         key.value == command.idempotencyKey
       else { throw MobileAPIRequestError.invalidConversationHeaders }
+    case .mealLinkedOrigin:
+      let prefix = base + "/"
+      let tail = path.hasPrefix(prefix) && path.hasSuffix("/origin")
+        ? String(path.dropFirst(prefix.count).dropLast(7)) : ""
+      guard method == .get, body == nil, key == nil, replay == .never,
+        let id = UUID(uuidString: tail), id.uuidString.lowercased() == tail
+      else { throw MobileAPIRequestError.invalidConversationHeaders }
     case .mealGroup(_, _, let hash):
       let prefix = base + "/"
       let tail =
@@ -150,7 +158,7 @@ enum MobileConversationRequestHeaders: Sendable {
   var supportsFeedbackPresentation: Bool {
     switch self {
     case .submit, .reconciliation, .mealReplySubmit, .mealReplyReconciliation, .journal, .threadJournal, .intakeSubmit, .intakeReconciliation: true
-    case .intakeQuestionOrigins, .mealParentQuestion, .session, .mealGroup, .mealEdit, .mealEditReconciliation, .intakeSession, .unifiedJournal: false
+    case .intakeQuestionOrigins, .mealParentQuestion, .session, .mealGroup, .mealLinkedOrigin, .mealEdit, .mealEditReconciliation, .intakeSession, .unifiedJournal: false
     }
   }
   /// Only the new family requires its own exact successful protocol echo.
@@ -158,6 +166,11 @@ enum MobileConversationRequestHeaders: Sendable {
   func validateResponseProtocol(_ response: HTTPURLResponse) throws {
     guard (200...299).contains(response.statusCode) else { return }
     switch self {
+    case .mealLinkedOrigin:
+      guard response.statusCode == 200,
+        response.value(forHTTPHeaderField: "X-Conversation-Protocol") == "meal-linked-origin-v1",
+        response.value(forHTTPHeaderField: "Cache-Control") == "no-store"
+      else { throw MobileAPITransportError.invalidResponse }
     case .intakeQuestionOrigins:
       guard response.statusCode == 200,
         response.value(forHTTPHeaderField: "X-Conversation-Protocol") == "intake-question-origins-v1",
@@ -174,6 +187,7 @@ enum MobileConversationRequestHeaders: Sendable {
   }
   func apply(to request: inout URLRequest) {
     switch self {
+    case .mealLinkedOrigin: request.setValue("meal-linked-origin-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     case .intakeQuestionOrigins: request.setValue("intake-question-origins-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     case .mealParentQuestion: request.setValue("meal-question-v1", forHTTPHeaderField: "X-Conversation-Protocol")
     case .intakeSession, .intakeSubmit, .intakeReconciliation: request.setValue("intake-v1", forHTTPHeaderField: "X-Conversation-Protocol")
@@ -196,7 +210,7 @@ enum MobileConversationRequestHeaders: Sendable {
       request.setValue(
         intent.parentBinding.ownerID.uuidString.lowercased(),
         forHTTPHeaderField: "X-Conversation-Owner")
-    case .intakeQuestionOrigins(let epoch, let owner), .submit(let epoch, let owner), .journal(let epoch, let owner),
+    case .mealLinkedOrigin(let epoch, let owner), .intakeQuestionOrigins(let epoch, let owner), .submit(let epoch, let owner), .journal(let epoch, let owner),
       .threadJournal(let epoch, let owner), .unifiedJournal(let epoch, let owner):
       request.setValue(epoch.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Epoch")
       request.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner")

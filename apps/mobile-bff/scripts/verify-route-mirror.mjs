@@ -3,8 +3,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 91
-const expectedHash = '161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7'
+const expectedCount = 92
+const expectedHash = 'd59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152'
+const linkedOriginRoute = 'conversation/meal-commands/[commandId]/origin/route.ts'
 const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
 const originsRoute = 'conversation/intakes/route.ts'
 const intakeTransports = new Map([
@@ -32,6 +33,7 @@ const addedReplyRoutes = new Set([
 ])
 const boundedConversationRoutes = new Set([
   'conversation/meal-commands/route.ts',
+  linkedOriginRoute,
   ...addedReadEditRoutes,
   ...addedReplyRoutes,
   ...workoutTransports.keys(),
@@ -204,7 +206,16 @@ for (const [surface, records] of [
 ]) {
   // T48 adds only the cold-origin GET beside the original intake POST.
   // Freeze the full T47 stream before applying any older historical boundary.
-  const beforeOrigins = records.map((record) =>
+  const beforeLinked = records.filter((record) => record.path !== linkedOriginRoute)
+  if (
+    beforeLinked.length !== 91 ||
+    hashRecords(beforeLinked) !== '161783e0c88223e0df8271ed658399734242dcb588e16128a3febd70527379a7'
+  )
+    fail(`${surface}_PRE_LINKED_ORIGIN_CHANGED`)
+  const linkedOrigin = records.find((record) => record.path === linkedOriginRoute)
+  if (JSON.stringify(linkedOrigin?.exports) !== JSON.stringify(['GET', 'maxDuration', 'runtime']))
+    fail(`${surface}_LINKED_ORIGIN_EXPORTS`)
+  const beforeOrigins = beforeLinked.map((record) =>
     record.path === originsRoute
       ? { ...record, exports: record.exports.filter((name) => name !== 'GET') }
       : record,

@@ -40,6 +40,26 @@ struct MobileConversationHistoryRepository: Sendable {
   }
   /// Actual two-phase cold read. The observed reference grants no write; only
   /// the owned response's genuine original effect completes the identity.
+  func linkedOrigin(commandID: UUID, context: ConversationCommandContext) async throws
+    -> ConversationMealLinkedOriginSnapshot
+  {
+    try await validate(context)
+    let response = try await transport.executeHTTP(
+      MobileAPIRequest<ConversationMealLinkedOriginSnapshot>(
+        method: .get,
+        path: "/api/mobile/v1/conversation/meal-commands/\(commandID.uuidString.lowercased())/origin",
+        conversation: .mealLinkedOrigin(epoch: context.epoch, ownerID: context.ownerID),
+        unauthorizedReplay: .never))
+    try await validate(context)
+    let origin = response.data
+    guard response.statusCode == 200, origin.authUserID == context.authUserID,
+      origin.ownerID == context.ownerID, origin.epoch == context.epoch,
+      origin.identity.commandID == commandID,
+      let observed = ConversationProtocolInstant(origin.observedAt),
+      let accepted = ConversationProtocolInstant(context.observedAt), observed >= accepted
+    else { throw MobileAPITransportError.invalidResponse }
+    return origin
+  }
   func linkedGroup(
     reference: ConversationMealLinkedReadReference, context: ConversationCommandContext
   ) async throws -> ConversationMealLinkedGroupRead {

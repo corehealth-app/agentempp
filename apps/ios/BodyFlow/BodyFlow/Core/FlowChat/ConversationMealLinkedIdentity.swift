@@ -1,5 +1,37 @@
 import Foundation
 
+/// Owned read-only recovery of the immutable clarification origin. The public
+/// journal is only a locator; neither packet creates an outbox acknowledgement.
+struct ConversationMealLinkedOriginSnapshot: Decodable, Sendable {
+  let authUserID: UUID
+  let ownerID: UUID
+  let epoch: UUID
+  let observedAt: String
+  let identity: ConversationMealLinkedIdentity
+  init(from decoder: any Decoder) throws {
+    let raw = try ConversationMealEditJSON(from: decoder)
+    try editCheck(raw.data().count <= 16_384)
+    let o = try raw.object([
+      "schema", "auth_user_id", "owner_id", "epoch", "observed_at", "parent_binding",
+      "child_binding", "parent_decision_hash", "receipt",
+    ])
+    try editCheck(o.required("schema").string() == "conversation.meal-linked-origin.v1")
+    authUserID = try o.required("auth_user_id").uuid()
+    ownerID = try o.required("owner_id").uuid()
+    epoch = try o.required("epoch").uuid()
+    observedAt = try o.required("observed_at").clock()
+    identity = try .init(
+      parentBinding: o.required("parent_binding").decode(
+        ConversationThreadPageSnapshot.Binding.self),
+      childBinding: o.required("child_binding").decode(ConversationThreadPageSnapshot.Binding.self),
+      parentDecisionHash: o.required("parent_decision_hash").hash(),
+      receipt: o.required("receipt").decode(ConversationThreadPageSnapshot.LinkedReceipt.self))
+    try editCheck(
+      identity.ownerID == ownerID && identity.epoch == epoch
+        && editInstant(identity.receipt.consumedAt) <= editInstant(observedAt))
+  }
+}
+
 enum ConversationMealLinkedIdentityError: Error, Equatable, Sendable { case invalid }
 
 /// A READ-ONLY observation from an owned v2 edit/descriptor or fulfillment.

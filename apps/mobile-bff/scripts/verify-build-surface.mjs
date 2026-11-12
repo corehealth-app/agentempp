@@ -3,10 +3,11 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedMobileRouteCount = 91
-const expectedMobileRouteHash = '619cb940b40c0218985aa4da7869fd87d00ce703c5ef80cb6a5805ebac789156'
-const expectedRouteCount = 92
-const expectedRouteHash = '797033352a07011df4c7b3a15092077e086562815d39ad40aa5ac529f9d58e52'
+const expectedMobileRouteCount = 92
+const expectedMobileRouteHash = 'e040081491bac0281bba6c8694893386c0d41958ed70767fea712d16212d5e54'
+const expectedRouteCount = 93
+const expectedRouteHash = 'e5d968718a4e2130b59bea56f3e9050d1cdbcc099b74bed5da94825c0308858e'
+const linkedOriginRoute = '/api/mobile/v1/conversation/meal-commands/[commandId]/origin'
 const intakeTransports = new Set([
   '/api/mobile/v1/conversation/intakes',
   '/api/mobile/v1/conversation/intakes/[intakeId]',
@@ -560,8 +561,12 @@ function verifyBuildSurface() {
     `BUILD_NFT_ALLOWLISTED_DIRECTORY_TARGET_COUNT=${surface.nftAllowlistedDirectoryTargetCount}`,
   )
 
-  const prior88Mobile = surface.mobileRoutePaths.filter((path) => !intakeTransports.has(path))
-  const prior89All = surface.routePaths.filter((path) => !intakeTransports.has(path))
+  const prior88Mobile = surface.mobileRoutePaths.filter(
+    (path) => path !== linkedOriginRoute && !intakeTransports.has(path),
+  )
+  const prior89All = surface.routePaths.filter(
+    (path) => path !== linkedOriginRoute && !intakeTransports.has(path),
+  )
   for (const [label, paths, count, hash] of [
     [
       'PRIOR88_MOBILE',

@@ -1190,6 +1190,26 @@ final class FlowConversationModel {
     else { return nil }
     return origin
   }
+  private func coldLinkedMealCandidate(commandID: UUID) -> ConversationJournalV3PageSnapshot.Entry? {
+    guard hasCurrentScope, let identity = acceptedIdentity else { return nil }
+    return unifiedRows.first { entry in
+      guard entry.kind == .fulfillment, entry.status == .registered,
+        entry.commandID == commandID, entry.originEpoch == identity.epoch, case .meal = entry.record
+      else { return false }
+      return true
+    }
+  }
+  private func matchesColdLinkedOrigin(_ origin: ConversationMealLinkedIdentity) -> Bool {
+    guard let entry = coldLinkedMealCandidate(commandID: origin.commandID),
+      let identity = acceptedIdentity, case .meal(let meal) = entry.record
+    else { return false }
+    let receipt = origin.receipt
+    return origin.ownerID == identity.ownerID && origin.epoch == identity.epoch
+      && origin.parentBinding.commandID == entry.threadID
+      && receipt.registrationID == meal.registrationID && receipt.mealType.rawValue == meal.mealType
+      && receipt.localDate == meal.localDate && receipt.logIDs == meal.logIDs
+      && receipt.effectVersion == meal.effectVersion
+  }
   private func resetHistoricalOrigins() {
     historicalOriginRead?.cancel()
     historicalOriginRead = nil
@@ -1278,7 +1298,8 @@ final class FlowConversationModel {
   /// A public observation can offer a read, but cannot enable an editor.
   func canLoadMealDetails(commandID: UUID) -> Bool {
     canRequestMealDetails(commandID: commandID)
-      || (hasCurrentScope && mealEditor != nil && coldMealCandidate(commandID: commandID) != nil)
+      || (hasCurrentScope && mealEditor != nil
+        && (coldMealCandidate(commandID: commandID) != nil || coldLinkedMealCandidate(commandID: commandID) != nil))
   }
   func isLoadingMealDetails(commandID: UUID) -> Bool {
     hasCurrentScope && groupRequests[commandID] != nil
@@ -1300,7 +1321,9 @@ final class FlowConversationModel {
   func unifiedMealDetailsCommandID(eventID: String) -> UUID? {
     if let commandID = unifiedMealControlsCommandID(eventID: eventID) { return commandID }
     guard let entry = unifiedRows.first(where: { $0.eventID == eventID }),
-      let commandID = entry.commandID, coldMealCandidate(commandID: commandID)?.eventID == eventID
+      let commandID = entry.commandID,
+      coldMealCandidate(commandID: commandID)?.eventID == eventID
+        || coldLinkedMealCandidate(commandID: commandID)?.eventID == eventID
     else { return nil }
     return commandID
   }
@@ -1472,11 +1495,12 @@ final class FlowConversationModel {
   func loadCurrentGroup(commandID: UUID) async {
     guard !isClosed, let lease, let context, hasCurrentScope else { return }
     let command = commands[commandID]
-    let reference = linkedReadReferences[commandID]
-    let identity = linkedMealIdentities[commandID]
+    var reference = linkedReadReferences[commandID]
+    var identity = linkedMealIdentities[commandID]
     let neutral = neutralMealAcknowledgement(commandID: commandID)
     let cold = coldMealCandidate(commandID: commandID)
-    guard command != nil || reference != nil || neutral != nil || cold != nil else {
+    let coldLinked = coldLinkedMealCandidate(commandID: commandID)
+    guard command != nil || reference != nil || neutral != nil || cold != nil || coldLinked != nil else {
       currentGroups.removeValue(forKey: commandID)
       groupRequests.removeValue(forKey: commandID)
       return
@@ -1489,7 +1513,14 @@ final class FlowConversationModel {
     }
     do {
       if command == nil && reference == nil && neutral == nil {
-        try await recoverHistoricalMealOrigins(commandID: commandID, context: context, lease: lease)
+        if coldLinked != nil {
+          let origin = try await history.linkedOrigin(commandID: commandID, context: context)
+          guard matchesColdLinkedOrigin(origin.identity) else { throw MobileAPITransportError.invalidResponse }
+          reference = origin.identity.reference
+          identity = origin.identity
+        } else {
+          try await recoverHistoricalMealOrigins(commandID: commandID, context: context, lease: lease)
+        }
       }
       let historical = historicalMealOrigin(commandID: commandID)
       let group: ConversationMealGroupSnapshot
@@ -1523,7 +1554,7 @@ final class FlowConversationModel {
           guard self.groupRequests[commandID] == requestID, self.lastIdentity == context.identity
           else { throw ConversationOutboxError.staleObservation }
           guard self.satisfiesKnownEdits(group),
-            reference.map({ self.linkedReadReferences[commandID] == $0 }) ?? true
+            reference.map({ observed in self.linkedReadReferences[commandID].map { $0 == observed } ?? true }) ?? true
           else { throw MobileAPITransportError.invalidResponse }
           if let neutral {
             guard let current = self.neutralMealAcknowledgement(commandID: commandID),
@@ -1540,9 +1571,11 @@ final class FlowConversationModel {
             self.knownGroupInputHashes[commandID] = current.inputHash
           }
           if let complete {
-            guard self.linkedMealIdentities[commandID].map({ $0 == complete }) ?? true else {
+            guard self.linkedMealIdentities[commandID].map({ $0 == complete }) ?? true,
+              coldLinked == nil || self.matchesColdLinkedOrigin(complete) else {
               throw MobileAPITransportError.invalidResponse
             }
+            self.linkedReadReferences[commandID] = complete.reference
             self.linkedMealIdentities[commandID] = complete
           }
           self.currentGroups[commandID] = group

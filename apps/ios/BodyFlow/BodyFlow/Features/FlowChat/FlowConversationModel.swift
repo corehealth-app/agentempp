@@ -1205,7 +1205,7 @@ final class FlowConversationModel {
     else { return false }
     let receipt = origin.receipt
     return origin.ownerID == identity.ownerID && origin.epoch == identity.epoch
-      && origin.parentBinding.commandID == entry.threadID
+      && origin.parentBinding.commandID == entry.parentCommandID
       && receipt.registrationID == meal.registrationID && receipt.mealType.rawValue == meal.mealType
       && receipt.localDate == meal.localDate && receipt.logIDs == meal.logIDs
       && receipt.effectVersion == meal.effectVersion

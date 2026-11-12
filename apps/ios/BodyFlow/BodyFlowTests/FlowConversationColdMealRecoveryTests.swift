@@ -656,10 +656,13 @@ struct FlowConversationColdLinkedMealRecoveryTests {
     #expect(session.model.mealEditActions(commandID: f.commandID) == nil)
     #expect(await f.http.stub.requests.allSatisfy { $0.url?.path.hasSuffix("/meal") != true })
   }
-  @Test func reopeningRecoversLinkedOriginBeforeGroupWithoutFabricatingAnAcknowledgement()
+  @Test(arguments: [false, true])
+  func reopeningRecoversLinkedOriginBeforeGroupWithoutFabricatingAnAcknowledgement(
+    neutralIntake: Bool
+  )
     async throws
   {
-    let f = try await ColdLinkedMealFixture()
+    let f = try await ColdLinkedMealFixture(neutralIntake: neutralIntake)
     defer { f.disk.remove() }
     let session = try await f.open()
     await session.model.loadHistory()
@@ -679,12 +682,15 @@ struct FlowConversationColdLinkedMealRecoveryTests {
     #expect(reads.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
     await session.close()
   }
-  @Test(arguments: [
-    "owner_id", "epoch", "parent_decision_hash", "registration_id", "effect_version",
-    "parent_command_id", "private",
-  ])
-  func foreignOrContradictoryLinkedOriginDoesNotGrantEditing(_ field: String) async throws {
-    let f = try await ColdLinkedMealFixture()
+  @Test(
+    arguments: [
+      "owner_id", "epoch", "parent_decision_hash", "registration_id", "effect_version",
+      "parent_command_id", "private",
+    ], [false, true])
+  func foreignOrContradictoryLinkedOriginDoesNotGrantEditing(_ field: String, neutralIntake: Bool)
+    async throws
+  {
+    let f = try await ColdLinkedMealFixture(neutralIntake: neutralIntake)
     defer { f.disk.remove() }
     var origin = f.origin
     switch field {
@@ -751,8 +757,11 @@ struct FlowConversationColdLinkedMealRecoveryTests {
     #expect(session.model.mealEditActions(commandID: f.commandID) == nil)
     await session.close()
   }
-  @Test func linkedSaveUsesExistingControllerOnceAndSurvivesAnotherColdOpen() async throws {
-    let f = try await ColdLinkedMealFixture()
+  @Test(arguments: [false, true])
+  func linkedSaveUsesExistingControllerOnceAndSurvivesAnotherColdOpen(neutralIntake: Bool)
+    async throws
+  {
+    let f = try await ColdLinkedMealFixture(neutralIntake: neutralIntake)
     defer { f.disk.remove() }
     let server = try ColdMealEditUnitServer(group: JSONSerialization.data(withJSONObject: f.group))
     await f.install(editingServer: server)
@@ -795,7 +804,7 @@ struct FlowConversationColdLinkedMealRecoveryTests {
   let page: [String: Any]
   let mealSession: ConversationHTTPReply
   let intakeSession: ConversationHTTPReply
-  init() async throws {
+  init(neutralIntake: Bool = false) async throws {
     http = try ConversationHTTPFixture()
     disk = try OutboxDiskFixture()
     vault = .init(service: "cold-linked-unit", security: OutboxKeychainFake())
@@ -839,10 +848,11 @@ struct FlowConversationColdLinkedMealRecoveryTests {
       $0["kind"] as? String == "fulfillment"
     }!
     row["event_id"] = "fulfillment/\(parentID)/\(childID)"
-    row["thread_id"] = parentID
+    let intakeID = neutralIntake ? UUID().uuidString.lowercased() : nil
+    row["thread_id"] = intakeID ?? parentID
     row["at"] = receipt["consumed_at"]!
     row["lineage"] = [
-      "kind": "meal.clarify", "intake_id": NSNull(), "command_id": childID,
+      "kind": "meal.clarify", "intake_id": intakeID as Any? ?? NSNull(), "command_id": childID,
       "parent_command_id": parentID, "origin_epoch": epoch,
     ]
     row["outcome"] = [

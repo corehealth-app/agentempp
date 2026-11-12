@@ -36,6 +36,29 @@ The claim is inserted in the same statement/transaction as each v1/v2/v3 metadat
 
 The old v1/v2 read boundaries, including the frozen meal receipt helper, receive pinned additive v3 fences. A late old writer cannot create a second version or draw new phrases after a v3 winner. New v3 read/commit return an existing v1/v2 body exactly, before new capture, preparation or payload validation. V3 never upgrades or reseals an old receipt.
 
+## Journal3 compatibility
+
+`20261112025635_conversation_journal_feedback_v3.sql` gives journal3 a private
+reference reader for genuine canonical3 meal receipts. It reads the existing
+canonical winner, verifies the registration and meal-command identities, and
+returns only its version/registration reference. Missing reciprocal claims,
+changed bindings and unavailable winners refuse; they do not become an absent
+legacy receipt. Canonical1/2 references retain the exact old reader.
+
+Journal-only child/entry helpers reuse the qualified v2 factual and lineage
+validators with only that reference port changed. The migration checks their
+source hashes and changes only journal3's two call sites. Old receipt fences,
+old journal1/2 paths, registration writers and stored receipt bodies stay
+unchanged. The new helpers have no client or service-role execution grants;
+the existing trusted journal RPC remains the entry point.
+
+This allows a new meal, its later edit and its immutable original feedback to
+coexist in the paginated history. A history read never generates feedback,
+re-registers consumption or grants another reward. SQL qualification includes
+mixed canonical1/2/3 pages, neutral intake lineage, linked fulfillment,
+post-edit reads, pagination, identity refusal and unchanged legacy validators.
+Native reload and distribution remain separate qualification gates.
+
 ## SQL and source proof
 
 The three service-only RPCs are:

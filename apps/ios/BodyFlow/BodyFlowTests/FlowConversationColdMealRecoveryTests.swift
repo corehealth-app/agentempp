@@ -3,8 +3,39 @@ import Testing
 
 @testable import BodyFlow
 
+#if canImport(UIKit)
+  import SwiftUI
+#endif
+
 @MainActor @Suite("Cold meal canonical origin recovery", .serialized)
 struct FlowConversationColdMealRecoveryTests {
+  #if canImport(UIKit)
+    @Test(arguments: [false, true])
+    func independentlyRecoveredMealRendersActualPerItemPencil(_ english: Bool) async throws {
+      let f = try await ColdMealRecoveryFixture()
+      defer { f.disk.remove() }
+      let session = try await f.open()
+      await session.model.loadHistory()
+      await session.model.loadCurrentGroup(commandID: f.commandID)
+      let group = try #require(session.model.currentGroup(commandID: f.commandID))
+      let item = try #require(group.current?.items.first)
+      let host = SignUpRenderingProbe.host(
+        FlowConversationMealControlsContent(model: session.model, commandID: f.commandID)
+          .environment(\.locale, Locale(identifier: english ? "en-US" : "pt-BR")),
+        width: 390, height: 800)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      let pencil = try #require(
+        nodes.first {
+          $0.identifier == "conversation.meal.edit.\(item.id.uuidString.lowercased())"
+        })
+      #expect(
+        pencil.isButton && pencil.isEnabled && pencil.frame.width > 0 && pencil.frame.height > 0)
+      #expect(pencil.label == (english ? "Edit iogurte natural" : "Editar iogurte natural"))
+      #expect(session.model.savedRows.isEmpty && session.model.savedEffectRevision == 0)
+      await session.close()
+    }
+  #endif
   @Test func publicHistoryAloneOffersOnlyAReadAndNeverAnEditingAuthority() async throws {
     let f = try await ColdMealRecoveryFixture()
     defer { f.disk.remove() }
@@ -365,12 +396,52 @@ struct FlowConversationColdMealRecoveryTests {
     #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
     await session.close()
   }
+
+  @Test func coldRecoveredItemSavesOnceAndReopensWithCurrentFactsAndOriginalReceipt() async throws {
+    let f = try await ColdMealRecoveryFixture()
+    defer { f.disk.remove() }
+    let server = try ColdMealEditUnitServer(group: JSONSerialization.data(withJSONObject: f.group))
+    await f.install(editingServer: server)
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    let original = try #require(session.model.currentGroup(commandID: f.commandID))
+    let item = try #require(original.current?.items.first)
+    await session.model.beginMealEdit(commandID: f.commandID, itemID: item.id)
+    let editor = try #require(session.model.mealEditor)
+    #expect(editor.presentation != nil)
+    editor.setQuantityText("100", language: .portugueseBrazil)
+    #expect(editor.canSave(language: .portugueseBrazil))
+    await editor.save(language: .portugueseBrazil)
+    #expect(editor.lastSaved?.receipt.revision == 1)
+    #expect(editor.pendingEntries.isEmpty)
+    #expect(session.model.savedRows.isEmpty && session.model.savedEffectRevision == 1)
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    let changed = try #require(session.model.currentGroup(commandID: f.commandID))
+    #expect(changed.current?.items.first?.quantityG == 100)
+    #expect(changed.current?.items.first?.id != item.id)
+    #expect(changed.originalReceipt.report == original.originalReceipt.report)
+    await session.close()
+
+    let reopened = try await f.open()
+    await reopened.model.loadHistory()
+    await reopened.model.loadCurrentGroup(commandID: f.commandID)
+    let retained = try #require(reopened.model.currentGroup(commandID: f.commandID))
+    #expect(retained.current?.items.first?.quantityG == 100 && retained.revision == 1)
+    #expect(retained.originalReceipt.report == original.originalReceipt.report)
+    #expect(reopened.model.mealEditActions(commandID: f.commandID) != nil)
+    #expect(reopened.model.savedRows.isEmpty && reopened.model.savedEffectRevision == 0)
+    let posts = await f.http.stub.requests.filter { $0.httpMethod == "POST" }
+    #expect(posts.count == 1 && posts[0].url?.path.contains("/edits/") == true)
+    await reopened.close()
+  }
 }
 
 @MainActor private struct ColdMealRecoveryFixture {
   let http: ConversationHTTPFixture
   let disk: OutboxDiskFixture
   let vault: ConversationOutboxKeyVault
+  let editVault: ConversationOutboxKeyVault
   let commandID = UUID(uuidString: "10000000-0000-4000-8000-000000000002")!
   let canonical: [String: Any]
   let publicPage: [String: Any]
@@ -382,6 +453,8 @@ struct FlowConversationColdMealRecoveryTests {
     http = try ConversationHTTPFixture()
     disk = try OutboxDiskFixture()
     vault = .init(service: "cold-meal-origin-unit", security: OutboxKeychainFake())
+    editVault = .init(
+      service: ConversationMealEditOutboxSession.keychainService, security: OutboxKeychainFake())
     let lease = await http.lifecycle.leaseForRequest()
     let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .appendingPathComponent("Fixtures")
@@ -428,7 +501,7 @@ struct FlowConversationColdMealRecoveryTests {
   func install(
     canonicalPages: [String: ConversationHTTPReply]? = nil,
     publicReply: ConversationHTTPReply? = nil, groupReplies: [String: ConversationHTTPReply] = [:],
-    barrier: ConversationControllerBarrier? = nil
+    barrier: ConversationControllerBarrier? = nil, editingServer: ColdMealEditUnitServer? = nil
   ) async {
     let pages = canonicalPages ?? ["": try! neutralHTTP(canonical)]
     let v3 = publicReply ?? (try! neutralHTTP(publicPage))
@@ -436,6 +509,12 @@ struct FlowConversationColdMealRecoveryTests {
     let mealSession = self.mealSession
     let intakeSession = self.intakeSession
     await http.stub.respond { request, _ in
+      if let editingServer,
+        request.url?.path.hasSuffix("/meal") == true
+          || request.url?.path.contains("/edits/") == true
+      {
+        return try await editingServer.reply(request)
+      }
       if request.url?.path == "/api/mobile/v1/conversation/journal" {
         let version = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
           .first { $0.name == "version" }?.value
@@ -462,10 +541,77 @@ struct FlowConversationColdMealRecoveryTests {
       store: disk.store, keyVault: vault,
       editing: .init(
         store: .init(directory: disk.directory),
-        keyVault: .init(
-          service: ConversationMealEditOutboxSession.keychainService, security: OutboxKeychainFake()
-        )),
+        keyVault: editVault),
       neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
+  }
+}
+
+/// Synthetic HTTP boundary only. Existing real model, durable edit controller,
+/// operation codec and scoped transport execute the save; no domain or UI
+/// implementation is substituted inside the app under test.
+private actor ColdMealEditUnitServer {
+  private var group: Data
+  init(group: Data) throws {
+    _ = try ConversationMealGroupSnapshot(data: group)
+    self.group = group
+  }
+  func reply(_ request: URLRequest) throws -> ConversationHTTPReply {
+    var value = try JSONSerialization.jsonObject(with: group) as! [String: Any]
+    if request.httpMethod == "GET" { return try neutralHTTP(value) }
+    #expect(request.httpMethod == "POST")
+    let id = try #require(UUID(uuidString: request.url!.lastPathComponent))
+    let operation = try ConversationMealEditOperation(
+      ownerID: UUID(uuidString: value["owner_id"] as! String)!,
+      commandID: UUID(uuidString: value["command_id"] as! String)!,
+      originalInputHash: value["input_hash"] as! String,
+      epoch: UUID(uuidString: value["epoch"] as! String)!, operationID: id,
+      wireBody: try #require(request.httpBody))
+    guard case .save(let recordID, let items) = operation.action else {
+      throw URLError(.badServerResponse)
+    }
+    var current = value["current"] as! [String: Any]
+    #expect(operation.expectedRevision == value["revision"] as? Int)
+    #expect(operation.expectedVersion == current["expected_version"] as? String)
+    #expect(items.count == 1 && items[0].quantityG == 100)
+    let next = "10000000-0000-4000-8000-000000000081"
+    let effect: [String: Any] = [
+      "schema": "conversation.meal-edit-effect-public.v1", "owner_id": value["owner_id"]!,
+      "command_id": value["command_id"]!, "operation_id": id.uuidString.lowercased(),
+      "input_hash": operation.operationInputHash, "kind": "saved", "revision": 1,
+      "applied_at": "2026-11-04T12:01:00.123456Z",
+      "undo_expires_at": "2026-11-04T12:06:00.123456Z", "target_operation_id": NSNull(),
+      "removed_item_ids": [recordID.uuidString.lowercased()], "new_item_ids": [next],
+      "next_record_id": next,
+    ]
+    var item = (current["items"] as! [[String: Any]])[0]
+    #expect(item["id"] as? String == recordID.uuidString.lowercased())
+    item["id"] = next
+    item["quantity_g"] = 100
+    // Explicit synthetic returned facts; the application does not calculate them.
+    item["kcal"] = 65
+    item["protein_g"] = 3.5
+    item["carbs_g"] = 5.3
+    item["fat_g"] = 3.2
+    current["items"] = [item]
+    current["expected_version"] = "v1:" + String(repeating: "c", count: 64)
+    value["current"] = current
+    value["revision"] = 1
+    value["last_operation"] = effect
+    value["observed_at"] = "2026-11-04T12:02:00.000000Z"
+    value["actions"] = [
+      "save": ["allowed": true],
+      "undo_registration": ["allowed": false, "reason": "version_changed"],
+      "undo_save": ["allowed": true],
+    ]
+    group = try JSONSerialization.data(withJSONObject: value)
+    _ = try ConversationMealGroupSnapshot(data: group)
+    return try neutralHTTP([
+      "schema": "conversation.meal-edit-result.v1", "status": "saved",
+      "owner_id": value["owner_id"]!,
+      "command_id": value["command_id"]!, "input_hash": value["input_hash"]!,
+      "epoch": value["epoch"]!,
+      "receipt": effect,
+    ])
   }
 }

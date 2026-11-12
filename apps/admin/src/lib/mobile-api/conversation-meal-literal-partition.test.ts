@@ -357,6 +357,34 @@ describe('literal partitions preserve the canonical proof boundary', () => {
     )
     expect(failure.mock.calls).toEqual([[reason]])
   })
+  it.each([
+    ['whitespace_only', 'arroz '],
+    ['content_difference', 'Arroz'],
+  ] as const)('reports only the static %s mismatch while refusing the same invalid source', (kind, name) => {
+    const wire = rice(),
+      onFailure = vi.fn(),
+      detail = vi.fn()
+    first(first(wire.sources).parts).text = name
+    expect(() =>
+      materializeConversationMealLiteralPartition(wire, source('arroz200g'), onFailure, detail),
+    ).toThrow('Meal interpretation is unavailable')
+    expect(onFailure.mock.calls).toEqual([['span_partition']])
+    expect(detail.mock.calls).toEqual([[kind]])
+    expect(wire.sources[0]?.parts[0]?.text).toBe(name)
+  })
+  it('isolates a throwing mismatch observer from the public refusal and reason', () => {
+    const wire = rice(),
+      onFailure = vi.fn(),
+      observer = vi.fn(() => {
+        throw new Error('private observer')
+      })
+    first(first(wire.sources).parts).text = 'arroz '
+    expect(() =>
+      materializeConversationMealLiteralPartition(wire, source('arroz200g'), onFailure, observer),
+    ).toThrow('Meal interpretation is unavailable')
+    expect(onFailure.mock.calls).toEqual([['span_partition']])
+    expect(observer.mock.calls).toHaveLength(1)
+  })
   it('rejects Unicode normalization even if rendered words look identical', () => {
     const wire = rice()
     first(first(wire.sources).parts).text = 'feijão'

@@ -387,7 +387,7 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '36d8539f07313927f5168f651573e742aadb0f529f196492e6ad53439fc37b03',
+    '9d7674707f5bdcb91104935ab82c912b512be6726ab883b8e88a9884986b0fae',
   )
   // T52 adds private literal partitions to the same reviewed interpreter edge.
   expect(
@@ -398,7 +398,7 @@ function certifyStructuredMealHelperT51() {
         ),
       )
       .digest('hex'),
-  ).toBe('505ed53b7774598f5d4d094f1c97e157e506c29a447dc25fed59f178e9648b2a')
+  ).toBe('fd89c355b2dbf1f53d3e9766b13b168c351f73b0f2a7be8835fa3a944c140a4e')
   expect(interpreter.split("import { zodResponseFormat } from 'openai/helpers/zod'")).toHaveLength(
     2,
   )

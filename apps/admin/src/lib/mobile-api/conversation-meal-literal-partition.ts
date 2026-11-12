@@ -15,6 +15,11 @@ import {
 import type { MealInterpretationValidationReason } from './conversation-meal-interpretation-validation'
 
 const canonicalSource = interpretationModelSchema.shape.sources.element
+export const mealLiteralPartitionMismatchKinds = Object.freeze([
+  'whitespace_only',
+  'content_difference',
+] as const)
+export type MealLiteralPartitionMismatchKind = (typeof mealLiteralPartitionMismatchKinds)[number]
 const canonicalFood = interpretationModelSchema.shape.foods.element
 const literalReference = interpretationReferenceSchema
   .omit({ start: true, end: true })
@@ -54,6 +59,7 @@ export function materializeConversationMealLiteralPartition(
   raw: unknown,
   originalSource: ConversationMealInterpretationSource,
   onFailure?: (reason: MealInterpretationValidationReason) => void,
+  onPartitionMismatch?: (kind: MealLiteralPartitionMismatchKind) => void,
 ): MealInterpretationModelResult {
   let failureReason: MealInterpretationValidationReason = 'validation_internal'
   const reject = (reason: MealInterpretationValidationReason): never => {
@@ -116,7 +122,20 @@ export function materializeConversationMealLiteralPartition(
       if (text === null || !text.length || s.classification === 'visual' || s.visual_indexes.length)
         return reject('source_shape')
       if (s.parts.some((part) => !part.text.length)) return reject('span_range')
-      if (s.parts.map((part) => part.text).join('') !== text) return reject('span_partition')
+      const combined = s.parts.map((part) => part.text).join('')
+      if (combined !== text) {
+        // Classification is diagnostic only. Neither input is normalized or accepted.
+        const kind =
+          combined.replace(/\s/gu, '') === text.replace(/\s/gu, '')
+            ? 'whitespace_only'
+            : 'content_difference'
+        try {
+          onPartitionMismatch?.(kind)
+        } catch {
+          // Observation cannot change the original refusal or its reason.
+        }
+        return reject('span_partition')
+      }
       let cursor = 0
       const spans = s.parts.map((part) => {
         const start = cursor,

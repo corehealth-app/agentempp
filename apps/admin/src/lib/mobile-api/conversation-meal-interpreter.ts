@@ -21,7 +21,9 @@ import {
   validateConversationMealInterpretationModel,
 } from './conversation-meal-interpretation-validation'
 import {
+  type MealLiteralPartitionMismatchKind,
   materializeConversationMealLiteralPartition,
+  mealLiteralPartitionMismatchKinds,
   mealLiteralPartitionSchema,
 } from './conversation-meal-literal-partition'
 import { readJsonBody } from './http'
@@ -107,6 +109,7 @@ export interface ConversationMealInterpreterDiagnostic {
   readonly error_name: (typeof diagnosticErrorNames)[number] | 'UnknownError'
   readonly http_status?: number
   readonly validation_reason?: MealInterpretationValidationReason
+  readonly partition_mismatch?: MealLiteralPartitionMismatchKind
 }
 type DiagnosticSink = (diagnostic: ConversationMealInterpreterDiagnostic) => void
 
@@ -124,6 +127,7 @@ function reportFailure(
   error: unknown,
   sink: DiagnosticSink,
   validationReason?: MealInterpretationValidationReason,
+  partitionMismatch?: MealLiteralPartitionMismatchKind,
 ): void {
   // Inspect data descriptors only: no getters, stringification, messages,
   // stacks, codes, headers, bodies, source IDs or provider output can escape.
@@ -140,6 +144,12 @@ function reportFailure(
       event: 'conversation_meal_interpreter_failure',
       stage,
       error_name: diagnosticErrorNames.find((allowed) => allowed === name) ?? 'UnknownError',
+      ...(stage === 'validation' &&
+      validationReason === 'span_partition' &&
+      partitionMismatch !== undefined &&
+      mealLiteralPartitionMismatchKinds.includes(partitionMismatch)
+        ? { partition_mismatch: partitionMismatch }
+        : {}),
       ...(stage === 'validation'
         ? {
             validation_reason:
@@ -214,6 +224,7 @@ export function createOpenRouterConversationMealInterpreter(
     ): Promise<ConversationMealInterpretation> {
       let stage: ConversationMealInterpreterDiagnostic['stage'] = 'source'
       let validationReason: MealInterpretationValidationReason | undefined
+      let partitionMismatch: MealLiteralPartitionMismatchKind | undefined
       try {
         const source = validateConversationMealInterpretationSource(originalSource),
           job = invocationSchema.parse(structuredClone(invocation))
@@ -250,7 +261,14 @@ export function createOpenRouterConversationMealInterpreter(
         const onFailure = (reason: MealInterpretationValidationReason) => {
           validationReason = reason
         }
-        const canonical = materializeConversationMealLiteralPartition(decoded, source, onFailure)
+        const canonical = materializeConversationMealLiteralPartition(
+          decoded,
+          source,
+          onFailure,
+          (kind) => {
+            partitionMismatch = kind
+          },
+        )
         const model = validateConversationMealInterpretationModel(canonical, source, onFailure)
         stage = 'result'
         const value = mealInterpretationSchema.parse({
@@ -283,7 +301,7 @@ export function createOpenRouterConversationMealInterpreter(
           return interpretationUnavailable()
         return freezeInterpretation(value)
       } catch (error) {
-        reportFailure(stage, error, diagnosticSink, validationReason)
+        reportFailure(stage, error, diagnosticSink, validationReason, partitionMismatch)
         return interpretationUnavailable()
       }
     },

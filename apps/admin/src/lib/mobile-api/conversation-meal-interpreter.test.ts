@@ -856,6 +856,9 @@ describe('closed semantic interpreter input and result', () => {
           error_name: 'MobileApiError',
           http_status: 503,
           validation_reason,
+          ...(validation_reason === 'span_partition'
+            ? { partition_mismatch: 'content_difference' }
+            : {}),
         },
       ]),
     )
@@ -1224,3 +1227,52 @@ function literalRice() {
     ],
   }
 }
+
+describe('closed literal mismatch diagnostics', () => {
+  it('keeps concurrent whitespace and content classifications private to their invocation', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      a = literalRice(),
+      b = literalRice(),
+      sink = vi.fn().mockImplementation(() => {
+        throw new Error('private diagnostic sink')
+      })
+    at(at(a.sources).parts).text = 'arroz '
+    at(at(b.sources).parts).text = 'Arroz'
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(providerResult(a))
+      .mockResolvedValueOnce(providerResult(b))
+    const interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    const results = await Promise.allSettled([
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+      interpreter.interpret(source, { attemptId: id, remainingMs: 1000 }),
+    ])
+    expect(results.every((r) => r.status === 'rejected')).toBe(true)
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(
+      sink.mock.calls
+        .map(([event]) => event)
+        .sort((x, y) => x.partition_mismatch.localeCompare(y.partition_mismatch)),
+    ).toEqual([
+      {
+        event: 'conversation_meal_interpreter_failure',
+        stage: 'validation',
+        error_name: 'MobileApiError',
+        http_status: 503,
+        validation_reason: 'span_partition',
+        partition_mismatch: 'content_difference',
+      },
+      {
+        event: 'conversation_meal_interpreter_failure',
+        stage: 'validation',
+        error_name: 'MobileApiError',
+        http_status: 503,
+        validation_reason: 'span_partition',
+        partition_mismatch: 'whitespace_only',
+      },
+    ])
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('arroz')
+    expect(JSON.stringify(sink.mock.calls)).not.toContain(owner)
+  })
+})

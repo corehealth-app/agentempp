@@ -287,6 +287,7 @@ describe('actual durable meal interpretation composition', () => {
           error_name: 'MobileApiError',
           http_status: 503,
           validation_reason: reason,
+          ...(reason === 'span_partition' ? { partition_mismatch: 'content_difference' } : {}),
         },
       ],
     ])

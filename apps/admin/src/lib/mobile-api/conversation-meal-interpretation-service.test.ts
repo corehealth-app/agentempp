@@ -238,11 +238,31 @@ describe('actual durable meal interpretation composition', () => {
     expect(d.store.commit).not.toHaveBeenCalled()
     expect(d.interpreter.interpret).toHaveBeenCalledTimes(1)
   })
-  it('marks a real validation failure unknown once and never pays again on its durable read', async () => {
+  it.each([
+    'model_schema',
+    'span_partition',
+  ] as const)('marks real %s failure unknown once and never pays again on its durable read', async (reason) => {
     const d = dependencies(),
       sink = vi.fn(),
       complete = vi.fn(async () => ({
-        content: JSON.stringify({ private_model_output: 'secret-sentinel' }),
+        content: JSON.stringify(
+          reason === 'model_schema'
+            ? { private_model_output: 'secret-sentinel' }
+            : {
+                schema: 'conversation.meal-literal-partition.v1',
+                decision: 'clarification_required',
+                reason: 'ambiguous',
+                sources: [
+                  {
+                    unit: 'command_text',
+                    classification: 'ambiguous',
+                    visual_indexes: [],
+                    parts: [{ text: 'different literal', kind: 'other', food_index: null }],
+                  },
+                ],
+                foods: [],
+              },
+        ),
         toolCalls: [],
         model: 'anthropic/claude-haiku-4.5',
         promptTokens: 100,
@@ -266,7 +286,7 @@ describe('actual durable meal interpretation composition', () => {
           stage: 'validation',
           error_name: 'MobileApiError',
           http_status: 503,
-          validation_reason: 'model_schema',
+          validation_reason: reason,
         },
       ],
     ])

@@ -21,13 +21,19 @@ export interface MealTypeDecision {
     | 'expected_by_routine'
 }
 
+// JavaScript \b treats accented endings as non-word characters. Require the
+// actual end of a Unicode word, including marks, numbers and underscores.
 const EXPLICIT_PATTERNS: Array<{ mealType: MealType; regex: RegExp }> = [
-  { mealType: 'cafe', regex: /\b(?:caf[eé]\s+da\s+manh[ãa]|breakfast)\b/giu },
-  { mealType: 'cafe', regex: /\b(?:meu|no|do|era\s+o|foi\s+o)\s+caf[eé]\b/giu },
-  { mealType: 'almoco', regex: /\b(?:almo[çc]o|lunch)\b/giu },
-  { mealType: 'lanche', regex: /\b(?:lanche|snack|merenda)\b/giu },
-  { mealType: 'jantar', regex: /\b(?:jantar|janta|dinner)\b/giu },
-  { mealType: 'ceia', regex: /\b(?:ceia|supper)\b/giu },
+  { mealType: 'cafe', regex: /\b(?:caf[eé]\s+da\s+manh[ãa]|breakfast)(?![\p{L}\p{M}\p{N}_])/giu },
+  // A malformed longer breakfast name must not fall back to its short 'café' prefix.
+  {
+    mealType: 'cafe',
+    regex: /\b(?:meu|no|do|era\s+o|foi\s+o)\s+caf[eé](?![\p{L}\p{M}\p{N}_])(?!\s+da\s+manh)/giu,
+  },
+  { mealType: 'almoco', regex: /\b(?:almo[çc]o|lunch)(?![\p{L}\p{M}\p{N}_])/giu },
+  { mealType: 'lanche', regex: /\b(?:lanche|snack|merenda)(?![\p{L}\p{M}\p{N}_])/giu },
+  { mealType: 'jantar', regex: /\b(?:jantar|janta|dinner)(?![\p{L}\p{M}\p{N}_])/giu },
+  { mealType: 'ceia', regex: /\b(?:ceia|supper)(?![\p{L}\p{M}\p{N}_])/giu },
 ]
 
 function isNegated(text: string, index: number): boolean {

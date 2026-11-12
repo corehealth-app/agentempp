@@ -307,6 +307,203 @@ describe('actual command interpretation materialization', () => {
       food_indexes: [0],
     })
   })
+  it('expands the original breakfast report from explicit milk volume without subtracting whey', async () => {
+    const f = fixture('No café da manhã, consumi 200 mL de leite com 1 medida de whey.', [
+      { name: 'leite com 1 medida de whey', quantity: '200', unit: 'mL' },
+    ])
+    expect(validateConversationMealInterpretationModel(f.model, f.source).decision).toBe(
+      'reported_meal',
+    )
+    const result = prepared(await materialize(f))
+    expect(result.inputs.map((x) => x.calculation_input)).toEqual([
+      { food_name: 'leite integral', quantity_g: 206 },
+      { food_name: 'whey', quantity_g: 30 },
+    ])
+    expect(result.inputs[0]?.candidate).toMatchObject({
+      count: 200,
+      unit_label: 'ml',
+      quantity_basis: 'portion_reference',
+      needs_review: true,
+      quantity_display: { unit: 'mL', grams_per_unit: 1.03 },
+    })
+    expect(result.inputs[1]?.candidate).toMatchObject({
+      quantity_basis: 'portion_reference',
+      needs_review: true,
+      quantity_display: { unit: 'scoop', grams_per_unit: 30 },
+    })
+    expect(result.source_groups).toEqual([
+      {
+        group_index: 0,
+        interpretation_food_indexes: [0],
+        input_indexes: [0, 1],
+        rule: 'mobile_household',
+        source_positions: [
+          {
+            food_index: 0,
+            unit: 'command_text',
+            name: f.interpretation.foods[0]?.name,
+            quantity: f.interpretation.foods[0]?.quantity,
+            unit_ref: f.interpretation.foods[0]?.unit,
+            visual_index: null,
+          },
+        ],
+      },
+    ])
+  })
+  it.each([
+    ['200', 'mL', 'leite com uma dose de whey', 206],
+    ['0,2', 'litros', 'leite integral com 1 medida de whey', 206],
+    ['125', 'mL', 'leite com 1 medida de whey', 128.75],
+  ] as const)('uses existing milk volume and scoop references for %s%s', async (quantity, unit, name, grams) => {
+    const f = fixture(`${quantity}${unit} de ${name}`, [{ name, quantity, unit }]),
+      result = prepared(await materialize(f))
+    expect(result.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([grams, 30])
+    expect(result.inputs.every((x) => x.candidate.quantity_basis === 'portion_reference')).toBe(
+      true,
+    )
+    expect(result.source_groups[0]?.rule).toBe('mobile_household')
+  })
+  it.each([
+    'leite com 1 medida de whey 200mL',
+    '200mL leite com 1 medida de whey',
+    '200mL com leite com 1 medida de whey',
+    '200mL da leite com 1 medida de whey',
+  ])('does not infer milk volume from an unproven association: %s', async (text) => {
+    const f = fixture(text, [{ name: 'leite com 1 medida de whey', quantity: '200', unit: 'mL' }])
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unsupported_compound_association',
+    })
+  })
+  it.each([
+    'leite de coco com 1 medida de whey',
+    'leite com 2 medidas de whey',
+    'leite marca especial com 1 medida de whey',
+  ])('does not invent a household recipe for %s', async (name) => {
+    const f = fixture(`200mL de ${name}`, [{ name, quantity: '200', unit: 'mL' }])
+    expect(await materialize(f)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'interpretation_not_positive',
+    })
+  })
+  it.each([
+    '0',
+    '10000',
+  ])('refuses invalid milk volume %smL without producing ingredients', async (quantity) => {
+    const name = 'leite com 1 medida de whey',
+      f = fixture(`${quantity}mL de ${name}`, [{ name, quantity, unit: 'mL' }])
+    expect(await materialize(f)).toMatchObject({ status: 'clarification_required' })
+  })
+  it.each([
+    [{ status: 'active', confirmed_count: 2 }, 'unsupported_compound_association'],
+    [{ status: 'active', confirmed_count: 1 }, 'personal_correction_unproven'],
+  ] as const)('keeps whole-recipe correction precedence with volume: %j', async (change, reason) => {
+    const name = 'leite com 1 medida de whey',
+      f = fixture(`200mL de ${name}`, [{ name, quantity: '200', unit: 'mL' }]),
+      state = correctionDb([
+        correction({ said_name: name, corrected_to: 'shake pessoal', ...change }),
+      ])
+    expect(await materialize(f, state)).toMatchObject({ status: 'clarification_required', reason })
+  })
+  it('keeps ignored learning on the whole recipe and active ingredient correction in the actual calculator', async () => {
+    const name = 'leite com 1 medida de whey',
+      f = fixture(`200mL de ${name}`, [{ name, quantity: '200', unit: 'mL' }]),
+      learning = correction({ said_name: name, status: 'learning', confirmed_count: 1 }),
+      milk = correction({
+        id: ASSET,
+        said_name: 'leite integral',
+        corrected_to: 'leite pessoal',
+        custom_kcal_per_100g: 100,
+        custom_protein_g: 10,
+        custom_carbs_g: 5,
+        custom_fat_g: 2,
+      }),
+      state = correctionDb([learning, milk]),
+      result = prepared(await materialize(f, state))
+    expect(result.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([206, 30])
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((x) => x.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items[0]).toMatchObject({
+      food_name: 'leite pessoal',
+      quantity_g: 206,
+      kcal: 206,
+      protein_g: 20.6,
+      source: 'user_correction',
+    })
+  })
+  it('retains each repeated compound and an additional explicit whey occurrence through real calculator merges', async () => {
+    const name = 'leite com 1 medida de whey',
+      f = fixture(`200mL de ${name}; 200mL de ${name}; whey30g`, [
+        { name, quantity: '200', unit: 'mL' },
+        { name, quantity: '200', unit: 'mL' },
+        { name: 'whey', quantity: '30', unit: 'g' },
+      ]),
+      catalogs = ['leite integral', 'whey'].map((name, i) => {
+        const entry = everydayFoodDefault(name)
+        if (!entry) throw new Error('Missing existing food reference')
+        return {
+          ...row(entry.catalog_name, 91 + i),
+          kcal_per_100g: entry.per_100g.kcal,
+          protein_g: entry.per_100g.protein_g,
+          carbs_g: entry.per_100g.carbs_g,
+          fat_g: entry.per_100g.fat_g,
+        }
+      }),
+      state = calculationDb(catalogs),
+      result = prepared(await materialize(f, state))
+    expect(result.inputs.map((x) => x.calculation_input.quantity_g)).toEqual([206, 30, 206, 30, 30])
+    expect(new Set(result.inputs.map((x) => x.candidate.candidate_id)).size).toBe(5)
+    expect(
+      result.source_groups.map((g) => [g.interpretation_food_indexes, g.input_indexes]),
+    ).toEqual([
+      [[0], [0, 1]],
+      [[1], [2, 3]],
+      [[2], [4]],
+    ])
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((x) => x.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items.map((x) => [x.food_name, x.quantity_g])).toEqual([
+      ['leite integral', 412],
+      ['whey protein em pó', 90],
+    ])
+    expect(mapConversationMealCalculationSources(result, calc)).toMatchObject([
+      { input_indexes: [0, 2], source_group_indexes: [0, 1], quantity_basis: 'portion_reference' },
+      {
+        input_indexes: [1, 3, 4],
+        source_group_indexes: [0, 1, 2],
+        quantity_basis: 'portion_reference',
+      },
+    ])
+  })
+  it('refuses expanded milk-volume overflow without dropping the final occurrence', async () => {
+    const names = Array.from({ length: 29 }, () => ({ name: 'arroz', quantity: '1', unit: 'g' })),
+      name = 'leite com 1 medida de whey'
+    const text = `${names.map((x) => `${x.name}${x.quantity}${x.unit}`).join('; ')}; 200mL de ${name}`
+    names.push({ name, quantity: '200', unit: 'mL' })
+    expect(await materialize(fixture(text, names))).toMatchObject({
+      status: 'clarification_required',
+      reason: 'item_limit',
+      food_indexes: [29],
+    })
+  })
   it('keeps200g compact total as170g milk+30g whey with one source group', async () => {
     const f = fixture('leite com 1 medida de whey 200g', [
       { name: 'leite com 1 medida de whey', quantity: '200', unit: 'g' },

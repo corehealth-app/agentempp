@@ -172,8 +172,8 @@ function runtimeExactStringRoutes(value: string): string[] {
 // is sealed below; module11098 is newly certified in full, with the other17
 // compiled bodies still byte-identical. No old raw module body is claimed here.
 function certifyNutritionJournalSplitContent(text: string): void {
-  // T50 adds only reviewed per-invocation diagnostics to module65556. Seal the
-  // unchanged validator source before accepting its complete compiled body;
+  // T52 extends only the closed leading meal-context regex in module65556.
+  // Seal the reviewed validator source before accepting its complete compiled body;
   // the other18 module identities, table/count and negative controls stay literal.
   expect(
     createHash('sha256')
@@ -186,7 +186,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('061f6264c54991673421c12f97d6a52167d36983d30069f8054ec4ed46dc17ad')
+  ).toBe('dab833993fa52de4be2ab4c972dea9b9e5a79626f3badc156915a82c36a9fc8a')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -235,7 +235,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:62a7b4739af84fcba30d5cf196021bbbd2b92be92d9a7bd025e412ad36412529',
+      '65556:91295e46a70e1a076a28beeaa80e55cbdde0dae039795791fdbb16f5f27b3b42',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
@@ -300,7 +300,11 @@ function certifyT48IntakeCapabilityExport(body: string): void {
   ).toBe('bfca54ddc258bdabf290483ef7a4b9817ca2cdf2bf5ba0bccbbfaae3b076e17c')
   expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>ak,K:()=>an});')).toBe(true)
   expect(body.split('o:()=>ak,')).toHaveLength(2)
-  expect(createHash('sha256').update(body.replace('o:()=>ak,', '')).digest('hex')).toBe(
+  // T52 changes only this compiler loader link. Retain the complete pre-T48
+  // executable-body certificate after reversing that single proven change.
+  expect(body.split('c(56304)')).toHaveLength(2)
+  const preservedBody = body.replace('c(56304)', 'c(66320)')
+  expect(createHash('sha256').update(preservedBody.replace('o:()=>ak,', '')).digest('hex')).toBe(
     'bcfdd2d7bb47f1acdc50ebf2f7272d167b2e404523eb98f282dfa2b9239ebfb4',
   )
 }
@@ -383,8 +387,18 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '800ad3b683e060be93f3879b290ce1d0469d2c41082385cc21c42e8ee1cf24e9',
+    '36d8539f07313927f5168f651573e742aadb0f529f196492e6ad53439fc37b03',
   )
+  // T52 adds private literal partitions to the same reviewed interpreter edge.
+  expect(
+    createHash('sha256')
+      .update(
+        readFileSync(
+          resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-literal-partition.ts'),
+        ),
+      )
+      .digest('hex'),
+  ).toBe('505ed53b7774598f5d4d094f1c97e157e506c29a447dc25fed59f178e9648b2a')
   expect(interpreter.split("import { zodResponseFormat } from 'openai/helpers/zod'")).toHaveLength(
     2,
   )
@@ -811,7 +825,7 @@ describe('authoritative Mobile API source surface', () => {
         ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
         ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-        ['69520', 'fbca2d1d44287900ae260889c29202df5ca7f1128e1122ac5ec8c1c08f633445'],
+        ['69520', 'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1'],
       ]),
       body = bodies.get('69520') ?? ''
     expect(() => certifyT48IntakeCapabilityExport(body)).not.toThrow()
@@ -1905,8 +1919,13 @@ describe('authoritative Mobile API source surface', () => {
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
       ['50522', 'bced34a3d3a43ba50d1205c55bd2ead6cd4dbc8fc679a8ab5c46e9ed4af692e5'],
-      ['69520', 'fbca2d1d44287900ae260889c29202df5ca7f1128e1122ac5ec8c1c08f633445'],
+      ['69520', 'dcaaecf8c587b9413c83a5fa8645a6803b789f71176f3622709150dca34cc0f1'],
     ])
+    const intakeBody = intakeBodies.get('69520') ?? ''
+    expect(intakeBody.split('c(56304)')).toHaveLength(2)
+    expect(
+      createHash('sha256').update(intakeBody.replace('c(56304)', 'c(66320)')).digest('hex'),
+    ).toBe('fbca2d1d44287900ae260889c29202df5ca7f1128e1122ac5ec8c1c08f633445')
     certifyT48IntakeCapabilityExport(intakeBodies.get('69520') ?? '')
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.

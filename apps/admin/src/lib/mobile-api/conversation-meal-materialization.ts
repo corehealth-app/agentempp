@@ -762,7 +762,7 @@ async function materializeConversationMealCore(
           n !== null && factor !== null
             ? mobileMilkWheyTotalPortions(name, { quantity_g: n * factor })
             : null
-        const compactName = /^leite(?: integral)? com (?:1|uma) (?:medida|dose) de whey$/u.test(
+        const compactName = /^leite(?: integral)? com ((?:1|uma) (?:medida|dose) de whey)$/u.exec(
           normalized(name),
         )
         if (cup || compactName) {
@@ -783,6 +783,43 @@ async function materializeConversationMealCore(
             if (!corrected) return clarify('ambiguous_source_group', [food.index])
             candidates.push(corrected)
           }
+        }
+        // Only explicit volume of the milk, before the exact recipe name.
+        // A trailing volume could describe the mixture and has no milk density.
+        // Whole-food corrections above retain precedence over this expansion.
+        const volumeUnit = u === null ? null : canonicalUnit(u)
+        const text = food.name ? byUnit.get(food.name.unit)?.text : null
+        if (
+          !candidates.length &&
+          compactName &&
+          n !== null &&
+          (volumeUnit === 'ml' || volumeUnit === 'l') &&
+          typeof text === 'string' &&
+          food.name &&
+          food.quantity &&
+          food.unit &&
+          food.quantity.unit === food.name.unit &&
+          food.unit.unit === food.name.unit &&
+          food.quantity.end <= food.unit.start &&
+          food.unit.end <= food.name.start &&
+          /^\s*$/u.test(text.slice(food.quantity.end, food.unit.start)) &&
+          /^\s+de\s+$/iu.test(text.slice(food.unit.end, food.name.start))
+        ) {
+          const whey = mobileHouseholdTextItem(compactName[1] ?? unavailable())
+          if (!whey) unavailable()
+          const milkQualification = await qualify('leite integral')
+          if (milkQualification !== 'qualified') return clarify(milkQualification, [food.index])
+          const wheyQualification = await qualify(whey.name)
+          if (wheyQualification !== 'qualified') return clarify(wheyQualification, [food.index])
+          const milkCandidate = freshCandidate(
+              { name: 'leite integral', count: n, unit: volumeUnit },
+              inputs.length,
+            ),
+            wheyCandidate = freshCandidate(whey, inputs.length + 1, 'portion_reference')
+          if (!milkCandidate || !wheyCandidate)
+            return clarify('ambiguous_source_group', [food.index])
+          candidates.push(milkCandidate, wheyCandidate)
+          rule = 'mobile_household'
         }
         if (!candidates.length) {
           if (compactName && !total)

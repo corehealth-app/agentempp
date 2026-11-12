@@ -138,7 +138,10 @@ function separator(text: string): boolean {
 }
 function reportMarker(text: string): boolean {
   const v = plain(text).replace(/[:,]$/u, '').trim()
-  return /^(?:(?:hoje|agora) )?(?:(?:eu )?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei|consumi|ingeri)|(?:eu )?acabei de (?:comer|beber|tomar)|i (?:just )?(?:ate|drank)|i have (?:eaten|drunk))(?: (?:hoje|agora))?$/u.test(
+  // One leading meal context is part of the same reporting span. It does not
+  // establish consumption without the existing explicit predicate, assign a
+  // meal slot, or permit any other source text to be omitted.
+  return /^(?:no (?:cafe da manha|almoco|jantar),? )?(?:(?:hoje|agora) )?(?:(?:eu )?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei|consumi|ingeri)|(?:eu )?acabei de (?:comer|beber|tomar)|i (?:just )?(?:ate|drank)|i have (?:eaten|drunk))(?: (?:hoje|agora))?$/u.test(
     v,
   )
 }

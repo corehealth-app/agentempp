@@ -57,6 +57,32 @@ describe('decideMealType', () => {
 })
 
 describe('detectExplicitMealType', () => {
+  it.each([
+    ['No café da manhã, consumi 200 mL de leite com 1 medida de whey.', 'cafe'],
+    ['No café da manhã', 'cafe'],
+    ['No café', 'cafe'],
+    ['foi o meu café.', 'cafe'],
+    ['No cafe da manha, comi arroz200g', 'cafe'],
+    ['No almoço, comi arroz200g', 'almoco'],
+    ['No jantar, comi arroz200g', 'jantar'],
+  ])('recognizes a complete explicit Unicode meal name: %s', (text, expected) => {
+    expect(detectExplicitMealType(text)).toBe(expected)
+  })
+  it.each([
+    'No cafézinho',
+    'No café2',
+    'No café_2',
+    'No café da manhãzinha',
+    'No café da manhã2',
+    'No café da manhã_2',
+    'No cafe da manhaé',
+    'breakfasté',
+    'almoçoé',
+    'jantaré',
+    'No café\u0301zinho',
+  ])('does not let a meal-name prefix authorize a Unicode suffix: %s', (text) => {
+    expect(detectExplicitMealType(text)).toBeNull()
+  })
   it('usa a afirmacao positiva em "nao foi lanche, foi jantar"', () => {
     expect(detectExplicitMealType('Não foi lanche, foi jantar')).toBe('jantar')
   })

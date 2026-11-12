@@ -1,3 +1,4 @@
+import { calcMealMacros } from '@mpp/agent'
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import { candidateAuth } from './__fixtures__/conversation-candidate'
@@ -9,6 +10,10 @@ import {
   writerSource,
 } from './__fixtures__/conversation-meal-writer'
 import { bindConversationCommand } from './conversation-command-contracts'
+import { buildConversationMealInterpretationSource } from './conversation-meal-interpretation-contracts'
+import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
+import { materializeConversationMealLiteralPartition } from './conversation-meal-literal-partition'
+import { materializeConversationMealInterpretation } from './conversation-meal-materialization'
 import { registerPersistedConversationMeal } from './conversation-meal-registration-service'
 import { MobileApiError } from './http'
 
@@ -192,6 +197,178 @@ function stored(receipt: unknown = null, resolved: unknown = null) {
 }
 
 describe('actual source-to-factual meal registration composition', () => {
+  it('prepares two source-bound ingredients through real materialization and calculation for the original breakfast report', async () => {
+    const d = dependencies(),
+      original = writerCommand(),
+      command = bindConversationCommand(original.ownerId, `cmsg1:${original.commandId}`, {
+        command_protocol: 'conversation.command.v1',
+        command_id: original.commandId,
+        kind: 'meal.report',
+        source: {
+          channel: 'text',
+          text: 'No café da manhã, consumi 200 mL de leite com 1 medida de whey.',
+        },
+      }),
+      capture = {
+        ...d.source,
+        context: {
+          ...d.source.context,
+          input_hash: command.inputHash,
+          source_input: command.command,
+        },
+      },
+      source = buildConversationMealInterpretationSource(command, capture),
+      model = materializeConversationMealLiteralPartition(
+        {
+          schema: 'conversation.meal-literal-partition.v1',
+          decision: 'reported_meal',
+          reason: 'explicit_report',
+          sources: [
+            {
+              unit: 'command_text',
+              classification: 'reported',
+              visual_indexes: [],
+              parts: [
+                { text: 'No café da manhã, consumi ', kind: 'report', food_index: null },
+                { text: '200', kind: 'quantity', food_index: 0 },
+                { text: ' ', kind: 'separator', food_index: null },
+                { text: 'mL', kind: 'unit', food_index: 0 },
+                { text: ' de ', kind: 'separator', food_index: null },
+                { text: 'leite com 1 medida de whey', kind: 'food', food_index: 0 },
+                { text: '.', kind: 'separator', food_index: null },
+              ],
+            },
+          ],
+          foods: [
+            {
+              index: 0,
+              name: { unit: 'command_text', part_index: 5 },
+              quantity: { unit: 'command_text', part_index: 1 },
+              unit: { unit: 'command_text', part_index: 3 },
+              visual_index: null,
+            },
+          ],
+        },
+        source,
+      ),
+      semantic = {
+        ...interpretation(),
+        ...validateConversationMealInterpretationModel(model, source),
+        input_hash: command.inputHash,
+      }
+    d.interpret.mockResolvedValue(semantic)
+    d.sources.capture.mockResolvedValue(capture)
+    d.journal.admit.mockResolvedValue({
+      action: 'admitted',
+      binding: { ...writerBinding(), input_hash: command.inputHash },
+    })
+    d.writer.commit.mockResolvedValue({
+      action: 'committed',
+      receipt: {
+        ...writerReceipt(),
+        input_hash: command.inputHash,
+        meal_type: 'cafe',
+        log_ids: ['10000000-0000-4000-8000-000000000005', '10000000-0000-4000-8000-000000000006'],
+      },
+    })
+    // Only external reads/writes are doubled. Materializer, calculator, canonical
+    // validation, binding and resolved payload construction are the real functions.
+    const read = Promise.resolve({ data: [], error: null })
+    Object.assign(read, {
+      select: () => read,
+      eq: () => read,
+      or: () => read,
+      neq: () => read,
+      gte: () => read,
+      order: () => read,
+      limit: () => read,
+    })
+    const catalogs = [
+      {
+        id: 91,
+        name_pt: 'Milk, whole, 3.25% milkfat, with added vitamin D',
+        kcal_per_100g: 61,
+        protein_g: 3.15,
+        carbs_g: 4.8,
+        fat_g: 3.25,
+        fiber_g: 0,
+        country_code: 'BR',
+      },
+      {
+        id: 92,
+        name_pt: 'Beverages, Protein powder whey based',
+        kcal_per_100g: 352,
+        protein_g: 78.13,
+        carbs_g: 6.25,
+        fat_g: 1.56,
+        fiber_g: 0,
+        country_code: 'BR',
+      },
+    ]
+    const client = {
+        from: vi.fn((table: string) => {
+          if (table !== 'user_food_corrections') throw new Error('Unexpected table')
+          return read
+        }),
+        rpc: vi.fn(async (_name: string, params: { search_term: string }) => ({
+          data: catalogs.filter((row) => row.name_pt.toLowerCase() === params.search_term),
+          error: null,
+        })),
+      } as unknown as ServiceClient,
+      materialize = vi.fn(materializeConversationMealInterpretation),
+      calculate = vi.fn(calcMealMacros)
+    const result = await registerPersistedConversationMeal(
+      client,
+      candidateAuth,
+      `cmsg1:${command.commandId}`,
+      command.command,
+      { ...d, materialize, calculate },
+    )
+    expect(result.status).toBe('saved')
+    expect(materialize).toHaveBeenCalledTimes(1)
+    expect(calculate.mock.calls[0]?.[1]).toEqual([
+      { food_name: 'leite integral', quantity_g: 206 },
+      { food_name: 'whey', quantity_g: 30 },
+    ])
+    expect(d.writer.prepare).toHaveBeenCalledTimes(1)
+    const [payload] = d.writer.prepare.mock.calls[0] as unknown as [
+      {
+        resolved: { semantic_proof: { input_count: number }; items: unknown[]; meal_type: string }
+      },
+    ]
+    expect(payload.resolved).toMatchObject({
+      meal_type: 'cafe',
+      semantic_proof: { input_count: 2 },
+      items: [
+        {
+          name: 'leite integral',
+          food_db_id: 91,
+          nutrition_source: 'canonical_fuzzy',
+          kcal: 125.7,
+          protein_g: 6.49,
+          quantity_g: 206,
+          input_indexes: [0],
+          quantity_basis: 'portion_reference',
+          display_qty: 200,
+          display_unit: 'mL',
+        },
+        {
+          name: 'whey protein em pó',
+          food_db_id: 92,
+          nutrition_source: 'canonical_fuzzy',
+          kcal: 105.6,
+          protein_g: 23.44,
+          quantity_g: 30,
+          input_indexes: [1],
+          quantity_basis: 'portion_reference',
+          display_qty: 1,
+          display_unit: 'scoop',
+        },
+      ],
+    })
+    expect(d.writer.commit).toHaveBeenCalledTimes(1)
+    expect(d.interpreter.interpret).not.toHaveBeenCalled()
+  })
   it('passes the actual held binding to server-selected enrichment only after committed facts', async () => {
     const d = dependencies(),
       ensureOriginal = vi.fn().mockResolvedValue(null),

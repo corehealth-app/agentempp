@@ -11,6 +11,7 @@ import {
 } from './conversation-meal-interpretation-contracts'
 import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
 import { createOpenRouterConversationMealInterpreter } from './conversation-meal-interpreter'
+import { mealLiteralPartitionSchema } from './conversation-meal-literal-partition'
 
 const owner = '10000000-0000-4000-8000-000000000001'
 const id = '10000000-0000-4000-8000-000000000002'
@@ -177,12 +178,36 @@ describe('closed semantic interpreter input and result', () => {
     }
     expect(() => validateConversationMealInterpretationModel(raw, packet)).toThrow()
   })
+  it('materializes a literal provider partition to the unchanged canonical result', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      complete = vi.fn(async () => providerResult(literalRice())),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete })
+    const result = await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })
+    expect(result).toMatchObject(
+      modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+    )
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it('does not accept the former numeric provider format as a fallback', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      complete = vi.fn(async () =>
+        providerResult(modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }])),
+      ),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, vi.fn())
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503, code: 'conversation_meal_interpretation_unavailable' })
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
   it('uses the real provider API with explicit single-attempt, token/deadline and no tools authority', async () => {
     const text = 'arroz200g',
       f = textSource(text),
       source = buildConversationMealInterpretationSource(f.command, f.capture)
-    const raw = modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }]),
-      complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>(async () => providerResult(raw))
+    const complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>(async () =>
+      providerResult(literalRice()),
+    )
     const interpreter = createOpenRouterConversationMealInterpreter('synthetic-key', { complete })
     expect(complete).not.toHaveBeenCalled()
     const result = await interpreter.interpret(source, { attemptId: epoch, remainingMs: 5000 })
@@ -212,20 +237,24 @@ describe('closed semantic interpreter input and result', () => {
     expect(JSON.stringify(complete.mock.calls[0]?.[0]?.messages)).not.toContain(owner)
     expect(Object.isFrozen(result.foods)).toBe(true)
   })
-  it('sends the canonical schema with only the three unsupported wire constraints removed', async () => {
+  it('sends the private literal schema with only the three unsupported wire constraints removed', async () => {
     const f = textSource('arroz200g'),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
-      raw = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
-      complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>(async () => providerResult(raw)),
+      complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>(async () =>
+        providerResult(literalRice()),
+      ),
       interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }),
-      original = zodResponseFormat(interpretationModelSchema, 'conversation_meal_interpretation_v1')
+      original = zodResponseFormat(
+        mealLiteralPartitionSchema,
+        'conversation_meal_literal_partition_v1',
+      )
     await interpreter.interpret(source, { attemptId: epoch, remainingMs: 50000 })
     const request = at(complete.mock.calls)[0],
       format = request.responseFormat
     expect(request.requestTimeoutMs).toBe(45000)
     expect(format?.type).toBe('json_schema')
     if (format?.type !== 'json_schema') throw new Error('Expected strict schema request')
-    expect(format.json_schema.name).toBe('conversation_meal_interpretation_v1')
+    expect(format.json_schema.name).toBe('conversation_meal_literal_partition_v1')
     expect(format.json_schema.strict).toBe(true)
     expect(format.json_schema.schema?.required).toEqual([
       'schema',
@@ -251,6 +280,9 @@ describe('closed semantic interpreter input and result', () => {
         if (before.type === 'object') {
           objects++
           expect(after.additionalProperties).toBe(false)
+          expect([...(after.required as string[])].sort()).toEqual(
+            Object.keys(after.properties as object).sort(),
+          )
         }
         expect(Object.keys(after).sort()).toEqual(
           Object.keys(before)
@@ -266,8 +298,13 @@ describe('closed semantic interpreter input and result', () => {
       } else expect(actual).toEqual(expected)
     }
     compare(JSON.parse(JSON.stringify(original)), format)
-    expect(objects).toBe(11)
-    expect(removed).toEqual({ minimum: 11, maximum: 11, maxItems: 8 })
+    expect(objects).toBeGreaterThan(0)
+    for (const count of Object.values(removed)) expect(count).toBeGreaterThan(0)
+    const schemaText = JSON.stringify(format)
+    expect(schemaText).toContain('conversation.meal-literal-partition.v1')
+    expect(schemaText).toContain('part_index')
+    expect(schemaText).not.toContain('"start"')
+    expect(schemaText).not.toContain('"end"')
     for (const privateValue of [
       owner,
       id,
@@ -343,7 +380,7 @@ describe('closed semantic interpreter input and result', () => {
     const text = 'arroz200g',
       f = textSource(text),
       source = buildConversationMealInterpretationSource(f.command, f.capture)
-    const r = providerResult(modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }]))
+    const r = providerResult(literalRice())
     if (failure === 'length') r.finishReason = 'length'
     if (failure === 'tool_calls')
       r.toolCalls = [{ id: 'bad', name: 'register_meal', arguments: '{}' }]
@@ -421,7 +458,11 @@ describe('closed semantic interpreter input and result', () => {
     expect(() => validateConversationMealInterpretationModel(raw, source)).toThrow()
     const forged = photoResult(source)
     at(forged.foods).visual_index = 1
-    expect(() => validateConversationMealInterpretationModel(forged, source)).toThrow()
+    const onFailure = vi.fn()
+    expect(() => validateConversationMealInterpretationModel(forged, source, onFailure)).toThrow(
+      'Meal interpretation is unavailable',
+    )
+    expect(onFailure.mock.calls).toEqual([['visual_binding']])
   })
   it('refuses tampered owner/hash/media/epoch and oversized sources before provider work', () => {
     for (const field of ['owner_id', 'input_hash', 'epoch'] as const) {
@@ -471,7 +512,7 @@ describe('closed semantic interpreter input and result', () => {
       omitted = structuredClone(raw)
     at(omitted.sources).spans.pop()
     expect(() => validateConversationMealInterpretationModel(omitted, source)).toThrow()
-    const complete = vi.fn(async () => providerResult(raw)),
+    const complete = vi.fn(async () => providerResult(literalRice())),
       interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete })
     const result = await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })
     const binding = {
@@ -490,8 +531,11 @@ describe('closed semantic interpreter input and result', () => {
       expect(() => parseConversationMealInterpretation(result, changed)).toThrow()
     }
     const duplicate = {
-      ...providerResult(raw),
-      content: JSON.stringify(raw).replace('"decision":', '"decision":"not_reported","decision":'),
+      ...providerResult(literalRice()),
+      content: JSON.stringify(literalRice()).replace(
+        '"decision":',
+        '"decision":"not_reported","decision":',
+      ),
     }
     complete.mockResolvedValueOnce(duplicate)
     await expect(
@@ -518,7 +562,7 @@ describe('closed semantic interpreter input and result', () => {
     invocation.attemptId = owner
     const replacement = vi.fn()
     Object.assign(llm, { complete: replacement })
-    finish(providerResult(modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }])))
+    finish(providerResult(literalRice()))
     expect(await pending).toMatchObject({
       attempt_id: epoch,
       source_hash: 'a'.repeat(64),
@@ -533,9 +577,7 @@ describe('closed semantic interpreter input and result', () => {
       source = buildConversationMealInterpretationSource(f.command, f.capture)
     const mocked = vi
       .spyOn(OpenRouterLLM.prototype, 'complete')
-      .mockResolvedValue(
-        providerResult(modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }])),
-      )
+      .mockResolvedValue(providerResult(literalRice()))
     try {
       const interpreter = createOpenRouterConversationMealInterpreter('unique-synthetic-no-network')
       await expect(
@@ -626,39 +668,35 @@ describe('closed semantic interpreter input and result', () => {
         at(model.foods).quantity = { unit: 'command_text', start: 4, end: 8 }
       },
     },
-  ])('reports only the static validation reason for $name', async ({ reason, mutate }) => {
+  ])('retains the direct canonical rejection reason for $name', ({ reason, mutate }) => {
     const f = textSource('arroz200g'),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
       model = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
-      sink = vi.fn()
+      onFailure = vi.fn()
     mutate(model)
-    const complete = vi.fn(async (_params: LLMCallParams) => providerResult(model)),
-      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
-    await expect(
-      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
-    ).rejects.toMatchObject({
-      status: 503,
-      code: 'conversation_meal_interpretation_unavailable',
-      message: 'Meal interpretation is unavailable',
-    })
-    expect(sink.mock.calls).toEqual([
-      [
-        {
-          event: 'conversation_meal_interpreter_failure',
-          stage: 'validation',
-          error_name: 'MobileApiError',
-          http_status: 503,
-          validation_reason: reason,
-        },
-      ],
-    ])
-    expect(complete).toHaveBeenCalledTimes(1)
-    expect(complete.mock.calls[0]?.[0]).toMatchObject({ maxRetries: 0 })
+    expect(() =>
+      validateConversationMealInterpretationModel(model, source, onFailure),
+    ).toThrowError(
+      expect.objectContaining({
+        status: 503,
+        code: 'conversation_meal_interpretation_unavailable',
+        message: 'Meal interpretation is unavailable',
+      }),
+    )
+    expect(onFailure.mock.calls).toEqual([[reason]])
   })
   it('reports visual binding failures without exposing the item or index', async () => {
     const f = mediaSource('meal_photo'),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
-      model = photoResult(source),
+      model = {
+        schema: 'conversation.meal-literal-partition.v1',
+        decision: 'reported_meal',
+        reason: 'explicit_media_action',
+        sources: [
+          { unit: 'vision_items', classification: 'visual', parts: [], visual_indexes: [0] },
+        ],
+        foods: [{ index: 0, name: null, quantity: null, unit: null, visual_index: 0 }],
+      },
       sink = vi.fn()
     at(model.foods).visual_index = 1
     const interpreter = createOpenRouterConversationMealInterpreter(
@@ -774,7 +812,7 @@ describe('closed semantic interpreter input and result', () => {
   it('keeps concurrent failure reasons local and tolerates a throwing diagnostic sink', async () => {
     const f = textSource('arroz200g'),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
-      model = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      model = literalRice(),
       resolve: ((result: LLMResult) => void)[] = [],
       complete = vi.fn(
         () =>
@@ -790,7 +828,7 @@ describe('closed semantic interpreter input and result', () => {
         interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
         interpreter.interpret(source, { attemptId: id, remainingMs: 1000 }),
       ])
-    at(model.sources).spans.pop()
+    at(model.sources).parts.pop()
     at(resolve, 1)(providerResult(model))
     at(resolve)(providerResult({ private_output: 'secret', validation_reason: 'untrusted-secret' }))
     const outcomes = await calls
@@ -866,7 +904,7 @@ describe('closed semantic interpreter input and result', () => {
     const text = 'arroz200g',
       f = textSource(text),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
-      reply = providerResult(modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }])),
+      reply = providerResult(literalRice()),
       sink = vi.fn()
     if (stage === 'decode') reply.content = '{private-model-output'
     if (stage === 'validation') reply.content = JSON.stringify({ private_model_output: text })
@@ -997,9 +1035,7 @@ describe('closed semantic interpreter input and result', () => {
     const text = 'arroz200g',
       f = textSource(text),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
-      complete = vi.fn(async () =>
-        providerResult(modelFor(text, [{ name: 'arroz', quantity: '200', unit: 'g' }])),
-      ),
+      complete = vi.fn(async () => providerResult(literalRice())),
       sink = vi.fn(),
       interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink),
       result = await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })
@@ -1156,5 +1192,35 @@ function modelFor(
       },
     ],
     foods,
+  }
+}
+
+// Explicit model wire fixture; never derived from canonical numeric spans.
+function literalRice() {
+  return {
+    schema: 'conversation.meal-literal-partition.v1',
+    decision: 'reported_meal',
+    reason: 'nominal_food_list',
+    sources: [
+      {
+        unit: 'command_text',
+        classification: 'nominal_list',
+        visual_indexes: [],
+        parts: [
+          { text: 'arroz', kind: 'food', food_index: 0 },
+          { text: '200', kind: 'quantity', food_index: 0 },
+          { text: 'g', kind: 'unit', food_index: 0 },
+        ],
+      },
+    ],
+    foods: [
+      {
+        index: 0,
+        name: { unit: 'command_text', part_index: 0 },
+        quantity: { unit: 'command_text', part_index: 1 },
+        unit: { unit: 'command_text', part_index: 2 },
+        visual_index: null,
+      },
+    ],
   }
 }

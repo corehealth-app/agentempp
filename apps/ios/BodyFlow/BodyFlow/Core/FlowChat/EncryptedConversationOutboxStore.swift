@@ -219,7 +219,192 @@ struct EncryptedConversationOutboxStore: Sendable {
     }
 
     func containsCiphertext(owner: ConversationOutboxOwner) throws -> Bool {
-        try locked { try readCiphertext(owner: owner) != nil }
+        try locked {
+            let queue = try readCiphertext(owner: owner)
+            let capture = try readCiphertext(at: originalFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes)
+            return queue != nil || capture != nil
+        }
+    }
+
+    func originalFileURL(owner: ConversationOutboxOwner) -> URL {
+        root.appendingPathComponent(owner.hash + ".original-sealed", isDirectory: false)
+    }
+    func containsOriginalCiphertext(owner: ConversationOutboxOwner) throws -> Bool {
+        try locked { try readCiphertext(at: originalFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes) != nil }
+    }
+
+    func prepareOriginal(_ candidate: ConversationMediaOriginal, owner: ConversationOutboxOwner, key: SymmetricKey) throws -> ConversationMediaOriginal {
+        try locked {
+            try candidate.validate()
+            let previous = try readOriginalEnvelope(owner: owner, key: key)
+            if let old = previous?.original {
+                guard old.matchesUnbound(candidate) else { throw ConversationOutboxError.invalidTransition }
+                try syncOriginalDirectory()
+                return old
+            }
+            let state = try readState(owner: owner, key: key)
+            if let retired = previous?.retired, retired.cancelled,
+               state.intakes.contains(where: { $0.input.intakeID == retired.intakeID }) {
+                throw ConversationOutboxError.reconciliationRequired
+            }
+            guard state.entries.count + state.replies.count + state.intakes.count < Self.capacity else { throw ConversationOutboxError.queueFull }
+            guard !state.entries.contains(where: { $0.commandID == candidate.intakeID }),
+                  !state.replies.contains(where: { $0.intent.replyID == candidate.intakeID }),
+                  !state.intakes.contains(where: { $0.input.intakeID == candidate.intakeID }) else { throw ConversationOutboxError.invalidTransition }
+            try writeOriginalEnvelope(.init(owner: owner.hash, original: candidate, retired: nil), owner: owner, key: key)
+            return candidate
+        }
+    }
+
+    func bindOriginalAsset(intakeID: UUID, assetID: UUID, owner: ConversationOutboxOwner, key: SymmetricKey) throws -> ConversationMediaOriginal {
+        try locked {
+            guard var original = try readOriginalEnvelope(owner: owner, key: key)?.original,
+                  original.intakeID == intakeID, original.assetID == nil || original.assetID == assetID else { throw ConversationOutboxError.invalidTransition }
+            original.assetID = assetID
+            try writeOriginalEnvelope(.init(owner: owner.hash, original: original, retired: nil), owner: owner, key: key)
+            return original
+        }
+    }
+
+    /// Reconcile a crash after enqueue but before retiring local capture bytes.
+    /// This read never recreates an input or dispatches work.
+    func loadOriginal(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> ConversationMediaOriginal? {
+        try locked {
+            guard let envelope = try readOriginalEnvelope(owner: owner, key: key) else { return nil }
+            var state = try readState(owner: owner, key: key)
+            if let original = envelope.original {
+                if let row = state.intakes.first(where: { $0.input.intakeID == original.intakeID }) {
+                    try verifyOriginal(original, row: row)
+                    guard row.state == .queued else { throw ConversationOutboxError.reconciliationRequired }
+                    try writeOriginalEnvelope(.init(owner: owner.hash, original: nil, retired: .init(original, cancelled: false)), owner: owner, key: key)
+                    return nil
+                }
+                return original
+            }
+            try syncOriginalDirectory()
+            if let retired = envelope.retired, retired.cancelled,
+               let index = state.intakes.firstIndex(where: { $0.input.intakeID == retired.intakeID }) {
+                let row = state.intakes[index]
+                guard row.state == .queued, row.ownerID == retired.ownerID, row.epoch == retired.epoch,
+                      retired.inputHash == row.input.inputHash else { throw ConversationOutboxError.reconciliationRequired }
+                state.intakes.remove(at: index)
+                try write(state, owner: owner, key: key)
+            }
+            return nil
+        }
+    }
+
+    func promoteOriginal(_ input: FlowNeutralIntakeInput, ifPresent: Bool = false, owner: ConversationOutboxOwner, key: SymmetricKey) throws {
+        try locked {
+            guard let envelope = try readOriginalEnvelope(owner: owner, key: key) else {
+                if ifPresent { return }
+                throw ConversationOutboxError.invalidTransition
+            }
+            if ifPresent, (envelope.original?.intakeID ?? envelope.retired?.intakeID) != input.intakeID { return }
+            if let retired = envelope.retired {
+                guard !retired.cancelled, retired.intakeID == input.intakeID, retired.inputHash == input.inputHash else { throw ConversationOutboxError.invalidTransition }
+                try syncOriginalDirectory()
+                return
+            }
+            guard let original = envelope.original, try original.input().wireBody == input.wireBody,
+                  let row = try readState(owner: owner, key: key).intakes.first(where: { $0.input.intakeID == input.intakeID }) else { throw ConversationOutboxError.invalidTransition }
+            try verifyOriginal(original, row: row)
+            guard row.state == .queued else { throw ConversationOutboxError.reconciliationRequired }
+            try writeOriginalEnvelope(.init(owner: owner.hash, original: nil, retired: .init(original, cancelled: false)), owner: owner, key: key)
+        }
+    }
+
+    /// Durable cancellation precedes queue removal. A crash between the writes
+    /// cannot turn the previously cancelled original into a new registration.
+    func discardOriginal(intakeID: UUID, owner: ConversationOutboxOwner, key: SymmetricKey) throws {
+        try locked {
+            guard let envelope = try readOriginalEnvelope(owner: owner, key: key) else { throw ConversationOutboxError.commandNotFound }
+            var state = try readState(owner: owner, key: key)
+            if let original = envelope.original {
+                guard original.intakeID == intakeID else { throw ConversationOutboxError.commandNotFound }
+                if let row = state.intakes.first(where: { $0.input.intakeID == intakeID }) {
+                    try verifyOriginal(original, row: row)
+                    guard row.state == .queued else { throw ConversationOutboxError.reconciliationRequired }
+                }
+                try writeOriginalEnvelope(.init(owner: owner.hash, original: nil, retired: .init(original, cancelled: true)), owner: owner, key: key)
+            } else {
+                guard let retired = envelope.retired, retired.intakeID == intakeID else { throw ConversationOutboxError.commandNotFound }
+                guard retired.cancelled else { throw ConversationOutboxError.reconciliationRequired }
+                try syncOriginalDirectory()
+            }
+            if let index = state.intakes.firstIndex(where: { $0.input.intakeID == intakeID }) {
+                guard state.intakes[index].state == .queued else { throw ConversationOutboxError.reconciliationRequired }
+                state.intakes.remove(at: index)
+                try write(state, owner: owner, key: key)
+            }
+        }
+    }
+
+    private func verifyOriginal(_ original: ConversationMediaOriginal, row: ConversationNeutralIntakeOutboxEntry) throws {
+        guard try original.input().wireBody == row.input.wireBody,
+              original.ownerID == row.ownerID, original.epoch == row.epoch else { throw ConversationOutboxError.integrityFailure }
+    }
+
+    private struct OriginalRetirement: Codable {
+        let intakeID: UUID, ownerID: UUID, epoch: UUID
+        let inputHash: String?
+        let cancelled: Bool
+        init(_ original: ConversationMediaOriginal, cancelled: Bool) {
+            intakeID = original.intakeID; ownerID = original.ownerID; epoch = original.epoch
+            inputHash = try? original.input().inputHash; self.cancelled = cancelled
+        }
+    }
+    private struct OriginalEnvelope: Codable {
+        var version = 1
+        let owner: String
+        let original: ConversationMediaOriginal?
+        let retired: OriginalRetirement?
+        private enum CodingKeys: String, CodingKey { case version, owner, original, retired }
+        init(owner: String, original: ConversationMediaOriginal?, retired: OriginalRetirement?) {
+            self.owner = owner; self.original = original; self.retired = retired
+        }
+        init(from decoder: any Decoder) throws {
+            try outboxKeys(decoder, required: ["version", "owner"], optional: ["original", "retired"])
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decode(Int.self, forKey: .version); owner = try c.decode(String.self, forKey: .owner)
+            original = try c.decodeIfPresent(ConversationMediaOriginal.self, forKey: .original)
+            retired = try c.decodeIfPresent(OriginalRetirement.self, forKey: .retired)
+            guard version == 1, (original == nil) != (retired == nil) else { throw ConversationOutboxError.integrityFailure }
+            if let retired {
+                guard retired.cancelled || retired.inputHash != nil,
+                      retired.inputHash.map({ $0.count == 64 && $0.allSatisfy({ "0123456789abcdef".contains($0) }) }) ?? retired.cancelled else { throw ConversationOutboxError.integrityFailure }
+            }
+        }
+    }
+    private func originalAAD(_ owner: ConversationOutboxOwner) -> Data {
+        Data("performe.conversation.original\0version=1\0owner=\(owner.hash)".utf8)
+    }
+    private func readOriginalEnvelope(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> OriginalEnvelope? {
+        guard let data = try readCiphertext(at: originalFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes) else { return nil }
+        do {
+            guard data.starts(with: Data("PCOMG001".utf8)) else { throw ConversationOutboxError.integrityFailure }
+            let box = try AES.GCM.SealedBox(combined: data.dropFirst(8))
+            let plain = try AES.GCM.open(box, using: key, authenticating: originalAAD(owner))
+            let value = try JSONDecoder().decode(OriginalEnvelope.self, from: plain)
+            guard value.owner == owner.hash else { throw ConversationOutboxError.integrityFailure }
+            return value
+        } catch { throw ConversationOutboxError.integrityFailure }
+    }
+    private func writeOriginalEnvelope(_ envelope: OriginalEnvelope, owner: ConversationOutboxOwner, key: SymmetricKey) throws {
+        let plain = try JSONEncoder().encode(envelope)
+        guard plain.count <= ConversationMediaOriginal.maximumEnvelopeBytes else { throw ConversationOutboxError.queueFull }
+        let box = try AES.GCM.seal(plain, using: key, authenticating: originalAAD(owner))
+        guard let data = box.combined else { throw ConversationOutboxError.storageUnavailable }
+        try atomicReplace(Data("PCOMG001".utf8) + data, at: originalFileURL(owner: owner))
+        // A lost/failed sync is uncertain, never permission to replace an
+        // original with a fresh nonce. The next retry reads and syncs it again.
+        try syncOriginalDirectory()
+    }
+    private func syncOriginalDirectory() throws {
+        let fd = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw ConversationOutboxError.storageUnavailable }
+        defer { Darwin.close(fd) }
+        guard fsync(fd) == 0 else { throw ConversationOutboxError.storageUnavailable }
     }
 
     func load(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> [ConversationOutboxEntry] {
@@ -284,7 +469,21 @@ struct EncryptedConversationOutboxStore: Sendable {
         var intakes: [ConversationNeutralIntakeOutboxEntry]
     }
     private func write(_ state: State, owner: ConversationOutboxOwner, key: SymmetricKey) throws {
-        guard state.entries.count + state.replies.count + state.intakes.count <= Self.capacity else { throw ConversationOutboxError.queueFull }
+        let capture = try readOriginalEnvelope(owner: owner, key: key)
+        var reservation = 0
+        if let original = capture?.original {
+            guard !state.entries.contains(where: { $0.commandID == original.intakeID }),
+                  !state.replies.contains(where: { $0.intent.replyID == original.intakeID }) else { throw ConversationOutboxError.integrityFailure }
+            if let row = state.intakes.first(where: { $0.input.intakeID == original.intakeID }) {
+                try verifyOriginal(original, row: row)
+                guard row.state == .queued else { throw ConversationOutboxError.reconciliationRequired }
+            } else { reservation = 1 }
+        }
+        if let retired = capture?.retired, retired.cancelled,
+           let row = state.intakes.first(where: { $0.input.intakeID == retired.intakeID }) {
+            guard row.state == .queued else { throw ConversationOutboxError.reconciliationRequired }
+        }
+        guard state.entries.count + state.replies.count + state.intakes.count + reservation <= Self.capacity else { throw ConversationOutboxError.queueFull }
         try Self.validate(state.entries)
         try Self.validateReplies(state.replies, reports: state.entries)
         try Self.validateIntakes(state.intakes, reports: state.entries, replies: state.replies)
@@ -588,7 +787,10 @@ struct EncryptedConversationOutboxStore: Sendable {
     }
 
     private func readCiphertext(owner: ConversationOutboxOwner) throws -> Data? {
-        let descriptor = open(fileURL(owner: owner).path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        try readCiphertext(at: fileURL(owner: owner), maximum: Self.maxBytes)
+    }
+    private func readCiphertext(at url: URL, maximum: Int) throws -> Data? {
+        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         if descriptor < 0 {
             if errno == ENOENT { return nil }
             throw ConversationOutboxError.storageUnavailable
@@ -596,7 +798,7 @@ struct EncryptedConversationOutboxStore: Sendable {
         defer { close(descriptor) }
         var info = stat()
         guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-              info.st_size > 0, info.st_size <= Self.maxBytes + 128 else {
+              info.st_size > 0, info.st_size <= maximum + 128 else {
             throw ConversationOutboxError.integrityFailure
         }
         var data = Data(count: Int(info.st_size))

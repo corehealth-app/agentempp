@@ -8,6 +8,73 @@ import Testing
   import UIKit
   @MainActor @Suite("Real neutral composer and factual transcript content")
   struct FlowNeutralIntakeRenderingTests {
+    @Test(arguments: ["epoch", "capture_unavailable"])
+    func heldOriginalExplainsItsHoldWithoutShowingOldCaptionAndCanBeDiscarded(_ change: String)
+      async throws
+    {
+      let f = try await neutralVisibleFixture()
+      defer { f.disk.remove() }
+      let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+      let server = NeutralCaptureUnitServer(
+        sessions: f.server, kind: "audio_note", failCreate: true)
+      await f.http.stub.respond { request, _ in try await server.reply(request) }
+      let media = FlowConversationMediaDependencies(
+        uploader: ConversationMediaUploaderProbe(), staging: staging)
+      let old = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle,
+        store: f.disk.store, keyVault: f.vault, media: media, neutralIntakeEnabled: true)
+      let original = try #require(old.neutralIntake)
+      let file = try stageConversationSyntheticMedia(
+        staging: staging, data: Data("synthetic-media".utf8), fileExtension: "mp3")
+      try old.attach(
+        .init(
+          fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: 15,
+          duration: 12, channel: .audioRecording), expectedContext: #require(old.captureContext))
+      original.composer = "PRIVATE OLD CAPTION"
+      await original.submit()
+      let intakeID = try #require(original.preparedIntakeID)
+      await old.close()
+      staging.purge()
+      let epoch = UUID().uuidString.lowercased()
+      await f.http.stub.respond { request, _ in
+        let reply = try await server.reply(request)
+        guard change == "epoch", request.url?.path.hasSuffix("/session") == true else {
+          return reply
+        }
+        var body = try JSONSerialization.jsonObject(with: reply.body) as! [String: Any]
+        var data = try #require(body["data"] as? [String: Any])
+        data["epoch"] = epoch
+        body["data"] = data
+        return .init(
+          status: reply.status, body: try JSONSerialization.data(withJSONObject: body),
+          headers: reply.headers)
+      }
+      let current = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle,
+        store: f.disk.store, keyVault: f.vault,
+        media: change == "capture_unavailable" ? nil : media,
+        neutralIntakeEnabled: true)
+      let held = try #require(current.neutralIntake)
+      #expect(
+        held.heldCount == 1 && held.isComposerLocked && !held.canSubmit && held.composer.isEmpty)
+      #expect(held.preparedIntakeID == intakeID && current.attachment == nil)
+      let host = SignUpRenderingProbe.host(
+        FlowNeutralIntakeComposerContent(
+          model: held,
+          capture: .init(stager: .init(staging: staging), camera: .unavailable)
+        )
+        .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 850)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      #expect(nodes.contains { $0.label.contains("não será enviado") })
+      #expect(!nodes.contains { $0.label.contains("PRIVATE OLD CAPTION") })
+      await held.discardUnsent(intakeID: intakeID)
+      #expect(held.heldCount == 0 && !held.isComposerLocked && held.preparedIntakeID == nil)
+      held.composer = "Uma mensagem nova"
+      #expect(held.canSubmit)
+      await current.close()
+      #expect(!(await f.http.stub.requests).contains { $0.httpMethod == "DELETE" })
+    }
     @Test(.serialized, arguments: [false, true])
     func actualCaptureSurvivesTemporaryRevalidationButClosesOnSessionInvalidation(_ camera: Bool)
       async throws
@@ -125,8 +192,10 @@ import Testing
         })
       await model.close()
     }
-    @Test func failedUploadHasOneUsableSendActionInsteadOfLookingUpAnUnqueuedMessage() async throws
-    {
+    @Test(arguments: [false, true])
+    func failedUploadHasOneUsableSendActionInsteadOfLookingUpAnUnqueuedMessage(
+      _ loseTemporaryFile: Bool
+    ) async throws {
       let f = try await neutralVisibleFixture()
       defer { f.disk.remove() }
       let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
@@ -157,6 +226,7 @@ import Testing
       #expect(
         host.nodes().contains { $0.identifier == "conversation.neutral.send" && $0.isEnabled })
       neutral.composer = "Não substituir o original"
+      if loseTemporaryFile { staging.purge() }
       await neutral.submit()
       let creates = await f.http.stub.requests.filter {
         $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/media"

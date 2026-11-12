@@ -16,9 +16,13 @@ struct FlowNeutralIntakeComposerContent: View {
           english ? "Original message preserved" : "Mensagem original preservada",
           systemImage: "lock")
         Text(
-          english
-            ? "This original message is locked until its local delivery is resolved."
-            : "Esta mensagem original fica travada até resolver sua entrega local.")
+          model.hasHeldOriginal
+            ? (english
+              ? "Access to this attachment changed. It is preserved and will not be sent. You can discard it to continue."
+              : "O acesso deste anexo mudou. Ele foi preservado e não será enviado. Você pode descartá-lo para continuar.")
+            : (english
+              ? "This original message is locked until its local delivery is resolved."
+              : "Esta mensagem original fica travada até resolver sua entrega local."))
         HStack {
           if model.preparedInput != nil {
             Button(english ? "Check original" : "Consultar original") {

@@ -106,6 +106,67 @@ actor ConversationNeutralIntakeOutboxSession {
       throw error
     }
   }
+  func prepareOriginal(_ original: ConversationMediaOriginal, context: ConversationCommandContext)
+    async throws -> ConversationMediaOriginal
+  {
+    try check(context.observation)
+    guard original.ownerID == context.ownerID, original.epoch == context.epoch else {
+      throw ConversationOutboxError.invalidServerObservation
+    }
+    return try await transaction(context.observation) { store, owner, key in
+      try store.prepareOriginal(original, owner: owner, key: key)
+    }
+  }
+  func loadOriginal(context: ConversationCommandContext) async throws -> ConversationMediaOriginal?
+  {
+    try check(context.observation)
+    return try await transaction(context.observation) { store, owner, key in
+      try store.loadOriginal(owner: owner, key: key)
+    }
+  }
+  func bindOriginalAsset(intakeID: UUID, assetID: UUID, context: ConversationCommandContext)
+    async throws -> ConversationMediaOriginal
+  {
+    try check(context.observation)
+    return try await transaction(context.observation) { store, owner, key in
+      guard let original = try store.loadOriginal(owner: owner, key: key),
+        original.ownerID == context.ownerID, original.epoch == context.epoch
+      else { throw ConversationOutboxError.invalidServerObservation }
+      return try store.bindOriginalAsset(
+        intakeID: intakeID, assetID: assetID, owner: owner, key: key)
+    }
+  }
+  func promoteOriginal(_ input: FlowNeutralIntakeInput, context: ConversationCommandContext)
+    async throws
+  {
+    try check(context.observation)
+    try await transaction(context.observation) { store, owner, key in
+      try store.promoteOriginal(input, owner: owner, key: key)
+    }
+  }
+  func discardOriginal(intakeID: UUID) async throws {
+    try await transaction { store, owner, key in
+      try store.discardOriginal(intakeID: intakeID, owner: owner, key: key)
+    }
+  }
+  /// Processing is also gated after an uncertain promotion. Old queued media
+  /// without a capsule remains compatible; another original is never retired.
+  func prepareQueuedOriginal(_ input: FlowNeutralIntakeInput, context: ConversationCommandContext)
+    async throws
+  {
+    try check(context.observation)
+    try await transaction(context.observation) { store, owner, key in
+      guard
+        let row = try store.loadIntakes(owner: owner, key: key).first(where: {
+          $0.input.intakeID == input.intakeID
+        }),
+        row.input.wireBody == input.wireBody, row.ownerID == context.ownerID,
+        row.epoch == context.epoch,
+        row.state == .queued, row.hold == nil
+      else { throw ConversationOutboxError.reconciliationRequired }
+      try store.promoteOriginal(input, ifPresent: true, owner: owner, key: key)
+    }
+  }
   func enqueue(input: FlowNeutralIntakeInput, server: ConversationOutboxServerObservation)
     async throws -> UUID
   {

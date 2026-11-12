@@ -50,6 +50,9 @@ final class FlowNeutralIntakeModel {
   private var selectedAttachment: FlowConversationAttachment?
   private let mediaService: ConversationMealMediaService?
   private let mediaStaging: MediaStagingStore?
+  private let originalSession: ConversationNeutralIntakeOutboxSession?
+  private var heldOriginal: ConversationMediaOriginal?
+  private var durableOriginal: ConversationMediaOriginal?
   private var draft = ""
   private var revision: UInt64 = 0
   private var hint: ConversationMealCommand.MealType?
@@ -65,7 +68,9 @@ final class FlowNeutralIntakeModel {
   private var operationID = UUID()
   private var closed = false
   private(set) var isWorking = false
-  private(set) var heldCount = 0
+  private var heldIntakeCount = 0
+  var heldCount: Int { heldIntakeCount + (heldOriginal == nil ? 0 : 1) }
+  var hasHeldOriginal: Bool { !closed && heldOriginal != nil }
   private(set) var failure: ConversationNeutralIntakeFailure?
   private(set) var mediaPhase: FlowConversationMediaPhase?
   private init(
@@ -73,6 +78,7 @@ final class FlowNeutralIntakeModel {
     parentIdentity: ConversationCommandContext.Identity,
     parentIsCurrent: @escaping @MainActor (ConversationCommandContext.Identity) -> Bool,
     mediaService: ConversationMealMediaService?, mediaStaging: MediaStagingStore?,
+    originalSession: ConversationNeutralIntakeOutboxSession?,
     onWorkSettled: @escaping @MainActor () async -> Void,
     onFactualEffect: @escaping @MainActor () -> Void
   ) {
@@ -81,6 +87,7 @@ final class FlowNeutralIntakeModel {
     self.parentIsCurrent = parentIsCurrent
     self.mediaService = mediaService
     self.mediaStaging = mediaStaging
+    self.originalSession = originalSession
     self.onFactualEffect = onFactualEffect
     self.onWorkSettled = onWorkSettled
   }
@@ -99,13 +106,35 @@ final class FlowNeutralIntakeModel {
     let controller = try await ConversationNeutralIntakeController.open(
       transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault,
       expectedLease: expectedLease)
+    let originals: ConversationNeutralIntakeOutboxSession?
+    do {
+      let needsOriginals: Bool
+      if mediaService != nil {
+        needsOriginals = true
+      } else {
+        let owner = try ConversationOutboxOwner(lease: expectedLease)
+        needsOriginals = try await lifecycle.performPatientStateOperation(lease: expectedLease) {
+          try store.containsOriginalCiphertext(owner: owner)
+        }
+      }
+      originals =
+        needsOriginals
+        ? try await ConversationNeutralIntakeOutboxSession.open(
+          lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: expectedLease)
+        : nil
+    } catch {
+      await controller.close()
+      throw error
+    }
     let model = Self(
       controller: controller, parentIdentity: parentIdentity, parentIsCurrent: parentIsCurrent,
-      mediaService: mediaService, mediaStaging: mediaStaging, onWorkSettled: onWorkSettled,
+      mediaService: mediaService, mediaStaging: mediaStaging, originalSession: originals,
+      onWorkSettled: onWorkSettled,
       onFactualEffect: onFactualEffect)
     do {
       try await controller.publishSnapshot(model.publisher(model.operationID))
       guard model.isVisible else { throw ConversationOutboxError.invalidServerObservation }
+      try await model.restoreOriginal()
       return model
     } catch {
       await model.close()
@@ -118,10 +147,12 @@ final class FlowNeutralIntakeModel {
     else { return false }
     return (try? context.withCurrentAuthority { true }) == true
   }
-  var isComposerLocked: Bool { prepared != nil || preparedCapture != nil }
+  var isComposerLocked: Bool { prepared != nil || preparedCapture != nil || heldOriginal != nil }
   var preparedInput: FlowNeutralIntakeInput? { closed ? nil : prepared?.input }
   var preparedIntakeID: UUID? {
-    closed ? nil : (prepared?.input.intakeID ?? preparedCapture?.attachment.commandID)
+    closed
+      ? nil
+      : (prepared?.input.intakeID ?? preparedCapture?.attachment.commandID ?? heldOriginal?.intakeID)
   }
   var captureContext: ConversationCommandContext.Identity? {
     isVisible && mediaService != nil && mediaStaging != nil ? context?.identity : nil
@@ -170,7 +201,9 @@ final class FlowNeutralIntakeModel {
     }
   }
   var canSubmit: Bool {
-    guard !closed, !isWorking, lastIdentity == parentIdentity else { return false }
+    guard !closed, !isWorking, heldOriginal == nil, lastIdentity == parentIdentity else {
+      return false
+    }
     if let prepared {
       return prepared.identity == parentIdentity
         && !entries.contains {
@@ -225,7 +258,7 @@ final class FlowNeutralIntakeModel {
     delivered.removeAll()
     pendingNotifications.removeAll()
     queuedIDs.removeAll()
-    heldCount = 0
+    heldIntakeCount = 0
   }
   func suspendVisibility() {
     context = nil
@@ -244,6 +277,7 @@ final class FlowNeutralIntakeModel {
     await run { id in
       let publish = self.publisher(id)
       try await self.controller.refreshSession(publish)
+      try await self.restoreOriginal()
     }
   }
   func submit() async {
@@ -271,15 +305,50 @@ final class FlowNeutralIntakeModel {
         original = ready
       } else if let capture = self.preparedCapture {
         guard let media = self.mediaService, let current = self.context,
+          let originals = self.originalSession, let staging = self.mediaStaging,
           self.isVisible, capture.attachment.identity == current.identity
         else { throw ConversationOutboxError.invalidServerObservation }
-        self.mediaPhase = .uploading
-        let asset = try await media.uploadIntake(
-          capture.attachment.staged,
-          captureID: capture.attachment.id, context: current)
+        let protectedOriginal: ConversationMediaOriginal?
+        if let cached = self.durableOriginal {
+          protectedOriginal = cached
+        } else {
+          protectedOriginal = try await originals.loadOriginal(context: current)
+        }
+        let candidate: ConversationMediaOriginal
+        if let stored = protectedOriginal, stored.captureID == capture.attachment.id,
+          stored.intakeID == capture.attachment.commandID
+        {
+          candidate = stored
+        } else {
+          candidate = try ConversationMediaOriginal(
+            staged: capture.attachment.staged, staging: staging,
+            captureID: capture.attachment.id, intakeID: capture.attachment.commandID,
+            context: current.identity, caption: capture.caption, mealTypeHint: capture.hint)
+        }
+        guard candidate.caption == capture.caption, candidate.mealTypeHint == capture.hint else {
+          throw ConversationOutboxError.invalidTransition
+        }
+        let durable = try await originals.prepareOriginal(candidate, context: current)
         guard self.isVisible, self.parentIdentity == capture.attachment.identity else {
           throw ConversationOutboxError.invalidServerObservation
         }
+        self.durableOriginal = durable
+        try current.withCurrentAuthority {
+          try durable.ensureStaged(capture.attachment.staged, in: staging)
+        }
+        self.mediaPhase = .uploading
+        let asset = try await media.uploadIntake(
+          capture.attachment.staged,
+          captureID: capture.attachment.id, context: current, expectedAssetID: durable.assetID)
+        guard self.isVisible, self.parentIdentity == capture.attachment.identity else {
+          throw ConversationOutboxError.invalidServerObservation
+        }
+        let boundOriginal = try await originals.bindOriginalAsset(
+          intakeID: capture.attachment.commandID, assetID: asset, context: current)
+        guard self.isVisible, self.parentIdentity == capture.attachment.identity else {
+          throw ConversationOutboxError.invalidServerObservation
+        }
+        self.durableOriginal = boundOriginal
         let input = try FlowNeutralIntakeInput(
           intakeID: capture.attachment.commandID,
           source: .media(assetID: asset, caption: capture.caption), mealTypeHint: capture.hint)
@@ -300,6 +369,15 @@ final class FlowNeutralIntakeModel {
       guard id == original.input.intakeID, self.parentIdentity == original.identity else {
         throw ConversationOutboxError.invalidTransition
       }
+      if case .media = original.input.source {
+        guard let originals = self.originalSession, let current = self.context, self.isVisible,
+          current.identity == original.identity
+        else { throw ConversationOutboxError.invalidServerObservation }
+        try await originals.promoteOriginal(original.input, context: current)
+        guard self.isVisible, self.context?.identity == original.identity else {
+          throw ConversationOutboxError.invalidServerObservation
+        }
+      }
       if self.revision == original.revision {
         self.draft = ""
         self.hint = nil
@@ -308,6 +386,7 @@ final class FlowNeutralIntakeModel {
       self.prepared = nil
       self.preparedCapture = nil
       self.selectedAttachment = nil
+      self.durableOriginal = nil
       try await self.process(original.input, identity: original.identity)
       try await self.controller.send(intakeID: id, publish: publish)
     }
@@ -341,6 +420,24 @@ final class FlowNeutralIntakeModel {
   func discardUnsent(intakeID: UUID) async {
     await run { id in
       let publish = self.publisher(id)
+      if let originals = self.originalSession,
+        self.preparedCapture?.attachment.commandID == intakeID
+          || self.heldOriginal?.intakeID == intakeID || self.durableOriginal?.intakeID == intakeID
+      {
+        do { try await originals.discardOriginal(intakeID: intakeID) } catch ConversationOutboxError
+          .commandNotFound
+        { /* No durable capture was admitted. */  }
+        let capture = self.preparedCapture?.attachment
+        self.clearCapture()
+        self.prepared = nil
+        self.draft = ""
+        self.hint = nil
+        if let capture, let current = self.context, current.identity == capture.identity {
+          try await self.mediaService?.discard(captureID: capture.id, context: current)
+        }
+        try await self.controller.publishSnapshot(publish)
+        return
+      }
       do {
         try await self.controller.discardUnsent(intakeID: intakeID, publish: publish)
       } catch ConversationOutboxError.commandNotFound {
@@ -380,12 +477,52 @@ final class FlowNeutralIntakeModel {
   func close() async {
     invalidateSynchronously()
     await controller.close()
+    await originalSession?.invalidate()
   }
   private func clearCapture() {
     if let selectedAttachment { mediaStaging?.remove(selectedAttachment.staged.fileURL) }
     selectedAttachment = nil
     preparedCapture = nil
     mediaPhase = nil
+    heldOriginal = nil
+    durableOriginal = nil
+  }
+  private func restoreOriginal() async throws {
+    guard prepared == nil, preparedCapture == nil, let originals = originalSession,
+      let current = context, isVisible
+    else { return }
+    let original = try await originals.loadOriginal(context: current)
+    guard isVisible, context?.identity == current.identity else {
+      throw ConversationOutboxError.invalidServerObservation
+    }
+    guard let original else {
+      heldOriginal = nil
+      durableOriginal = nil
+      try await controller.publishSnapshot(publisher(operationID))
+      return
+    }
+    guard original.ownerID == current.ownerID, original.epoch == current.epoch,
+      let staging = mediaStaging, mediaService != nil
+    else {
+      heldOriginal = original
+      return
+    }
+    try current.withCurrentAuthority {
+      let staged = try original.restage(in: staging)
+      if let selectedAttachment { mediaStaging?.remove(selectedAttachment.staged.fileURL) }
+      let attachment = FlowConversationAttachment(
+        id: original.captureID, commandID: original.intakeID,
+        staged: staged, identity: current.identity)
+      selectedAttachment = attachment
+      heldOriginal = nil
+      durableOriginal = original
+      draft = original.caption ?? ""
+      hint = original.mealTypeHint
+      revision &+= 1
+      preparedCapture = .init(
+        attachment: attachment, caption: original.caption, hint: original.mealTypeHint,
+        revision: revision)
+    }
   }
   private func process(
     _ input: FlowNeutralIntakeInput, identity: ConversationCommandContext.Identity
@@ -393,6 +530,12 @@ final class FlowNeutralIntakeModel {
     guard case .media = input.source else { return }
     guard let mediaService, let context, isVisible, context.identity == identity else {
       throw ConversationOutboxError.invalidServerObservation
+    }
+    if let originalSession {
+      try await originalSession.prepareQueuedOriginal(input, context: context)
+      guard isVisible, self.context?.identity == identity else {
+        throw ConversationOutboxError.invalidServerObservation
+      }
     }
     mediaPhase = .processing
     try await mediaService.process(input: input, expectedContext: identity, context: context)
@@ -435,7 +578,7 @@ final class FlowNeutralIntakeModel {
         (try? snapshot.context.withCurrentAuthority { true }) == true
       else { return }
       entries = snapshot.entries
-      heldCount = snapshot.heldIDs.count
+      heldIntakeCount = snapshot.heldIDs.count
       queuedIDs = Set(entries.map { $0.input.intakeID })
     case .queued(let id): queuedIDs.insert(id)
     case .saved(let publication):

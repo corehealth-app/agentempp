@@ -82,13 +82,19 @@ actor ConversationMealMediaService {
   {
     try await upload(staged, captureID: captureID, context: context, neutral: false)
   }
-  func uploadIntake(_ staged: StagedMedia, captureID: UUID, context: ConversationCommandContext)
+  func uploadIntake(
+    _ staged: StagedMedia, captureID: UUID, context: ConversationCommandContext,
+    expectedAssetID: UUID? = nil
+  )
     async throws -> UUID
   {
-    try await upload(staged, captureID: captureID, context: context, neutral: true)
+    try await upload(
+      staged, captureID: captureID, context: context, neutral: true,
+      expectedAssetID: expectedAssetID)
   }
   private func upload(
-    _ staged: StagedMedia, captureID: UUID, context: ConversationCommandContext, neutral: Bool
+    _ staged: StagedMedia, captureID: UUID, context: ConversationCommandContext, neutral: Bool,
+    expectedAssetID: UUID? = nil
   ) async throws -> UUID {
     try cancellation.check()
     guard !discarded.contains(captureID), !activeCaptures.contains(captureID) else {
@@ -96,11 +102,14 @@ actor ConversationMealMediaService {
     }
     try validateStaged(staged, completed: captures[captureID]?.completed == true, neutral: neutral)
     if let old = captures[captureID] {
-      guard old.staged == staged, old.identity == context.identity, old.neutral == neutral else {
+      guard old.staged == staged, old.identity == context.identity, old.neutral == neutral,
+        expectedAssetID == nil || old.assetID == expectedAssetID
+      else {
         throw ConversationOutboxError.invalidServerObservation
       }
     } else {
-      captures[captureID] = .init(staged: staged, identity: context.identity, neutral: neutral)
+      captures[captureID] = .init(
+        staged: staged, identity: context.identity, neutral: neutral, assetID: expectedAssetID)
     }
     activeCaptures.insert(captureID)
     defer { activeCaptures.remove(captureID) }

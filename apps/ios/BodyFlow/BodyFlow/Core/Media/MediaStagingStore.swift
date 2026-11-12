@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Where a captured photo or recording waits on this phone before its upload.
@@ -51,6 +52,33 @@ struct MediaStagingStore: Sendable {
             throw MealCaptureFailure.unavailable
         }
         return url
+    }
+
+    /// Rehydrates a known Send original at its existing owned capture address.
+    /// It never follows a replaced capture directory or final-file symlink.
+    func restoreOriginalBytes(_ data: Data, at fileURL: URL) throws {
+        let file = fileURL.standardizedFileURL
+        let folder = file.deletingLastPathComponent()
+        guard fileURL.isFileURL, folder.deletingLastPathComponent() == root.standardizedFileURL,
+              UUID(uuidString: folder.lastPathComponent) != nil,
+              file.lastPathComponent == "capture." + file.pathExtension else { throw MealCaptureFailure.invalidInput }
+        for directory in [root.standardizedFileURL, folder] {
+            var info = stat()
+            if lstat(directory.path, &info) == 0 {
+                guard info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid() else { throw MealCaptureFailure.invalidInput }
+            } else {
+                guard errno == ENOENT else { throw MealCaptureFailure.unavailable }
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                    attributes: [.protectionKey: FileProtectionType.complete, .posixPermissions: 0o700])
+            }
+        }
+        var info = stat()
+        if lstat(file.path, &info) == 0 {
+            guard info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid() else { throw MealCaptureFailure.invalidInput }
+        } else if errno != ENOENT { throw MealCaptureFailure.unavailable }
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        var directory = root; try directory.setResourceValues(values)
+        try data.write(to: file, options: [.atomic, .completeFileProtection])
     }
 
     /// Copies a file the patient picked into the staging area.

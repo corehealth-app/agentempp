@@ -6,6 +6,85 @@ import Testing
 
 @MainActor @Suite("Actual Flow composition sends neutral text without retagging old meals")
 struct FlowNeutralIntakeVisibleModelTests {
+  @Test(arguments: ["create", "upload", "complete"])
+  func terminatedPreEnqueueMediaRestoresExactOriginalAfterTemporaryFilesArePurged(_ phase: String)
+    async throws
+  {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let bytes = Data("PRIVATE ORIGINAL AUDIO".utf8)
+    let file = try stageConversationSyntheticMedia(
+      staging: staging, data: bytes, fileExtension: "mp3")
+    let barrier = ConversationControllerBarrier()
+    let server = NeutralCaptureUnitServer(sessions: f.server, kind: "audio_note")
+    await f.http.stub.respond { request, _ in
+      if (phase == "create" && request.url?.path == "/api/mobile/v1/media")
+        || (phase == "complete" && request.url?.path.hasSuffix("/complete") == true)
+      {
+        await barrier.enter()
+      }
+      return try await server.reply(request)
+    }
+    let uploader: any StorageUploading =
+      phase == "upload"
+      ? NeutralCapturePausedUploader(barrier: barrier) : ConversationMediaUploaderProbe()
+    let old = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, media: .init(uploader: uploader, staging: staging),
+      neutralIntakeEnabled: true)
+    let original = try #require(old.neutralIntake)
+    try old.attach(
+      .init(
+        fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: bytes.count,
+        duration: 12, channel: .audioRecording), expectedContext: #require(old.captureContext))
+    let attachment = try #require(old.attachment)
+    original.composer = "Legenda original preservada 😀"
+    original.mealTypeHint = .cafe
+    let sending = Task {
+      await original.submit()
+      await barrier.finish()
+    }
+    #expect(await barrier.waitEnteredOrFinished())
+    await old.close()
+    await barrier.release()
+    await sending.value
+    staging.purge()
+    #expect(!FileManager.default.fileExists(atPath: file.path))
+    let reopened = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, media: .init(uploader: ConversationMediaUploaderProbe(), staging: staging),
+      neutralIntakeEnabled: true)
+    let restored = try #require(reopened.neutralIntake)
+    #expect(restored.isComposerLocked && restored.canSubmit)
+    #expect(restored.preparedIntakeID == attachment.commandID)
+    #expect(restored.composer == "Legenda original preservada 😀" && restored.mealTypeHint == .cafe)
+    if let recovered = reopened.attachment {
+      #expect(recovered.id == attachment.id && recovered.commandID == attachment.commandID)
+      #expect(try Data(contentsOf: recovered.staged.fileURL) == bytes)
+    } else {
+      Issue.record("Cold reopen lost the send original")
+    }
+    if restored.canSubmit {
+      await restored.submit()
+      let requests = await f.http.stub.requests
+      let creates = requests.filter {
+        $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/media"
+      }
+      #expect(
+        creates.count == 2
+          && Set(creates.compactMap { $0.value(forHTTPHeaderField: "Idempotency-Key") }).count == 1)
+      let sent = try #require(
+        requests.first {
+          $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/conversation/intakes"
+        })
+      let input = try FlowNeutralIntakeInput(wireBody: #require(sent.httpBody))
+      #expect(input.intakeID == attachment.commandID && input.mealTypeHint == .cafe)
+    }
+    #expect(reopened.savedEffectRevision == 0 && restored.savedRows.isEmpty)
+    await reopened.close()
+    #expect(!(await f.http.stub.requests).contains { $0.httpMethod == "DELETE" })
+  }
   @Test(arguments: ["upload", "processing"])
   func foregroundRefreshDuringMediaRestoresOriginalControlsWithoutDuplicateDispatch(_ stage: String)
     async throws
@@ -97,6 +176,16 @@ struct FlowNeutralIntakeVisibleModelTests {
     await server.watchProcessing {
       let row = try #require(processStore.loadIntakes(owner: processOwner, key: processKey).first)
       #expect(row.state == .queued && row.hold == nil)
+      let sealedOriginal = try Data(contentsOf: processStore.originalFileURL(owner: processOwner))
+      let capsule = try AES.GCM.SealedBox(combined: sealedOriginal.dropFirst(8))
+      let capsuleBody = try AES.GCM.open(
+        capsule, using: processKey,
+        authenticating: Data(
+          "performe.conversation.original\0version=1\0owner=\(processOwner.hash)".utf8))
+      let originalState = try #require(
+        JSONSerialization.jsonObject(with: capsuleBody) as? [String: Any])
+      #expect(originalState["original"] == nil)
+      #expect((originalState["retired"] as? [String: Any])?["cancelled"] as? Bool == false)
       guard case .media(let asset, let caption) = row.input.source else {
         Issue.record("Missing durable original media")
         return

@@ -1250,3 +1250,139 @@ describe('source label diagnostics', () => {
     expect(JSON.stringify(sink.mock.calls)).not.toContain(owner)
   })
 })
+
+describe('content-free ambiguous screening observation', () => {
+  function fixture(reported: boolean) {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      wire = sourceLabelsRice()
+    return {
+      source,
+      wire: {
+        ...wire,
+        decision: reported ? 'reported_meal' : 'clarification_required',
+        reason: reported ? 'explicit_report' : 'ambiguous',
+        sources: {
+          command_text: {
+            classification: reported ? 'reported' : 'ambiguous',
+            labels: reported
+              ? wire.sources.command_text.labels
+              : {
+                  t0: { kind: 'other', food_index: null },
+                  t1: { kind: 'other', food_index: null },
+                  t2: { kind: 'other', food_index: null },
+                },
+          },
+        },
+        foods: reported ? wire.foods : [],
+      },
+    }
+  }
+  it.each([
+    false,
+    true,
+  ])('distinguishes provider ambiguity from conservative positive screening: %s', async (reported) => {
+    const { source, wire } = fixture(reported),
+      observe = vi.fn(),
+      failure = vi.fn(),
+      complete = vi.fn(async () => providerResult(wire)),
+      interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic-key',
+        { complete },
+        failure,
+        observe,
+      )
+    const result = await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })
+    expect(result.decision).toBe('clarification_required')
+    expect(result.reason).toBe('ambiguous')
+    expect(observe.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_screening',
+          model_decision: reported ? 'reported_meal' : 'clarification_required',
+          model_reason: reported ? 'explicit_report' : 'ambiguous',
+          model_food_count: reported ? 1 : 0,
+          result_decision: 'clarification_required',
+          result_reason: 'ambiguous',
+          sources: [
+            {
+              unit: 'command_text',
+              classification: reported ? 'reported' : 'ambiguous',
+              runs: {
+                food: reported ? 1 : 0,
+                quantity: reported ? 1 : 0,
+                unit: reported ? 1 : 0,
+                report: 0,
+                separator: 0,
+                other: reported ? 0 : 1,
+              },
+            },
+          ],
+        },
+      ],
+    ])
+    const observation = observe.mock.calls[0]?.[0]
+    expect(Object.isFrozen(observation)).toBe(true)
+    expect(Object.isFrozen(observation.sources)).toBe(true)
+    expect(Object.isFrozen(observation.sources[0].runs)).toBe(true)
+    for (const secret of [
+      'arroz',
+      owner,
+      id,
+      epoch,
+      source.input_hash,
+      source.source_hash,
+      'synthetic-key',
+    ])
+      expect(JSON.stringify(observation)).not.toContain(secret)
+    expect(failure).not.toHaveBeenCalled()
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it('does not observe an accepted positive or expose malformed provider content', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      observe = vi.fn(),
+      failure = vi.fn(),
+      complete = vi
+        .fn()
+        .mockResolvedValueOnce(providerResult(sourceLabelsRice()))
+        .mockResolvedValueOnce(providerResult({ private_output: 'secret' })),
+      interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic-key',
+        { complete },
+        failure,
+        observe,
+      )
+    expect(
+      (await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })).decision,
+    ).toBe('reported_meal')
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ code: 'conversation_meal_interpretation_unavailable' })
+    expect(observe).not.toHaveBeenCalled()
+    expect(JSON.stringify(failure.mock.calls)).not.toContain('secret')
+    expect(complete).toHaveBeenCalledTimes(2)
+  })
+  it('preserves the canonical refusal and single attempt when observation throws', async () => {
+    const { source, wire } = fixture(true),
+      packet = prepareConversationMealSourceLabels(source),
+      expected = validateConversationMealInterpretationModel(packet.materialize(wire), source),
+      observe = vi.fn(() => {
+        throw new Error('observer-secret')
+      }),
+      failure = vi.fn(),
+      complete = vi.fn(async () => providerResult(wire)),
+      interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic-key',
+        { complete },
+        failure,
+        observe,
+      )
+    expect(
+      await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).toMatchObject(expected)
+    expect(observe).toHaveBeenCalledTimes(1)
+    expect(failure).not.toHaveBeenCalled()
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+})

@@ -394,8 +394,11 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    'cfe0104d8755b053b4b7f630c9604a5868cf87683d24a9ae23f5875e11838d0c',
+    '8cdd0e3aa915195d671600ab577b98fa5b445713bd0d9b313e5d403ca46620d7',
   )
+  // R80 adds closed enum/count observations only for completed ambiguities.
+  // The reviewed source remains sealed; all364 other compiled module bodies,
+  // helper bytes, route consumers and global scans remain unchanged.
   // T53 replaces private literal replay with source-owned token labels on the same edge.
   expect(
     createHash('sha256')

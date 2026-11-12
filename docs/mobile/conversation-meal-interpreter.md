@@ -45,3 +45,18 @@ The real seam is the existing `OpenRouterLLM.complete` with the existing `MEAL_T
 The caller must read durable results first, claim at most one physical provider attempt by CAS, persist/seal the validated result, and replay it without another provider call. Started/unknown attempts have no automatic TTL retry or reclaimed UUID; lost start/result responses require read-only reconciliation. This leaf does not implement that store or grant a second attempt. Transport orchestration must not treat a returned model result, HTTP 200, or parser agreement as registration success.
 
 Remaining gates are the durable invocation adapter/service and real SDK/REST qualification, whole-name source resolution, calculation/preparation proof assembly, effect/feedback writing under the existing epoch/idempotency fences, current clinical presentation, and eventual public Flow activation. Unit tests use synthetic keys and injected completion responses (including the real constructor seam); they verify no external provider effects. Existing release/native navigation and the encrypted outbox activation gate are unchanged.
+
+
+### Ambiguous-result screening observation
+
+A completed ambiguous interpretation emits a content-free structural observation
+at the source-label materialization/semantic-validation boundary. It records only
+closed decision/reason/unit/classification enums, the model food count and span
+run counts by the six closed roles. This distinguishes a model ambiguity from a
+positive model judgment conservatively screened to ambiguity. It includes no
+source text, food names, token labels, offsets, identity, hashes, provider body or
+provider metadata. No observation is emitted for accepted positives or malformed
+provider output. Observer failure does not change the result or authorize another
+model call. The canonical response, immutable stored decision, writer fences and
+single-attempt policy are unchanged. An old sealed ambiguity is never retried to
+qualify a newer interpretation version.

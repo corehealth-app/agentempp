@@ -12,6 +12,7 @@ import {
   interpretationUnavailable,
   MEAL_INTERPRETATION_MAX_BYTES,
   MEAL_INTERPRETER_VERSION,
+  type MealInterpretationModelResult,
   mealInterpretationSchema,
   validateConversationMealInterpretationSource,
 } from './conversation-meal-interpretation-contracts'
@@ -106,6 +107,52 @@ export interface ConversationMealInterpreterDiagnostic {
 }
 type DiagnosticSink = (diagnostic: ConversationMealInterpreterDiagnostic) => void
 
+export interface ConversationMealScreeningDiagnostic {
+  readonly event: 'conversation_meal_interpreter_screening'
+  readonly model_decision: MealInterpretationModelResult['decision']
+  readonly model_reason: MealInterpretationModelResult['reason']
+  readonly model_food_count: number
+  readonly result_decision: MealInterpretationModelResult['decision']
+  readonly result_reason: MealInterpretationModelResult['reason']
+  readonly sources: readonly {
+    readonly unit: MealInterpretationModelResult['sources'][number]['unit']
+    readonly classification: MealInterpretationModelResult['sources'][number]['classification']
+    readonly runs: Readonly<
+      Record<'food' | 'quantity' | 'unit' | 'report' | 'separator' | 'other', number>
+    >
+  }[]
+}
+type ScreeningSink = (diagnostic: ConversationMealScreeningDiagnostic) => void
+
+function observeAmbiguousScreening(
+  materialized: MealInterpretationModelResult,
+  validated: MealInterpretationModelResult,
+  sink: ScreeningSink,
+): void {
+  if (validated.decision !== 'clarification_required' || validated.reason !== 'ambiguous') return
+  // Both objects have passed closed schemas. Construct an explicit enum/count
+  // projection: no source text, names, offsets, labels, IDs, hashes or provider
+  // bodies/metadata can enter this observation or the public result.
+  const diagnostic: ConversationMealScreeningDiagnostic = freezeInterpretation({
+    event: 'conversation_meal_interpreter_screening',
+    model_decision: materialized.decision,
+    model_reason: materialized.reason,
+    model_food_count: materialized.foods.length,
+    result_decision: validated.decision,
+    result_reason: validated.reason,
+    sources: materialized.sources.map((source) => {
+      const runs = { food: 0, quantity: 0, unit: 0, report: 0, separator: 0, other: 0 }
+      for (const span of source.spans) runs[span.kind] += 1
+      return { unit: source.unit, classification: source.classification, runs }
+    }),
+  })
+  try {
+    sink(diagnostic)
+  } catch {
+    // Observation cannot alter a refusal, cause an error or retry the provider.
+  }
+}
+
 function ownData(value: unknown, key: string): unknown {
   if ((typeof value !== 'object' || value === null) && typeof value !== 'function') return undefined
   try {
@@ -193,6 +240,7 @@ export function createOpenRouterConversationMealInterpreter(
   apiKey: string,
   injected?: Pick<OpenRouterLLM, 'complete'>,
   diagnosticSink: DiagnosticSink = (diagnostic) => console.error(diagnostic),
+  screeningSink: ScreeningSink = (diagnostic) => console.info(diagnostic),
 ): ConversationMealInterpreter {
   let complete: OpenRouterLLM['complete']
   try {
@@ -275,6 +323,7 @@ export function createOpenRouterConversationMealInterpreter(
           Buffer.byteLength(JSON.stringify(value), 'utf8') > MEAL_INTERPRETATION_MAX_BYTES
         )
           return interpretationUnavailable()
+        observeAmbiguousScreening(canonical, model, screeningSink)
         return freezeInterpretation(value)
       } catch (error) {
         reportFailure(stage, error, diagnosticSink, validationReason)

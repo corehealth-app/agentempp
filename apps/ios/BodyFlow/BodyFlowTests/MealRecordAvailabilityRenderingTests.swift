@@ -261,7 +261,8 @@ private enum C11L24RenderedFormProbe {
                 let traits = object.accessibilityTraits
                 result.append(SignUpRenderingProbe.Node(
                     identifier: identifier, isElement: object.isAccessibilityElement,
-                    label: object.accessibilityLabel ?? "", hint: object.accessibilityHint ?? "",
+                    label: object.accessibilityLabel ?? "", value: object.accessibilityValue ?? "",
+                    hint: object.accessibilityHint ?? "",
                     isButton: traits.contains(.button), isSelected: traits.contains(.selected),
                     isEnabled: !traits.contains(.notEnabled), frame: object.accessibilityFrame
                 ))

@@ -280,14 +280,7 @@ struct FlowConversationView: View {
         if model.isLoadingHistory || model.isLoadingUnifiedHistory {
           ProgressView(english ? "Loading history…" : "Carregando histórico…")
         }
-        if model.historyUnavailable || model.unifiedHistoryUnavailable {
-          Text(
-            english
-              ? "History is unavailable right now. Your pending reports are preserved."
-              : "O histórico está indisponível no momento. Seus relatos pendentes estão preservados."
-          )
-          .foregroundStyle(BodyFlowColor.secondaryText)
-        }
+        FlowConversationHistoryRecoveryContent(model: model, english: english)
         if model.mealQuestionOrigins != nil {
           FlowConversationMealQuestionOriginsContent(model: model)
         }
@@ -553,6 +546,31 @@ struct FlowConversationView: View {
       english
         ? "Flow is unavailable right now. Try updating again."
         : "O Flow está indisponível no momento. Tente atualizar novamente."
+    }
+  }
+}
+
+/// Shared by the scrolling transcript and its native accessibility qualification.
+@MainActor
+struct FlowConversationHistoryRecoveryContent: View {
+  let model: FlowConversationModel
+  let english: Bool
+
+  var body: some View {
+    Group {
+      if model.historyUnavailable || model.unifiedHistoryUnavailable {
+        Text(
+          english
+            ? "History is unavailable right now. Your pending reports are preserved."
+            : "O histórico está indisponível no momento. Seus relatos pendentes estão preservados."
+        )
+        .foregroundStyle(BodyFlowColor.secondaryText)
+        Button(english ? "Retry history" : "Tentar carregar histórico novamente") {
+          Task { await model.loadHistory() }
+        }
+        .disabled(model.isLoadingHistory || model.isLoadingUnifiedHistory)
+        .accessibilityIdentifier("conversation.history.retry")
+      }
     }
   }
 }

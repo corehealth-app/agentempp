@@ -164,6 +164,31 @@ function reportMarker(text: string): boolean {
     v,
   )
 }
+/** The same leading meal adjunct may be labeled separately from its reporting
+ * predicate. Account for the entire exact prefix, never arbitrary other words.
+ * The positive model decision and the independently validated report still
+ * establish consumption; this adjunct cannot establish it by itself. */
+function leadingMealContextEnd(
+  source: MealInterpretationModelResult['sources'][number],
+  text: string,
+): number | null {
+  if (source.classification !== 'reported') return null
+  const reportIndex = source.spans.findIndex((span) => span.kind === 'report'),
+    report = source.spans[reportIndex]
+  if (
+    !report ||
+    reportIndex < 1 ||
+    source.spans
+      .slice(0, reportIndex)
+      .some((span) => span.food_index !== null || !['other', 'separator'].includes(span.kind))
+  )
+    return null
+  return /^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia)(?: de hoje)?,?$/u.test(
+    plain(text.slice(0, report.start)),
+  )
+    ? report.start
+    : null
+}
 /** An entire trailing meal-context adjunct accounts for source words, not
  * consumption or a quantity. The existing positive decision, complete food
  * refs and genuine reporting predicate (when reported) are still required.
@@ -397,9 +422,11 @@ export function validateConversationMealInterpretationModel(
         mark('source_classification')
       let reports = 0
       let hasFood = false
+      const leadingContextEnd = leadingMealContextEnd(s, input.text ?? '')
       const contextStart = trailingMealContextStart(s, input.text ?? '')
       for (const span of s.spans) {
         const text = (input.text ?? '').slice(span.start, span.end)
+        if (leadingContextEnd !== null && span.end <= leadingContextEnd) continue
         if (contextStart !== null && span.start >= contextStart) continue
         if (span.kind === 'other') {
           // Labeling inert punctuation as `other` must not discard an otherwise

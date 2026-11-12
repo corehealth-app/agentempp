@@ -196,7 +196,10 @@ function stored(receipt: unknown = null, resolved: unknown = null) {
 }
 
 describe('actual source-to-factual meal registration composition', () => {
-  it('prepares two source-bound ingredients through real materialization and calculation for the original breakfast report', async () => {
+  it.each([
+    'combined_report',
+    'separate_context',
+  ])('prepares two source-bound ingredients through real materialization and calculation: %s', async (partition) => {
     const d = dependencies(),
       original = writerCommand(),
       command = bindConversationCommand(original.ownerId, `cmsg1:${original.commandId}`, {
@@ -247,7 +250,35 @@ describe('actual source-to-factual meal registration composition', () => {
         foods: [{ index: 0, visual_index: null }],
       },
       complete = vi.fn(async () => ({
-        content: JSON.stringify(wire),
+        content: JSON.stringify(
+          partition === 'combined_report'
+            ? wire
+            : {
+                ...wire,
+                sources: {
+                  command_text: {
+                    classification: 'reported',
+                    labels: {
+                      ...wire.sources.command_text.labels,
+                      t0: { kind: 'other', food_index: null },
+                      t1: { kind: 'other', food_index: null },
+                      t2: { kind: 'other', food_index: null },
+                      t3: { kind: 'other', food_index: null },
+                      t4: { kind: 'other', food_index: null },
+                      t10: { kind: 'separator', food_index: null },
+                      t11: { kind: 'quantity', food_index: 1 },
+                      t12: { kind: 'unit', food_index: 1 },
+                      t13: { kind: 'separator', food_index: null },
+                      t14: { kind: 'food', food_index: 1 },
+                    },
+                  },
+                },
+                foods: [
+                  { index: 0, visual_index: null },
+                  { index: 1, visual_index: null },
+                ],
+              },
+        ),
         toolCalls: [],
         model: 'anthropic/claude-haiku-4.5',
         promptTokens: 100,
@@ -332,7 +363,7 @@ describe('actual source-to-factual meal registration composition', () => {
     expect(result.status).toBe('saved')
     expect(materialize).toHaveBeenCalledTimes(1)
     expect(calculate.mock.calls[0]?.[1]).toEqual([
-      { food_name: 'leite integral', quantity_g: 206 },
+      { food_name: partition === 'separate_context' ? 'leite' : 'leite integral', quantity_g: 206 },
       { food_name: 'whey', quantity_g: 30 },
     ])
     expect(d.writer.prepare).toHaveBeenCalledTimes(1)

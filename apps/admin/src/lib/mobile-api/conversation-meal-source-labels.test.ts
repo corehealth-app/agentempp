@@ -472,6 +472,108 @@ describe('source-preserving semantic labels', () => {
   ])('does not upgrade unsafe discourse merely because it names a meal: %s', (prefix) => {
     expect(milkReport(prefix).result.decision).toBe('clarification_required')
   })
+  function separateMealContext(prefix: string) {
+    const text = `${prefix}consumi 200 mL de leite com 1 medida de whey.`,
+      input = source(text),
+      packet = api.prepareConversationMealSourceLabels(input),
+      tokens = packet.input.sources[0]?.tokens ?? [],
+      predicate = tokens.findIndex(([, word]) => word === 'consumi'),
+      roles = [
+        label('report'),
+        label('quantity', 0),
+        label('unit', 0),
+        label('separator'),
+        label('food', 0),
+        label('separator'),
+        label('quantity', 1),
+        label('unit', 1),
+        label('separator'),
+        label('food', 1),
+        label('separator'),
+      ],
+      wire = {
+        ...rice(),
+        reason: 'explicit_report',
+        sources: {
+          command_text: {
+            classification: 'reported',
+            labels: Object.fromEntries(
+              tokens.map(([key], i) => [
+                key,
+                i < predicate ? label('other') : roles[i - predicate],
+              ]),
+            ),
+          },
+        },
+        foods: [
+          { index: 0, visual_index: null },
+          { index: 1, visual_index: null },
+        ],
+      },
+      materialized = packet.materialize(wire)
+    return { text, input, materialized }
+  }
+  it('retains a separate leading meal context with the exact observed screening role counts', () => {
+    const { input, materialized, text } = separateMealContext('No café da manhã, '),
+      counts: Record<string, number> = {}
+    for (const span of materialized.sources[0]?.spans ?? [])
+      counts[span.kind] = (counts[span.kind] ?? 0) + 1
+    expect(counts).toEqual({ other: 1, separator: 8, report: 1, quantity: 2, unit: 2, food: 2 })
+    const result = validateConversationMealInterpretationModel(materialized, input)
+    expect(result.decision).toBe('reported_meal')
+    expect(result).toEqual(materialized)
+    expect(result.sources[0]?.spans.map((s) => text.slice(s.start, s.end)).join('')).toBe(text)
+    expect(
+      result.foods.map((food) =>
+        [food.name, food.quantity, food.unit].map((r) => r && text.slice(r.start, r.end)),
+      ),
+    ).toEqual([
+      ['leite', '200', 'mL'],
+      ['whey', '1', 'medida'],
+    ])
+  })
+  it.each([
+    'No café da manhã ',
+    'No café da manhã de hoje, ',
+    'No almoço, ',
+    'No jantar de hoje, ',
+    'No lanche, ',
+    'Na ceia, ',
+  ])('keeps an independently labeled meal adjunct without changing the source: %s', (prefix) => {
+    const { input, materialized } = separateMealContext(prefix)
+    expect(validateConversationMealInterpretationModel(materialized, input)).toEqual(materialized)
+  })
+  it.each([
+    'No café da manhã de amanhã, ',
+    'No café da manhã de ontem, ',
+    'No café da manhã, não ',
+    'No café da manhã, talvez ',
+    'No café da manhã, sonhei que ',
+    'No café da manhã, geralmente ',
+    'No café da manhã, minha filha disse que ',
+    'No café da manhã, vou dizer que ',
+    'No café da manhã? ',
+    'No café da manhã! ',
+    'No café da manhã, "',
+    'No café da manhã, 200 ',
+    'No café da manhã, e no jantar, ',
+    'Comi pão no café da manhã, ',
+    'No sonho, ',
+  ])('does not drop additional discourse before the reporting predicate: %s', (prefix) => {
+    const { input, materialized } = separateMealContext(prefix),
+      result = validateConversationMealInterpretationModel(materialized, input)
+    expect(result.decision).toBe('clarification_required')
+    expect(result.foods).toEqual([])
+  })
+  it('does not upgrade a model clarification with a separate leading meal adjunct', () => {
+    const { input, materialized } = separateMealContext('No café da manhã, ')
+    expect(
+      validateConversationMealInterpretationModel(
+        { ...materialized, decision: 'clarification_required', reason: 'ambiguous' },
+        input,
+      ).decision,
+    ).toBe('clarification_required')
+  })
   function twoFoodReport(suffix: string) {
     const text = `No café da manhã de hoje, consumi 200 mL de leite com 1 medida de whey${suffix}`,
       input = source(text),

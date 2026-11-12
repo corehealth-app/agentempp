@@ -182,6 +182,9 @@ function certifyNutritionJournalSplitContent(text: string): void {
   // R95 accounts for the complete trailing current-meal context. Module65556's
   // helper/guard plus compiler-local renaming reverse byte-exactly to R82;
   // all other18 compiled bodies remain byte-identical. No consumer is exempted.
+  // R98 also accounts for the separately labeled whole leading meal adjunct.
+  // Removing only that helper/skip and reversing AST-local identifier allocation
+  // restores the complete R95 body byte-exactly; the other18 bodies are unchanged.
   expect(
     createHash('sha256')
       .update(
@@ -193,7 +196,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('3fac13281d07c9b82b4a63acf263dbfd85cba81eb8d2e2724949494a4df1265d')
+  ).toBe('6f7fbb52eb0146e579c18c8f9f80159b0abe3d0862af5a9f2beaeeeb0af85c21')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -242,7 +245,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:151b3760262d0a57b820bda7876a10343ea8387b444af152ad574d2786b6f5e1',
+      '65556:bc8a85d99b59cacdfaa40f396e9b30a23ac696f60563c519a8c28bff12e3f81b',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
@@ -459,19 +462,27 @@ function certifyPhotoPurposeEdgesR62() {
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
-    ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
+    ['84359', '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab'],
+    ['63867', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
   const gemini = bodies.get('84359') ?? ''
+  // R98 reallocates the byte-identical image-result module from86248 to63867.
+  // Reverse precisely that one loader link to retain the full prior body proof.
+  const imageResultLinkR98 = 'd=c(63867)'
+  expect(gemini.split(imageResultLinkR98)).toHaveLength(2)
+  const geminiR95 = gemini.replace(imageResultLinkR98, 'd=c(86248)')
+  expect(createHash('sha256').update(geminiR95).digest('hex')).toBe(
+    'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed',
+  )
   // T51's explicit OpenAI Zod helper changes only the one SDK loader link.
   // Reverse it to the preserved full R62 body before the independent R59 proof.
   const sdkLinkT51 = 'e=c(43296)'
-  expect(gemini.split(sdkLinkT51)).toHaveLength(2)
-  const geminiR62 = gemini.replace(sdkLinkT51, 'e=c(86603)')
+  expect(geminiR95.split(sdkLinkT51)).toHaveLength(2)
+  const geminiR62 = geminiR95.replace(sdkLinkT51, 'e=c(86603)')
   expect(createHash('sha256').update(geminiR62).digest('hex')).toBe(
     'd5cd1170f272342d9e151612ecaaa64bee38e42f0f28189555cddae46c764ff8',
   )

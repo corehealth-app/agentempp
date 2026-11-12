@@ -60,3 +60,9 @@ provider output. Observer failure does not change the result or authorize anothe
 model call. The canonical response, immutable stored decision, writer fences and
 single-attempt policy are unchanged. An old sealed ambiguity is never retried to
 qualify a newer interpretation version.
+
+The optional validator observation also reports a bounded set of closed guard
+reason codes from the existing conservative screening predicates. The predicates
+and canonical refusal stay unchanged. The interpreter logs only its constructed
+safe projection as JSON so nested role counts survive the runtime logger's
+inspection depth. Throwing reason/log observers cannot affect validation.

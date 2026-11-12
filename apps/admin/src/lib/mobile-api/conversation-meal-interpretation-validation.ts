@@ -28,6 +28,24 @@ export type MealInterpretationValidationReason =
   (typeof mealInterpretationValidationReasons)[number]
 type Reject = (reason: MealInterpretationValidationReason) => never
 
+export type MealInterpretationScreeningReason =
+  | 'food_name'
+  | 'cross_source_duplicate'
+  | 'quantity'
+  | 'unit'
+  | 'adjacent_unitless_quantity'
+  | 'visual_food_name'
+  | 'visual_name'
+  | 'visual_coverage'
+  | 'source_classification'
+  | 'unaccounted_discourse'
+  | 'report_prefix'
+  | 'separator'
+  | 'unbound_span'
+  | 'report_count'
+  | 'missing_media_action'
+  | 'positive_reason'
+
 type Ref = NonNullable<MealInterpretationModelResult['foods'][number]['name']>
 const plain = (s: string) =>
   s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
@@ -173,6 +191,7 @@ export function validateConversationMealInterpretationModel(
   raw: unknown,
   originalSource: ConversationMealInterpretationSource,
   onFailure?: (reason: MealInterpretationValidationReason) => void,
+  onScreening?: (reasons: readonly MealInterpretationScreeningReason[]) => void,
 ): MealInterpretationModelResult {
   let failureReason: MealInterpretationValidationReason = 'validation_internal'
   const reject: Reject = (reason) => {
@@ -273,6 +292,11 @@ export function validateConversationMealInterpretationModel(
       return input.text.slice(ref.start, ref.end)
     }
     let safe = true
+    const screening = new Set<MealInterpretationScreeningReason>()
+    const mark = (reason: MealInterpretationScreeningReason) => {
+      safe = false
+      screening.add(reason)
+    }
     const visual = new Set<number>()
     const namedUnits = new Map<string, string>()
     for (const [index, food] of result.foods.entries()) {
@@ -284,21 +308,22 @@ export function validateConversationMealInterpretationModel(
         return reject('occurrence_binding')
       if (food.name) {
         const name = readRef(food.name, 'food', index)
-        if (!nominal(name)) safe = false
+        if (!nominal(name)) mark('food_name')
         const previousUnit = namedUnits.get(plain(name))
         // Caption and transcript can describe the same occurrence. Without an
         // independent association, neither adding nor merging is justified.
-        if (previousUnit !== undefined && previousUnit !== food.name.unit) safe = false
+        if (previousUnit !== undefined && previousUnit !== food.name.unit)
+          mark('cross_source_duplicate')
         namedUnits.set(plain(name), food.name.unit)
       }
-      if (food.quantity && !quantity(readRef(food.quantity, 'quantity', index))) safe = false
-      if (food.unit && !units.test(plain(readRef(food.unit, 'unit', index)))) safe = false
+      if (food.quantity && !quantity(readRef(food.quantity, 'quantity', index))) mark('quantity')
+      if (food.unit && !units.test(plain(readRef(food.unit, 'unit', index)))) mark('unit')
       if (food.quantity && food.name && food.quantity.unit !== food.name.unit)
         return reject('occurrence_binding')
       if (food.unit && food.quantity && food.unit.unit !== food.quantity.unit)
         return reject('occurrence_binding')
       if (food.quantity && food.name && !food.unit && food.quantity.start === food.name.end)
-        safe = false
+        mark('adjacent_unitless_quantity')
       if (food.visual_index !== null) {
         const items = snippet.get('vision_items')?.visual_items
         if (!items || food.visual_index >= items.length || visual.has(food.visual_index))
@@ -312,10 +337,11 @@ export function validateConversationMealInterpretationModel(
           typeof item.name !== 'string' ||
           !nominal(item.name)
         )
-          safe = false
+          mark('visual_food_name')
         else if (food.name) {
           const text = snippet.get(food.name.unit)?.text ?? ''
-          if (plain(text.slice(food.name.start, food.name.end)) !== plain(item.name)) safe = false
+          if (plain(text.slice(food.name.start, food.name.end)) !== plain(item.name))
+            mark('visual_name')
         }
       }
     }
@@ -334,10 +360,11 @@ export function validateConversationMealInterpretationModel(
       const input = snippet.get(s.unit)
       if (!input) return reject('source_units')
       if (s.unit === 'vision_items') {
-        if (visual.size !== input.visual_items.length) safe = false
+        if (visual.size !== input.visual_items.length) mark('visual_coverage')
         continue
       }
-      if (!['reported', 'nominal_list', 'media_pointer'].includes(s.classification)) safe = false
+      if (!['reported', 'nominal_list', 'media_pointer'].includes(s.classification))
+        mark('source_classification')
       let reports = 0
       let hasFood = false
       for (const span of s.spans) {
@@ -350,18 +377,19 @@ export function validateConversationMealInterpretationModel(
               pointer.test(plain(input.text ?? ''))
             )
           )
-            safe = false
+            mark('unaccounted_discourse')
         } else if (span.kind === 'report') {
           reports += 1
-          if (hasFood || !reportMarker(text)) safe = false
-        } else if (span.kind === 'separator' && !separator(text)) safe = false
+          if (hasFood || !reportMarker(text)) mark('report_prefix')
+        } else if (span.kind === 'separator' && !separator(text)) mark('separator')
         else if (['food', 'quantity', 'unit'].includes(span.kind) && span.food_index === null)
-          safe = false
+          mark('unbound_span')
         if (span.kind === 'food') hasFood = true
       }
-      if (s.classification === 'reported' && reports !== 1) safe = false
-      if (s.classification !== 'reported' && reports) safe = false
-      if (s.classification === 'media_pointer' && !source.media_binding) safe = false
+      if (s.classification === 'reported' && reports !== 1) mark('report_count')
+      if (s.classification !== 'reported' && reports) mark('report_count')
+      if (s.classification === 'media_pointer' && !source.media_binding)
+        mark('missing_media_action')
     }
     if (
       source.media_binding === null &&
@@ -369,8 +397,16 @@ export function validateConversationMealInterpretationModel(
         (result.sources[0]?.classification === 'nominal_list' &&
           result.reason !== 'nominal_food_list'))
     )
-      safe = false
-    if (result.reason === 'explicit_media_action' && !source.media_binding) safe = false
+      mark('positive_reason')
+    if (result.reason === 'explicit_media_action' && !source.media_binding)
+      mark('missing_media_action')
+    if (!safe) {
+      try {
+        onScreening?.(Object.freeze([...screening].sort()))
+      } catch {
+        // Closed observation cannot change a refusal or invoke another attempt.
+      }
+    }
     return safe ? freezeInterpretation(result) : unclear(source)
   } catch {
     try {

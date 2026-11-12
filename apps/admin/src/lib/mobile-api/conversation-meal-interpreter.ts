@@ -17,6 +17,7 @@ import {
   validateConversationMealInterpretationSource,
 } from './conversation-meal-interpretation-contracts'
 import {
+  type MealInterpretationScreeningReason,
   type MealInterpretationValidationReason,
   mealInterpretationValidationReasons,
   validateConversationMealInterpretationModel,
@@ -112,6 +113,7 @@ export interface ConversationMealScreeningDiagnostic {
   readonly model_decision: MealInterpretationModelResult['decision']
   readonly model_reason: MealInterpretationModelResult['reason']
   readonly model_food_count: number
+  readonly screening_reasons: readonly MealInterpretationScreeningReason[]
   readonly result_decision: MealInterpretationModelResult['decision']
   readonly result_reason: MealInterpretationModelResult['reason']
   readonly sources: readonly {
@@ -128,6 +130,7 @@ function observeAmbiguousScreening(
   materialized: MealInterpretationModelResult,
   validated: MealInterpretationModelResult,
   sink: ScreeningSink,
+  screeningReasons: readonly MealInterpretationScreeningReason[],
 ): void {
   if (validated.decision !== 'clarification_required' || validated.reason !== 'ambiguous') return
   // Both objects have passed closed schemas. Construct an explicit enum/count
@@ -138,6 +141,7 @@ function observeAmbiguousScreening(
     model_decision: materialized.decision,
     model_reason: materialized.reason,
     model_food_count: materialized.foods.length,
+    screening_reasons: screeningReasons,
     result_decision: validated.decision,
     result_reason: validated.reason,
     sources: materialized.sources.map((source) => {
@@ -240,7 +244,7 @@ export function createOpenRouterConversationMealInterpreter(
   apiKey: string,
   injected?: Pick<OpenRouterLLM, 'complete'>,
   diagnosticSink: DiagnosticSink = (diagnostic) => console.error(diagnostic),
-  screeningSink: ScreeningSink = (diagnostic) => console.info(diagnostic),
+  screeningSink: ScreeningSink = (diagnostic) => console.info(JSON.stringify(diagnostic)),
 ): ConversationMealInterpreter {
   let complete: OpenRouterLLM['complete']
   try {
@@ -293,7 +297,15 @@ export function createOpenRouterConversationMealInterpreter(
           validationReason = reason
         }
         const canonical = packet.materialize(decoded, onFailure)
-        const model = validateConversationMealInterpretationModel(canonical, source, onFailure)
+        let screeningReasons: readonly MealInterpretationScreeningReason[] = []
+        const model = validateConversationMealInterpretationModel(
+          canonical,
+          source,
+          onFailure,
+          (reasons) => {
+            screeningReasons = reasons
+          },
+        )
         stage = 'result'
         const value = mealInterpretationSchema.parse({
           ...model,
@@ -323,7 +335,7 @@ export function createOpenRouterConversationMealInterpreter(
           Buffer.byteLength(JSON.stringify(value), 'utf8') > MEAL_INTERPRETATION_MAX_BYTES
         )
           return interpretationUnavailable()
-        observeAmbiguousScreening(canonical, model, screeningSink)
+        observeAmbiguousScreening(canonical, model, screeningSink, screeningReasons)
         return freezeInterpretation(value)
       } catch (error) {
         reportFailure(stage, error, diagnosticSink, validationReason)

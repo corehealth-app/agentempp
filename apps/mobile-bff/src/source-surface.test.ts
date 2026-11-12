@@ -173,6 +173,8 @@ function runtimeExactStringRoutes(value: string): string[] {
 // compiled bodies still byte-identical. No old raw module body is claimed here.
 function certifyNutritionJournalSplitContent(text: string): void {
   // T52 and R79 extend only the closed leading meal-context regex in module65556.
+  // R81 additionally observes closed reasons at unchanged conservative predicates.
+  // Its instrumentation reverses to the prior validator source byte-exactly.
   // R79 adds the optional current-day adjunct; reversing that sole compiled delta
   // reproduces the prior module hash exactly. No other module body changed.
   // Seal the reviewed validator source before accepting its complete compiled body;
@@ -188,7 +190,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('7825ebde51a52a34ba843a8e9637fedb59a2fae7a863877c69864515363f6650')
+  ).toBe('2c1fd13ef408404f4abf0782816cd090403c4279b2e0fc427da47e9fb920b42e')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -237,7 +239,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:5b66822423585afa2884a4458f5b23298d95a1d10f627adfccc776a6cff3852b',
+      '65556:948342f077c7f743eb867b44e942351827d29f37a1ee8ca10505fe55751495c4',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
@@ -394,10 +396,11 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '8cdd0e3aa915195d671600ab577b98fa5b445713bd0d9b313e5d403ca46620d7',
+    '567c9a25484d2c8a0603fa1f47e64dab1f843dca44759bffe5f0b98419ac1022',
   )
   // R80 adds closed enum/count observations only for completed ambiguities.
-  // The reviewed source remains sealed; all364 other compiled module bodies,
+  // R81 adds closed screening reason codes and JSON encoding of this safe projection.
+  // The reviewed source remains sealed; all363 other compiled module bodies,
   // helper bytes, route consumers and global scans remain unchanged.
   // T53 replaces private literal replay with source-owned token labels on the same edge.
   expect(

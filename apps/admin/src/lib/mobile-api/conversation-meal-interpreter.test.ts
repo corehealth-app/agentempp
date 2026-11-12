@@ -1302,6 +1302,7 @@ describe('content-free ambiguous screening observation', () => {
           model_decision: reported ? 'reported_meal' : 'clarification_required',
           model_reason: reported ? 'explicit_report' : 'ambiguous',
           model_food_count: reported ? 1 : 0,
+          screening_reasons: reported ? ['report_count'] : [],
           result_decision: 'clarification_required',
           result_reason: 'ambiguous',
           sources: [
@@ -1384,5 +1385,99 @@ describe('content-free ambiguous screening observation', () => {
     expect(observe).toHaveBeenCalledTimes(1)
     expect(failure).not.toHaveBeenCalled()
     expect(complete).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('closed conservative screening reasons', () => {
+  it.each([
+    ['quero200g', 'quero', '200', 'g', 'food_name'],
+    ['arroz0g', 'arroz', '0', 'g', 'quantity'],
+    ['arroz200zz', 'arroz', '200', 'zz', 'unit'],
+    ['Sonhei que consumi arroz200g', 'arroz', '200', 'g', 'report_prefix'],
+  ])('reports the existing rejection of %s without changing the refusal', (text, name, amount, unit, reason) => {
+    const f = textSource(text),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      raw = modelFor(text, [{ name, quantity: amount, unit }]),
+      observe = vi.fn(),
+      failure = vi.fn(),
+      old = validateConversationMealInterpretationModel(raw, source),
+      result = validateConversationMealInterpretationModel(raw, source, failure, observe)
+    expect(result).toEqual(old)
+    expect(result.decision).toBe('clarification_required')
+    expect(observe.mock.calls).toEqual([[[reason]]])
+    expect(Object.isFrozen(observe.mock.calls[0]?.[0])).toBe(true)
+    expect(failure).not.toHaveBeenCalled()
+  })
+  it('does not expose screening observations on accepted or malformed evidence', () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      raw = modelFor('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }]),
+      observe = vi.fn(),
+      failure = vi.fn()
+    expect(
+      validateConversationMealInterpretationModel(raw, source, failure, observe).decision,
+    ).toBe('reported_meal')
+    expect(() =>
+      validateConversationMealInterpretationModel(
+        { secret: 'never-log' },
+        source,
+        failure,
+        observe,
+      ),
+    ).toThrow()
+    expect(observe).not.toHaveBeenCalled()
+  })
+  it('cannot change a refusal when the reason observer throws', () => {
+    const f = textSource('arroz200zz'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      raw = modelFor('arroz200zz', [{ name: 'arroz', quantity: '200', unit: 'zz' }]),
+      observe = vi.fn(() => {
+        throw new Error('observer-secret')
+      })
+    expect(validateConversationMealInterpretationModel(raw, source, undefined, observe)).toEqual(
+      validateConversationMealInterpretationModel(raw, source),
+    )
+    expect(observe).toHaveBeenCalledTimes(1)
+  })
+  it('serializes only the generated safe projection so nested counts survive runtime logs', async () => {
+    const emit = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    try {
+      const f = textSource('arroz200g'),
+        source = buildConversationMealInterpretationSource(f.command, f.capture),
+        wire = sourceLabelsRice()
+      wire.reason = 'explicit_report'
+      wire.sources.command_text.classification = 'reported'
+      const interpreter = createOpenRouterConversationMealInterpreter('synthetic-key', {
+        complete: async () => providerResult(wire),
+      })
+      expect(
+        (await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })).decision,
+      ).toBe('clarification_required')
+      expect(emit).toHaveBeenCalledTimes(1)
+      const text = emit.mock.calls[0]?.[0]
+      expect(typeof text).toBe('string')
+      const value = JSON.parse(text)
+      expect(value.screening_reasons).toEqual(['report_count'])
+      expect(value.sources[0].runs).toEqual({
+        food: 1,
+        quantity: 1,
+        unit: 1,
+        report: 0,
+        separator: 0,
+        other: 0,
+      })
+      for (const secret of [
+        'arroz',
+        owner,
+        id,
+        epoch,
+        source.input_hash,
+        source.source_hash,
+        'synthetic-key',
+      ])
+        expect(text).not.toContain(secret)
+    } finally {
+      emit.mockRestore()
+    }
   })
 })

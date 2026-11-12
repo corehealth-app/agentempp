@@ -8,6 +8,84 @@ import Testing
   import UIKit
   @MainActor @Suite("Real neutral composer and factual transcript content")
   struct FlowNeutralIntakeRenderingTests {
+    @Test func actualNeutralComposerOffersCaptureWhenItsScopedMediaServiceExists() async throws {
+      let f = try await neutralVisibleFixture()
+      defer { f.disk.remove() }
+      let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+      let model = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+        keyVault: f.vault,
+        media: .init(uploader: ConversationMediaUploaderProbe(), staging: staging),
+        neutralIntakeEnabled: true)
+      let host = SignUpRenderingProbe.host(
+        FlowConversationComposerContent(
+          model: model, capture: .init(stager: .init(staging: staging), camera: .device),
+          captureAction: { _ in }, discardAction: { _, _ in }
+        ).environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 500)
+      defer { host.detach() }
+      #expect(
+        host.nodes().contains { $0.identifier == "conversation.neutral.attach" && $0.isEnabled })
+      #expect(
+        !host.nodes().contains {
+          $0.label.contains(
+            "Fotos, áudio e respostas vinculadas de atividade ainda não estão disponíveis")
+        })
+      await model.close()
+    }
+    @Test func failedUploadHasOneUsableSendActionInsteadOfLookingUpAnUnqueuedMessage() async throws
+    {
+      let f = try await neutralVisibleFixture()
+      defer { f.disk.remove() }
+      let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+      let file = try stageConversationSyntheticMedia(
+        staging: staging, data: Data("synthetic-media".utf8), fileExtension: "mp3")
+      let server = NeutralCaptureUnitServer(
+        sessions: f.server, kind: "audio_note", failCreate: true)
+      await f.http.stub.respond { request, _ in try await server.reply(request) }
+      let model = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+        keyVault: f.vault,
+        media: .init(uploader: ConversationMediaUploaderProbe(), staging: staging),
+        neutralIntakeEnabled: true)
+      let neutral = try #require(model.neutralIntake)
+      try model.attach(
+        .init(
+          fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: 15, duration: 12,
+          channel: .audioRecording), expectedContext: #require(model.captureContext))
+      neutral.composer = "Legenda original"
+      await neutral.submit()
+      #expect(neutral.preparedInput == nil && neutral.isComposerLocked && neutral.canSubmit)
+      let host = SignUpRenderingProbe.host(
+        FlowNeutralIntakeComposerContent(
+          model: neutral, capture: .init(stager: .init(staging: staging), camera: .device)
+        ).environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 700)
+      defer { host.detach() }
+      #expect(!host.nodes().contains { $0.label == "Consultar original" })
+      #expect(
+        host.nodes().contains { $0.identifier == "conversation.neutral.send" && $0.isEnabled })
+      neutral.composer = "Não substituir o original"
+      await neutral.submit()
+      let creates = await f.http.stub.requests.filter {
+        $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/media"
+      }
+      #expect(
+        creates.count == 2
+          && creates[0].value(forHTTPHeaderField: "Idempotency-Key")
+            == creates[1].value(forHTTPHeaderField: "Idempotency-Key")
+      )
+      let intake = try #require(
+        await f.http.stub.requests.first {
+          $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/conversation/intakes"
+        })
+      let input = try FlowNeutralIntakeInput(wireBody: #require(intake.httpBody))
+      guard case .media(_, let caption) = input.source else {
+        Issue.record("Original attachment lost")
+        await model.close()
+        return
+      }
+      #expect(caption == "Legenda original")
+      await model.close()
+    }
     @Test func actualFlowComposerMountsNeutralInputAndSendInsteadOfMealOnlyComposer() async throws {
       let f = try await neutralVisibleFixture()
       defer { f.disk.remove() }

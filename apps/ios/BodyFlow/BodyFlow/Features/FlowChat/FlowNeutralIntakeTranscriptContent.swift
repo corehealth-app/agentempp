@@ -3,13 +3,15 @@ import SwiftUI
 @MainActor
 struct FlowNeutralIntakeComposerContent: View {
   let model: FlowNeutralIntakeModel
+  var capture: FlowConversationCaptureCapability? = nil
+  var captureAction: @MainActor (FlowConversationCapturePresentation.Choice) -> Void = { _ in }
   @Environment(\.locale) private var locale
   @FocusState private var focused: Bool
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
     @Bindable var model = model
     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-      if let original = model.preparedInput {
+      if let original = model.preparedIntakeID {
         Label(
           english ? "Original message preserved" : "Mensagem original preservada",
           systemImage: "lock")
@@ -18,15 +20,58 @@ struct FlowNeutralIntakeComposerContent: View {
             ? "This original message is locked until its local delivery is resolved."
             : "Esta mensagem original fica travada até resolver sua entrega local.")
         HStack {
-          Button(english ? "Check original" : "Consultar original") {
-            Task { await model.reconcile(intakeID: original.intakeID) }
+          if model.preparedInput != nil {
+            Button(english ? "Check original" : "Consultar original") {
+              Task { await model.reconcile(intakeID: original) }
+            }
           }
           Button(english ? "Discard unsent" : "Descartar não enviado", role: .destructive) {
-            Task { await model.discardUnsent(intakeID: original.intakeID) }
+            Task { await model.discardUnsent(intakeID: original) }
           }
         }
       }
+      if let attachment = model.attachment {
+        HStack {
+          Label(
+            attachment.staged.kind == .audioNote
+              ? (english ? "Audio attached" : "Áudio anexado")
+              : (english ? "Photo attached" : "Foto anexada"),
+            systemImage: attachment.staged.kind == .audioNote ? "waveform" : "photo")
+          Spacer()
+          Button(english ? "Remove" : "Remover") { Task { await model.removeAttachment() } }
+            .disabled(model.isWorking || model.isComposerLocked)
+        }.accessibilityIdentifier("conversation.neutral.attachment")
+      }
+      if let phase = model.mediaPhase {
+        ProgressView(
+          phase == .uploading
+            ? (english ? "Uploading attachment…" : "Enviando anexo…")
+            : (english ? "Reading attachment…" : "Lendo anexo…")
+        )
+        .accessibilityIdentifier("conversation.neutral.media-progress")
+      }
       HStack(alignment: .bottom) {
+        if let capture, model.captureContext != nil {
+          Menu {
+            if capture.camera.isAvailable() {
+              Button(english ? "Take photo" : "Tirar foto", systemImage: "camera") {
+                choose(.camera)
+              }
+            }
+            Button(english ? "Photo library" : "Galeria", systemImage: "photo") { choose(.gallery) }
+            Button(english ? "Record audio" : "Gravar áudio", systemImage: "mic") {
+              choose(.recording)
+            }
+            Button(english ? "Choose audio" : "Selecionar áudio", systemImage: "waveform") {
+              choose(.audioFile)
+            }
+          } label: {
+            Image(systemName: "plus").frame(width: 44, height: 44)
+          }
+          .disabled(model.isWorking || model.isComposerLocked)
+          .accessibilityLabel(english ? "Attach photo or audio" : "Anexar foto ou áudio")
+          .accessibilityIdentifier("conversation.neutral.attach")
+        }
         if model.isComposerLocked {
           Text(verbatim: model.composer).frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -48,7 +93,11 @@ struct FlowNeutralIntakeComposerContent: View {
           Image(systemName: "paperplane.fill").frame(width: 44, height: 44)
         }
         .buttonStyle(BodyFlowButtonStyle(role: .primary)).disabled(!model.canSubmit)
-        .accessibilityLabel(english ? "Send report" : "Enviar relato")
+        .accessibilityLabel(
+          model.isComposerLocked
+            ? (english ? "Retry original message" : "Retomar mensagem original")
+            : (english ? "Send report" : "Enviar relato")
+        )
         .accessibilityIdentifier("conversation.neutral.send")
       }
       Picker(
@@ -61,15 +110,21 @@ struct FlowNeutralIntakeComposerContent: View {
           Text(mealName(value)).tag(Optional(value))
         }
       }.pickerStyle(.menu).disabled(model.isWorking || model.isComposerLocked)
-      Text(
-        english
-          ? "Text reports. Photos, audio and linked activity replies are not available in this preview."
-          : "Relatos por texto. Fotos, áudio e respostas vinculadas de atividade ainda não estão disponíveis nesta prévia."
-      )
-      .font(BodyFlowTypography.caption).foregroundStyle(BodyFlowColor.secondaryText)
+      if capture == nil {
+        Text(
+          english
+            ? "Text reports. Photos, audio and linked activity replies are not available in this preview."
+            : "Relatos por texto. Fotos, áudio e respostas vinculadas de atividade ainda não estão disponíveis nesta prévia."
+        )
+        .font(BodyFlowTypography.caption).foregroundStyle(BodyFlowColor.secondaryText)
+      }
     }.padding(BodyFlowSpacing.md)
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("conversation.neutral.composer-content")
+  }
+  private func choose(_ choice: FlowConversationCapturePresentation.Choice) {
+    focused = false
+    captureAction(choice)
   }
   private func mealName(_ value: ConversationMealCommand.MealType) -> String {
     switch value {
@@ -97,25 +152,34 @@ struct FlowNeutralIntakeTranscriptContent: View {
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-      ForEach(model.savedRows.filter { !historicalMealIDs.contains($0.childID) && !historicalSavedIntakeIDs.contains($0.id) }) { row in
+      ForEach(
+        model.savedRows.filter {
+          !historicalMealIDs.contains($0.childID) && !historicalSavedIntakeIDs.contains($0.id)
+        }
+      ) { row in
         FlowNeutralIntakeSavedContent(row: row, english: english)
         if case .meal = row.acknowledgement, let conversation {
           FlowConversationMealControlsContent(model: conversation, commandID: row.childID)
         }
       }
-      ForEach(model.terminalRows.filter {
-        !historicalTerminalIntakeIDs.contains($0.id)
-          || model.mealQuestionChild(intakeID: $0.id) != nil
-      }) { row in
+      ForEach(
+        model.terminalRows.filter {
+          !historicalTerminalIntakeIDs.contains($0.id)
+            || model.mealQuestionChild(intakeID: $0.id) != nil
+        }
+      ) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
           if !historicalTerminalIntakeIDs.contains(row.id) {
             source(row.input)
             Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")
           }
           if model.mealQuestionChild(intakeID: row.id) != nil, let conversation,
-            !conversation.isMealQuestionClosed(intakeID: row.id) {
+            !conversation.isMealQuestionClosed(intakeID: row.id)
+          {
             if let question = conversation.neutralMealQuestion(intakeID: row.id) {
-              Text(verbatim: FlowConversationThreadEventPresentation.question(question, english: english))
+              Text(
+                verbatim: FlowConversationThreadEventPresentation.question(
+                  question, english: english))
             }
             Button(english ? "Answer Flow" : "Responder ao Flow") {
               Task { await conversation.beginNeutralMealReply(intakeID: row.id) }

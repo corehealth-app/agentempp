@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Candidate component. No release/root factory installs this view yet.
+/// The scoped root installs this view only for the configured conversation lane.
 /// Every saved card comes from the controller's factual acknowledgement;
 /// historical clinical sections are the bound server-rendered presentation.
 @MainActor
@@ -468,7 +468,7 @@ struct FlowConversationView: View {
 
   private func openCapture(_ choice: FlowConversationCapturePresentation.Choice) {
     guard let context = model.captureContext, model.terminalQuestion == nil else { return }
-    capturePresentation = .init(choice: choice, context: context)
+    capturePresentation = .init(choice: choice, context: context, neutral: model.neutralIntake != nil)
   }
   private func questionText(_ reason: String?) -> String {
     switch reason {

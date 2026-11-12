@@ -216,10 +216,22 @@ final class FlowConversationModel {
     // opens an empty independent composer, never copies/relinks its source.
   }
   var captureContext: ConversationCommandContext.Identity? {
-    hasCurrentScope && mediaService != nil ? context?.identity : nil
+    if let neutralIntake { return hasCurrentScope ? neutralIntake.captureContext : nil }
+    return hasCurrentScope && mediaService != nil ? context?.identity : nil
   }
-  var attachment: FlowConversationAttachment? { hasCurrentScope ? selectedAttachment : nil }
+  var attachment: FlowConversationAttachment? {
+    if let neutralIntake { return hasCurrentScope ? neutralIntake.attachment : nil }
+    return hasCurrentScope ? selectedAttachment : nil
+  }
   func attach(_ staged: StagedMedia, expectedContext: ConversationCommandContext.Identity) throws {
+    if let neutralIntake {
+      guard hasCurrentScope else {
+        mediaDependencies?.staging.remove(staged.fileURL)
+        throw ConversationOutboxError.invalidServerObservation
+      }
+      try neutralIntake.attach(staged, expectedContext: expectedContext)
+      return
+    }
     guard !isWorking, !isClosed, !isComposerLocked, let context,
       context.identity == expectedContext,
       mediaService != nil
@@ -235,6 +247,7 @@ final class FlowConversationModel {
     draftRevision &+= 1
   }
   func removeAttachment() async {
+    if let neutralIntake { await neutralIntake.removeAttachment(); return }
     guard !isWorking, !isComposerLocked, let selected = selectedAttachment else { return }
     selectedAttachment = nil
     preparedDraft = nil
@@ -700,6 +713,7 @@ final class FlowConversationModel {
         guard let current = model.context else { throw ConversationOutboxError.invalidServerObservation }
         model.neutralIntake = try await FlowNeutralIntakeModel.open(transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: lease, parentIdentity: current.identity,
           parentIsCurrent: { [weak model] identity in model?.hasCurrentScope == true && model?.context?.identity == identity },
+          mediaService: model.mediaService, mediaStaging: media?.staging,
           onFactualEffect: { [weak model] in guard let model, model.hasCurrentScope else { return }; model.savedEffectRevision &+= 1 })
         if linkedReplies {
           let origins = try await MobileConversationIntakeRepository.scoped(transport: transport, lease: lease)

@@ -5,6 +5,27 @@ import Testing
 
 @Suite("Command media preparation preserves owned assets and processing identity")
 struct ConversationMealMediaServiceTests {
+  @Test func legacyUploadAndProcessingCannotBorrowTheNeutralPhotoPurpose() async throws {
+    let f = try await Fixture.make()
+    defer { f.remove() }
+    await f.http.stub.respond { request, _ in try f.reply(request, kind: "conversation_photo") }
+    let service = try await f.open()
+    let ordinary = StagedMedia(
+      fileURL: f.staged.fileURL, kind: .conversationPhoto, mimeType: "image/jpeg", sizeBytes: 15,
+      duration: nil, channel: .camera)
+    await #expect(throws: MealCaptureFailure.invalidInput) {
+      try await service.upload(ordinary, captureID: UUID(), context: f.context)
+    }
+    #expect(await f.http.stub.requests.isEmpty)
+    let command = try ConversationMealCommand(
+      source: .media(assetID: #require(UUID(uuidString: f.assetID)), caption: nil))
+    await #expect(throws: MealCaptureFailure.uploadRejected) {
+      try await service.process(
+        command: command, expectedContext: f.context.identity, context: f.context)
+    }
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await service.close()
+  }
   @Test func aFileOutsideItsOwnedStagingAreaCannotLeaveTheDevice() async throws {
     let f = try await Fixture.make()
     defer { f.remove() }
@@ -161,11 +182,12 @@ struct ConversationMealMediaServiceTests {
         transport: http.transport, lifecycle: http.lifecycle, lease: lease, uploader: uploader,
         staging: staging, pollInterval: .zero, maximumPolls: 2)
     }
-    func reply(_ request: URLRequest, assetState: String = "uploaded") throws
+    func reply(_ request: URLRequest, assetState: String = "uploaded", kind: String = "meal_photo")
+      throws
       -> ConversationHTTPReply
     {
       let asset: [String: Any] = [
-        "id": assetID, "kind": "meal_photo", "status": assetState, "failure_stage": NSNull(),
+        "id": assetID, "kind": kind, "status": assetState, "failure_stage": NSNull(),
         "failure_code": NSNull(),
       ]
       let create = request.url?.path == "/api/mobile/v1/media"

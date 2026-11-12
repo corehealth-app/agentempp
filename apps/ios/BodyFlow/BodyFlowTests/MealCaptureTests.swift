@@ -383,6 +383,23 @@ struct MealPhotoNormalizerTests {
         }
     }
 
+    @Test("Ordinary conversation photos keep their purpose and strip private metadata")
+    func stagesOrdinaryPhotoWithoutLegacyOrClinicalRetag() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("ordinary-photo-tests-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let stager = MealMediaStager(staging: MediaStagingStore(temporaryDirectory: base), photoPurpose: .conversation)
+        let image = try stager.stagePhoto(sourcePhoto(width: 3_000, height: 3_000), channel: .gallery)
+        let data = try Data(contentsOf: image.fileURL), metadata = try properties(of: data)
+        #expect(image.kind == .conversationPhoto && image.uploadRequest.kind == .conversationPhoto)
+        #expect(image.channel == .gallery && image.mimeType == "image/jpeg" && image.duration == nil)
+        #expect(image.sizeBytes == data.count)
+        #expect(metadata[kCGImagePropertyGPSDictionary] == nil)
+        #expect((metadata[kCGImagePropertyExifDictionary] as? [CFString: Any])?[kCGImagePropertyExifUserComment] == nil)
+        #expect((metadata[kCGImagePropertyExifDictionary] as? [CFString: Any])?[kCGImagePropertyExifLensModel] == nil)
+        #expect(metadata[kCGImagePropertyPixelWidth] as? Int == 2048)
+        #expect(MealDraftModel.precheck(image) == .invalidInput)
+    }
+
     @Test("Staging a photo writes the normalized file and declares its real size")
     func stagesNormalizedPhoto() throws {
         let base = FileManager.default.temporaryDirectory

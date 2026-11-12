@@ -7,6 +7,7 @@ actor ConversationMealMediaService {
   private struct Capture: Sendable {
     let staged: StagedMedia
     let identity: ConversationCommandContext.Identity
+    let neutral: Bool
     var assetID: UUID?
     var completed = false
     var retained = false
@@ -79,17 +80,27 @@ actor ConversationMealMediaService {
   func upload(_ staged: StagedMedia, captureID: UUID, context: ConversationCommandContext)
     async throws -> UUID
   {
+    try await upload(staged, captureID: captureID, context: context, neutral: false)
+  }
+  func uploadIntake(_ staged: StagedMedia, captureID: UUID, context: ConversationCommandContext)
+    async throws -> UUID
+  {
+    try await upload(staged, captureID: captureID, context: context, neutral: true)
+  }
+  private func upload(
+    _ staged: StagedMedia, captureID: UUID, context: ConversationCommandContext, neutral: Bool
+  ) async throws -> UUID {
     try cancellation.check()
     guard !discarded.contains(captureID), !activeCaptures.contains(captureID) else {
       throw MealCaptureFailure.unavailable
     }
-    try validateStaged(staged, completed: captures[captureID]?.completed == true)
+    try validateStaged(staged, completed: captures[captureID]?.completed == true, neutral: neutral)
     if let old = captures[captureID] {
-      guard old.staged == staged, old.identity == context.identity else {
+      guard old.staged == staged, old.identity == context.identity, old.neutral == neutral else {
         throw ConversationOutboxError.invalidServerObservation
       }
     } else {
-      captures[captureID] = .init(staged: staged, identity: context.identity)
+      captures[captureID] = .init(staged: staged, identity: context.identity, neutral: neutral)
     }
     activeCaptures.insert(captureID)
     defer { activeCaptures.remove(captureID) }
@@ -142,8 +153,26 @@ actor ConversationMealMediaService {
     expectedContext: ConversationCommandContext.Identity
   ) throws {
     try cancellation.check()
-    guard var capture = captures[captureID], capture.completed, capture.identity == expectedContext,
+    guard let capture = captures[captureID], !capture.neutral,
       case .media(let assetID, _) = command.source, capture.assetID == assetID
+    else { throw ConversationOutboxError.invalidTransition }
+    try retain(captureID: captureID, assetID: assetID, expectedContext: expectedContext)
+  }
+  func retainForEnqueue(
+    captureID: UUID, input: FlowNeutralIntakeInput,
+    expectedContext: ConversationCommandContext.Identity
+  ) throws {
+    try cancellation.check()
+    guard let capture = captures[captureID], capture.neutral,
+      case .media(let assetID, _) = input.source, capture.assetID == assetID
+    else { throw ConversationOutboxError.invalidTransition }
+    try retain(captureID: captureID, assetID: assetID, expectedContext: expectedContext)
+  }
+  private func retain(
+    captureID: UUID, assetID: UUID, expectedContext: ConversationCommandContext.Identity
+  ) throws {
+    guard var capture = captures[captureID], capture.completed,
+      capture.identity == expectedContext, capture.assetID == assetID
     else { throw ConversationOutboxError.invalidTransition }
     capture.retained = true
     captures[captureID] = capture
@@ -158,34 +187,54 @@ actor ConversationMealMediaService {
     guard expectedContext == context.identity, case .media(let assetID, _) = command.source else {
       throw ConversationOutboxError.invalidServerObservation
     }
+    try await process(
+      assetID: assetID, operationID: command.commandID, context: context, photoKind: .mealPhoto)
+  }
+  func process(
+    input: FlowNeutralIntakeInput, expectedContext: ConversationCommandContext.Identity,
+    context: ConversationCommandContext
+  ) async throws {
+    guard expectedContext == context.identity, case .media(let assetID, _) = input.source else {
+      throw ConversationOutboxError.invalidServerObservation
+    }
+    try await process(
+      assetID: assetID, operationID: input.intakeID, context: context, photoKind: .conversationPhoto
+    )
+  }
+  private func process(
+    assetID: UUID, operationID: UUID, context: ConversationCommandContext,
+    photoKind: MediaUploadKind
+  ) async throws {
     try await run(context: context) {
       let media = try await self.repository(context)
       let initial = try await media.asset(id: assetID.uuidString.lowercased())
-      _ = try self.asset(initial, expected: assetID)
+      _ = try self.asset(initial, expected: assetID, photoKind: photoKind)
       switch initial.state {
       case .processed: return
       case .uploaded:
         let response = try await media.requestProcessing(
           self.attempt(
-            .mediaProcess, .init(assetID: assetID.uuidString.lowercased()), id: command.commandID,
+            .mediaProcess, .init(assetID: assetID.uuidString.lowercased()), id: operationID,
             suffix: "process"))
-        _ = try self.asset(response, expected: assetID)
+        _ = try self.asset(response, expected: assetID, photoKind: photoKind)
         if response.state == .processed { return }
         if case .failed = response.state { throw MealCaptureFailure.processingFailed }
       case .processing: break
       case .failed: throw MealCaptureFailure.processingFailed
       default: throw MealCaptureFailure.uploadRejected
       }
-      try await self.poll(media, assetID: assetID)
+      try await self.poll(media, assetID: assetID, photoKind: photoKind)
     }
   }
-  private func poll(_ media: MobileConversationMediaRepository, assetID: UUID) async throws {
+  private func poll(
+    _ media: MobileConversationMediaRepository, assetID: UUID, photoKind: MediaUploadKind
+  ) async throws {
     for index in 0..<maximumPolls {
       if index > 0 { try await clock.sleep(for: pollInterval) }
       try cancellation.check()
       try Task.checkCancellation()
       let value = try await media.asset(id: assetID.uuidString.lowercased())
-      _ = try asset(value, expected: assetID)
+      _ = try asset(value, expected: assetID, photoKind: photoKind)
       switch value.state {
       case .processed: return
       case .failed: throw MealCaptureFailure.processingFailed
@@ -237,15 +286,16 @@ actor ConversationMealMediaService {
     else { throw CancellationError() }
     return capture
   }
-  private func validateStaged(_ media: StagedMedia, completed: Bool) throws {
+  private func validateStaged(_ media: StagedMedia, completed: Bool, neutral: Bool) throws {
     let file = media.fileURL.standardizedFileURL.resolvingSymlinksInPath()
     let root = staging.root.standardizedFileURL.resolvingSymlinksInPath()
     guard media.fileURL.isFileURL,
       file.deletingLastPathComponent().deletingLastPathComponent() == root
     else { throw MealCaptureFailure.invalidInput }
     switch media.kind {
-    case .mealPhoto:
-      guard media.channel.isPhoto, media.mimeType == "image/jpeg", media.duration == nil,
+    case .mealPhoto, .conversationPhoto:
+      guard media.kind == (neutral ? .conversationPhoto : .mealPhoto),
+        media.channel.isPhoto, media.mimeType == "image/jpeg", media.duration == nil,
         (1...MealMediaLimits.maximumPhotoBytes).contains(media.sizeBytes)
       else { throw MealCaptureFailure.invalidInput }
     case .audioNote:
@@ -272,12 +322,13 @@ actor ConversationMealMediaService {
       transport: transport, lifecycle: lifecycle, lease: lease, context: context)
   }
   private nonisolated func asset(
-    _ value: MediaAssetSnapshot, expected: UUID?, kind: MediaUploadKind? = nil
+    _ value: MediaAssetSnapshot, expected: UUID?, kind: MediaUploadKind? = nil,
+    photoKind: MediaUploadKind = .mealPhoto
   ) throws -> UUID {
     guard let id = UUID(uuidString: value.id), value.id == id.uuidString.lowercased(),
       expected == nil || id == expected,
       kind.map({ $0.rawValue == value.kind })
-        ?? [MediaUploadKind.mealPhoto.rawValue, MediaUploadKind.audioNote.rawValue].contains(
+        ?? [photoKind.rawValue, MediaUploadKind.audioNote.rawValue].contains(
           value.kind)
     else { throw MealCaptureFailure.uploadRejected }
     return id

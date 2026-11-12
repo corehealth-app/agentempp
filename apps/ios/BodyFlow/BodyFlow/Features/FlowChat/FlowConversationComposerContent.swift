@@ -13,8 +13,12 @@ struct FlowConversationComposerContent: View {
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
-    if let neutral = model.neutralIntake { FlowNeutralIntakeComposerContent(model: neutral) }
-    else { legacyContent }
+    if let neutral = model.neutralIntake {
+      FlowNeutralIntakeComposerContent(
+        model: neutral, capture: capture, captureAction: captureAction)
+    } else {
+      legacyContent
+    }
   }
   @ViewBuilder private var legacyContent: some View {
     @Bindable var model = model

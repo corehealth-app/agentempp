@@ -6,6 +6,199 @@ import Testing
 
 @MainActor @Suite("Actual Flow composition sends neutral text without retagging old meals")
 struct FlowNeutralIntakeVisibleModelTests {
+  @Test(arguments: ["conversation_photo", "audio_note"])
+  func originalAttachmentUsesNeutralQueueBeforeProcessingWithoutLegacyRegistration(_ kind: String)
+    async throws
+  {
+    let mediaKind = try #require(MediaUploadKind(rawValue: kind))
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let url = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8),
+      fileExtension: kind == "audio_note" ? "mp3" : "jpg")
+    let staged = StagedMedia(
+      fileURL: url, kind: mediaKind, mimeType: kind == "audio_note" ? "audio/mpeg" : "image/jpeg",
+      sizeBytes: 15, duration: kind == "audio_note" ? 12 : nil,
+      channel: kind == "audio_note" ? .audioRecording : .camera)
+    let server = NeutralCaptureUnitServer(sessions: f.server, kind: kind)
+    await f.http.stub.respond { request, _ in try await server.reply(request) }
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, media: .init(uploader: ConversationMediaUploaderProbe(), staging: staging),
+      neutralIntakeEnabled: true)
+    let neutral = try #require(model.neutralIntake)
+    let identity = try #require(model.captureContext)
+    try model.attach(staged, expectedContext: identity)
+    let processLease = await f.http.lifecycle.leaseForRequest()
+    let processOwner = try ConversationOutboxOwner(lease: processLease)
+    let processKey = try await f.vault.key(owner: processOwner, mayCreate: false)
+    let processStore = f.disk.store
+    await server.watchProcessing {
+      let row = try #require(processStore.loadIntakes(owner: processOwner, key: processKey).first)
+      #expect(row.state == .queued && row.hold == nil)
+      guard case .media(let asset, let caption) = row.input.source else {
+        Issue.record("Missing durable original media")
+        return
+      }
+      #expect(
+        asset.uuidString.lowercased() == NeutralCaptureUnitServer.assetID
+          && caption == "Relato original com anexo")
+    }
+    neutral.composer = "Relato original com anexo"
+    neutral.mealTypeHint = .cafe
+    await neutral.submit()
+    let requests = await f.http.stub.requests
+    let intake = try #require(
+      requests.first {
+        $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/conversation/intakes"
+      })
+    let input = try FlowNeutralIntakeInput(wireBody: #require(intake.httpBody))
+    guard case .media(let id, let caption) = input.source else {
+      Issue.record("Attachment was downgraded to text")
+      await model.close()
+      return
+    }
+    #expect(id.uuidString.lowercased() == NeutralCaptureUnitServer.assetID)
+    #expect(caption == "Relato original com anexo" && input.mealTypeHint == .cafe)
+    #expect(intake.value(forHTTPHeaderField: "X-Conversation-Media-Provenance") == "1")
+    let lease = await f.http.lifecycle.leaseForRequest()
+    let owner = try ConversationOutboxOwner(lease: lease)
+    let key = try await f.vault.key(owner: owner, mayCreate: false)
+    #expect(
+      try f.disk.store.loadIntakes(owner: owner, key: key).first?.input.wireBody == input.wireBody)
+    #expect(
+      requests.contains { $0.httpMethod == "POST" && $0.url?.path.hasSuffix("/process") == true })
+    #expect(
+      !requests.contains {
+        $0.url?.path.contains("meal-drafts") == true
+          || ($0.httpMethod == "POST" && $0.url?.path.contains("meal-commands") == true)
+      })
+    #expect(neutral.savedRows.isEmpty && model.savedEffectRevision == 0)
+    await model.close()
+    #expect(!(await f.http.stub.requests).contains { $0.httpMethod == "DELETE" })
+  }
+  @Test func synchronousSessionInvalidationRemovesOnlyItsLateUnattachedCapture() async throws {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, media: .init(uploader: ConversationMediaUploaderProbe(), staging: staging),
+      neutralIntakeEnabled: true)
+    let identity = try #require(model.captureContext)
+    model.invalidateSynchronously()
+    let file = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8), fileExtension: "mp3")
+    let late = StagedMedia(
+      fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: 15, duration: 12,
+      channel: .audioRecording)
+    let before = await f.http.stub.requests.count
+    #expect(throws: (any Error).self) { try model.attach(late, expectedContext: identity) }
+    #expect(!FileManager.default.fileExists(atPath: file.path))
+    #expect(await f.http.stub.requests.count == before)
+    await model.close()
+  }
+  @Test func processingLossResumesTheSameEncryptedMediaAfterColdReopenWithoutAnotherProcessPost()
+    async throws
+  {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let file = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8), fileExtension: "mp3")
+    let staged = StagedMedia(
+      fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: 15, duration: 12,
+      channel: .audioRecording)
+    let server = NeutralCaptureUnitServer(
+      sessions: f.server, kind: "audio_note", loseProcessing: true)
+    await f.http.stub.respond { request, _ in try await server.reply(request) }
+    let dependencies = FlowConversationMediaDependencies(
+      uploader: ConversationMediaUploaderProbe(), staging: staging)
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, media: dependencies, neutralIntakeEnabled: true)
+    let neutral = try #require(model.neutralIntake)
+    try model.attach(staged, expectedContext: #require(model.captureContext))
+    neutral.composer = "Fiz caminhada por 12 minutos"
+    await neutral.submit()
+    let lease = await f.http.lifecycle.leaseForRequest()
+    let owner = try ConversationOutboxOwner(lease: lease)
+    let key = try await f.vault.key(owner: owner, mayCreate: false)
+    let original = try #require(f.disk.store.loadIntakes(owner: owner, key: key).first)
+    #expect(original.state == .queued && original.hold == nil)
+    #expect(
+      !(await f.http.stub.requests).contains {
+        $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/conversation/intakes"
+      })
+    await model.close()
+    let reopened = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, media: dependencies, neutralIntakeEnabled: true)
+    let restored = try #require(reopened.neutralIntake)
+    #expect(restored.pendingRows.first?.input.wireBody == original.input.wireBody)
+    await restored.sendQueued(intakeID: original.input.intakeID)
+    let requests = await f.http.stub.requests
+    #expect(
+      requests.filter { $0.httpMethod == "POST" && $0.url?.path.hasSuffix("/process") == true }
+        .count == 1)
+    let intake = try #require(
+      requests.first {
+        $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/conversation/intakes"
+      })
+    #expect(intake.httpBody == original.input.wireBody)
+    #expect(restored.savedRows.isEmpty && reopened.savedEffectRevision == 0)
+    await reopened.close()
+    #expect(!(await f.http.stub.requests).contains { $0.httpMethod == "DELETE" })
+  }
+  @Test func accountChangeDuringUploadCannotEnqueueOrAcceptALatePickerResult() async throws {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let file = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8), fileExtension: "mp3")
+    let staged = StagedMedia(
+      fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: 15, duration: 12,
+      channel: .audioRecording)
+    let server = NeutralCaptureUnitServer(sessions: f.server, kind: "audio_note")
+    await f.http.stub.respond { request, _ in try await server.reply(request) }
+    let barrier = ConversationControllerBarrier()
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault,
+      media: .init(uploader: NeutralCapturePausedUploader(barrier: barrier), staging: staging),
+      neutralIntakeEnabled: true)
+    let neutral = try #require(model.neutralIntake)
+    let identity = try #require(model.captureContext)
+    try model.attach(staged, expectedContext: identity)
+    let submitted = Task {
+      await neutral.submit()
+      await barrier.finish()
+    }
+    #expect(await barrier.waitEnteredOrFinished())
+    let oldLease = await f.http.lifecycle.leaseForRequest()
+    await f.http.lifecycle.replace(
+      .init(
+        userID: UUID().uuidString.lowercased(), generation: oldLease.generation + 1,
+        bearer: "synthetic-new"))
+    await barrier.release()
+    await submitted.value
+    let requests = await f.http.stub.requests
+    #expect(
+      !requests.contains {
+        $0.url?.path.hasSuffix("/complete") == true || $0.url?.path.hasSuffix("/process") == true
+          || $0.url?.path == "/api/mobile/v1/conversation/intakes"
+      })
+    #expect(neutral.savedRows.isEmpty && model.captureContext == nil)
+    let late = try stageConversationSyntheticMedia(
+      staging: staging, data: Data("synthetic-media".utf8), fileExtension: "mp3")
+    let lateResult = StagedMedia(
+      fileURL: late, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: 15, duration: 12,
+      channel: .audioRecording)
+    #expect(throws: (any Error).self) { try model.attach(lateResult, expectedContext: identity) }
+    #expect(!FileManager.default.fileExists(atPath: late.path))
+    await model.close()
+  }
   @Test func actualComposerModeSavesOneGenuineTypedMealAndInvalidatesOfficialReadsOnce()
     async throws
   {
@@ -371,4 +564,89 @@ func neutralNotRecordedUnit(variant: String) throws -> [String: Any] {
   if basis == "meal_unit" { state["food_indexes"] = [] as [Int] }
   packet["result"] = state
   return packet
+}
+
+/// Controlled pending response only; never fabricates a consumed/performed ACK.
+actor NeutralCaptureUnitServer {
+  static let assetID = "40000000-0000-4000-8000-000000000001"
+  let sessions: NeutralVisibleUnitServer
+  let kind: String
+  private var processed = false
+  private var loseProcessing: Bool
+  private var failCreate: Bool
+  private var processingProbe: (@Sendable () async throws -> Void)?
+  func watchProcessing(_ probe: @escaping @Sendable () async throws -> Void) {
+    processingProbe = probe
+  }
+  init(
+    sessions: NeutralVisibleUnitServer, kind: String, loseProcessing: Bool = false,
+    failCreate: Bool = false
+  ) {
+    self.sessions = sessions
+    self.kind = kind
+    self.loseProcessing = loseProcessing
+    self.failCreate = failCreate
+  }
+  func reply(_ request: URLRequest) async throws -> ConversationHTTPReply {
+    let path = request.url!.path
+    if path == "/api/mobile/v1/media" || path.hasPrefix("/api/mobile/v1/media/") {
+      let create = path == "/api/mobile/v1/media"
+      if create && failCreate {
+        failCreate = false
+        return .init(
+          status: 503,
+          body: Data("{\"error\":{\"code\":\"media_unavailable\",\"message\":\"synthetic\"}}".utf8))
+      }
+      if path.hasSuffix("/process") && request.httpMethod == "POST" {
+        try await processingProbe?()
+        processed = true
+        if loseProcessing {
+          loseProcessing = false
+          throw URLError(.networkConnectionLost)
+        }
+      }
+      let asset: [String: Any] = [
+        "id": Self.assetID, "kind": kind, "status": processed ? "processed" : "uploaded",
+        "failure_stage": NSNull(), "failure_code": NSNull(),
+      ]
+      if create {
+        var pending = asset
+        pending["status"] = "pending_upload"
+        let ticket: [String: Any] = [
+          "signed_url":
+            "https://synthetic.invalid/storage/v1/object/upload/sign/bucket/fixture?token=synthetic",
+          "method": "PUT",
+          "headers": ["content-type": kind == "audio_note" ? "audio/mpeg" : "image/jpeg"],
+          "expires_at": "2030-01-01T00:00:00Z",
+        ]
+        return try neutralHTTP(["asset": pending, "upload": ticket, "replayed": false])
+      }
+      return try neutralHTTP(asset)
+    }
+    if path == "/api/mobile/v1/conversation/intakes", request.httpMethod == "POST",
+      let data = request.httpBody
+    {
+      let input = try FlowNeutralIntakeInput(wireBody: data)
+      let unit = try neutralFixture()["meal_unit"] as! [String: Any]
+      let binding = unit["binding"] as! [String: Any]
+      return try mediaIntakeHTTP(
+        [
+          "schema": "conversation.intake-result.v1", "status": "pending", "intake": NSNull(),
+          "lookup": [
+            "ownerId": binding["owner_id"]!, "intakeId": input.intakeID.uuidString.lowercased(),
+            "inputHash": input.inputHash, "epoch": binding["epoch"]!,
+          ], "reason": "routing_pending",
+        ], status: 202)
+    }
+    return try await sessions.reply(request)
+  }
+}
+
+actor NeutralCapturePausedUploader: StorageUploading {
+  let barrier: ConversationControllerBarrier
+  init(barrier: ConversationControllerBarrier) { self.barrier = barrier }
+  func upload(_ media: StagedMedia, with ticket: MediaUploadTicket) async throws {
+    await barrier.enter()
+    try Task.checkCancellation()
+  }
 }

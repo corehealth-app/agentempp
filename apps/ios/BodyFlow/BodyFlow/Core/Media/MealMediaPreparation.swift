@@ -95,7 +95,14 @@ enum MealAudioInspector {
 /// Stages captures: the only place a photo or a recording becomes a file
 /// ready to upload.
 struct MealMediaStager: Sendable {
+    enum PhotoPurpose: Equatable, Sendable { case meal, conversation }
     let staging: MediaStagingStore
+    let photoPurpose: PhotoPurpose
+
+    init(staging: MediaStagingStore, photoPurpose: PhotoPurpose = .meal) {
+        self.staging = staging
+        self.photoPurpose = photoPurpose
+    }
 
     func stagePhoto(_ data: Data, channel: MealSourceChannel) throws -> StagedMedia {
         guard channel.isPhoto else { throw MealCaptureFailure.invalidInput }
@@ -106,7 +113,7 @@ struct MealMediaStager: Sendable {
         let url = try staging.stage(jpeg, fileExtension: "jpg")
         return StagedMedia(
             fileURL: url,
-            kind: .mealPhoto,
+            kind: photoPurpose == .conversation ? .conversationPhoto : .mealPhoto,
             mimeType: "image/jpeg",
             sizeBytes: jpeg.count,
             duration: nil,

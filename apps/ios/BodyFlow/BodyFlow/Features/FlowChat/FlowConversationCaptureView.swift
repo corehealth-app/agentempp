@@ -11,6 +11,7 @@ struct FlowConversationCapturePresentation: Identifiable {
   let id = UUID()
   let choice: Choice
   let context: ConversationCommandContext.Identity
+  var neutral = false
 }
 
 /// Captures bytes only. The immutable scope is captured when the picker opens;
@@ -45,12 +46,16 @@ struct FlowConversationCaptureView: View {
   var body: some View {
     NavigationStack {
       VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-        Text(english ? "Attach a meal report" : "Anexar relato de refeição")
-          .font(BodyFlowTypography.cardTitle)
+        Text(
+          presentation.neutral
+            ? (english ? "Attach to Flow" : "Anexar ao Flow")
+            : (english ? "Attach a meal report" : "Anexar relato de refeição")
+        )
+        .font(BodyFlowTypography.cardTitle)
         Text(
           english
-            ? "Review your message and send when ready. An attachment alone does not record a meal."
-            : "Revise sua mensagem e envie quando estiver pronta. Um anexo sozinho não registra uma refeição."
+            ? "Review your message and send when ready. Only a clear report with enough information can be recorded."
+            : "Revise sua mensagem e envie quando estiver pronta. Somente um relato claro e com as informações necessárias pode ser registrado."
         )
         .foregroundStyle(BodyFlowColor.secondaryText)
         if presentation.choice == .recording {
@@ -141,7 +146,10 @@ struct FlowConversationCaptureView: View {
     guard !preparing, model.captureContext == presentation.context else { return }
     preparing = true
     failure = false
-    let stager = capability.stager
+    let stager =
+      presentation.neutral
+      ? MealMediaStager(staging: capability.stager.staging, photoPurpose: .conversation)
+      : capability.stager
     operation = Task {
       do {
         let staged = try await Task.detached(priority: .userInitiated) { try await work(stager) }

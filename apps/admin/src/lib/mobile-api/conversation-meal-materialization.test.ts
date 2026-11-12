@@ -307,6 +307,56 @@ describe('actual command interpretation materialization', () => {
       food_indexes: [0],
     })
   })
+  it('recognizes the full catalogue wording despite its editorial comma, preserving the stated input', async () => {
+    const f = fixture('iogurte natural200g', [
+        { name: 'iogurte natural', quantity: '200', unit: 'g' },
+      ]),
+      state = db()
+    // Actual staging catalogue: id597 "Iogurte, natural", similarity1.
+    state.rpc.mockResolvedValue({ data: [row('Iogurte, natural', 597)], error: null })
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs[0]?.calculation_input).toEqual({
+      food_name: 'iogurte natural',
+      quantity_g: 200,
+    })
+    expect(result.source_groups[0]?.source_positions[0]?.name).toEqual(
+      f.interpretation.foods[0]?.name,
+    )
+    expect(state.rpc).toHaveBeenCalledWith('search_food_trgm', {
+      search_term: 'iogurte natural',
+      min_similarity: 0.9,
+      max_results: 5,
+      p_country: 'BR',
+    })
+  })
+  it('asks only for the missing quantity when the whole catalogue name contains an editorial comma', async () => {
+    const f = fixture('iogurte natural', [{ name: 'iogurte natural' }]),
+      state = db()
+    state.rpc.mockResolvedValue({ data: [row('Iogurte, natural', 597)], error: null })
+    expect(await materialize(f, state)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'missing_quantity',
+      food_indexes: [0],
+    })
+  })
+  it.each([
+    'Iogurte, natural desnatado',
+    'Iogurte, natural com whey',
+    'Iogurte, natural Marca X',
+    'Iogurte, natural 0,1%',
+  ])('does not discard catalogue qualifiers in %s', async (name) => {
+    const state = db()
+    state.rpc.mockResolvedValue({ data: [row(name)], error: null })
+    expect(
+      await materialize(
+        fixture('iogurte natural200g', [{ name: 'iogurte natural', quantity: '200', unit: 'g' }]),
+        state,
+      ),
+    ).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unqualified_whole_name',
+    })
+  })
   it('expands the original breakfast report from explicit milk volume without subtracting whey', async () => {
     const f = fixture('No café da manhã, consumi 200 mL de leite com 1 medida de whey.', [
       { name: 'leite com 1 medida de whey', quantity: '200', unit: 'mL' },
@@ -1284,6 +1334,35 @@ function continueMeal(
 }
 
 describe('separate linked missing quantity overlay', () => {
+  it('continues the catalogue-comma quantity question through the unchanged shared calculator', async () => {
+    const f = continuationFixture(fixture('iogurte natural', [{ name: 'iogurte natural' }])),
+      state = calculationDb([row('Iogurte, natural', 597)])
+    // This scenario reproduces the actual trigram RPC returning the comma
+    // spelling for the unpunctuated search; the generic fixture is exact-only.
+    state.rpc.mockResolvedValue({ data: [row('Iogurte, natural', 597)], error: null })
+    expect(await materialize(f, state)).toMatchObject({ reason: 'missing_quantity' })
+    const result = await continueMeal(f, [quantityReply('iogurte natural')], state),
+      material = prepared(result.materialization)
+    expect(material.inputs.map((i) => i.calculation_input)).toEqual([
+      { food_name: 'iogurte natural', quantity_g: 200 },
+    ])
+    const calc = await calcMealMacros(
+      state.client,
+      material.inputs.map((i) => i.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items).toMatchObject([
+      { matched_taco_id: 597, quantity_g: 200, kcal: 200, protein_g: 20, carbs_g: 20, fat_g: 4 },
+    ])
+    expect(calc.totals).toMatchObject({ kcal: 200, protein_g: 20, carbs_g: 20, fat_g: 4 })
+    expect(state.tables.every((table) => table === 'user_food_corrections')).toBe(true)
+  })
   it('applies rice answer and preserves beans, original source/model bytes and source positions', async () => {
     const f = continuationFixture(
       fixture('arroz; feijão100g', [

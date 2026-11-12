@@ -179,6 +179,9 @@ function certifyNutritionJournalSplitContent(text: string): void {
   // reproduces the prior module hash exactly. No other module body changed.
   // Seal the reviewed validator source before accepting its complete compiled body;
   // the other18 module identities, table/count and negative controls stay literal.
+  // R95 accounts for the complete trailing current-meal context. Module65556's
+  // helper/guard plus compiler-local renaming reverse byte-exactly to R82;
+  // all other18 compiled bodies remain byte-identical. No consumer is exempted.
   expect(
     createHash('sha256')
       .update(
@@ -190,7 +193,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('29589d6558e63031bd75af6fb4b254eb702ba8483a6f5f713540dc98cd5a0746')
+  ).toBe('3fac13281d07c9b82b4a63acf263dbfd85cba81eb8d2e2724949494a4df1265d')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -239,7 +242,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:f837ea72aeb1c6304f3ee319583fa0466769d84c4fc0cbcf9e571ca7612a5daa',
+      '65556:151b3760262d0a57b820bda7876a10343ea8387b444af152ad574d2786b6f5e1',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
@@ -397,11 +400,13 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '6732534c7ccbae1517844150777846decb11cf9ceb4ecf8933da334e4a91df56',
+    '50d604e2c9c48c7c134bcbda298f55c779682c1b0f423fd7e5bd78d1b2366baa',
   )
   // R80 adds closed enum/count observations only for completed ambiguities.
   // R81 adds closed screening reason codes and JSON encoding of this safe projection.
   // R83 changes only the literal role-boundary prompt; source identity stays sealed.
+  // R95 adds one literal trailing-context/missing-quantity paragraph only;
+  // removing that paragraph restores the reviewed prior source byte-exactly.
   // A retained233-file physical baseline proves the prompt/loader deltas only.
   // Helper bytes, exact route consumers and global scans remain enforced.
   // T53 replaces private literal replay with source-owned token labels on the same edge.

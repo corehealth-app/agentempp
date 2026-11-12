@@ -164,6 +164,36 @@ function reportMarker(text: string): boolean {
     v,
   )
 }
+/** An entire trailing meal-context adjunct accounts for source words, not
+ * consumption or a quantity. The existing positive decision, complete food
+ * refs and genuine reporting predicate (when reported) are still required.
+ * Unknown words, dates, negations and questions cannot disappear in it. */
+function trailingMealContextStart(
+  source: MealInterpretationModelResult['sources'][number],
+  text: string,
+): number | null {
+  if (!['reported', 'nominal_list'].includes(source.classification)) return null
+  const lastFood = source.spans.findLastIndex((span) =>
+    ['food', 'quantity', 'unit'].includes(span.kind),
+  )
+  if (lastFood < 0) return null
+  const tail = source.spans.slice(lastFood + 1),
+    first = tail[0]
+  if (
+    !first ||
+    tail.some(
+      (span) => span.food_index !== null || !['other', 'report', 'separator'].includes(span.kind),
+    )
+  )
+    return null
+  const context = plain(text.slice(first.start))
+    .replace(/^[,;\s]+/u, '')
+    .replace(/[.!]+$/u, '')
+    .trim()
+  return /^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia)(?: de hoje)?$/u.test(context)
+    ? first.start
+    : null
+}
 const pointer =
   /^(?:(?:meu|minha|my|este|esta|esse|essa|this|a|o) )?(?:almoco|jantar|cafe da manha|lanche|refeicao|prato|meal|plate|breakfast|lunch|dinner|isto|isso|it|this)[.!]?$/u
 const positives = new Set(['explicit_report', 'nominal_food_list', 'explicit_media_action'])
@@ -367,8 +397,10 @@ export function validateConversationMealInterpretationModel(
         mark('source_classification')
       let reports = 0
       let hasFood = false
+      const contextStart = trailingMealContextStart(s, input.text ?? '')
       for (const span of s.spans) {
         const text = (input.text ?? '').slice(span.start, span.end)
+        if (contextStart !== null && span.start >= contextStart) continue
         if (span.kind === 'other') {
           // Labeling inert punctuation as `other` must not discard an otherwise
           // complete report. Words, numbers, quotes and question marks still

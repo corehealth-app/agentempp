@@ -1388,6 +1388,125 @@ describe('content-free ambiguous screening observation', () => {
   })
 })
 
+describe('whole-source current meal context after reported foods', () => {
+  function suffix(text: string, tailKind: 'other' | 'report' | 'separator' = 'other') {
+    const raw = modelFor(text, [{ name: 'iogurte natural', quantity: '200', unit: 'g' }])
+    const spans = at(raw.sources).spans
+    at(spans, spans.length - 1).kind = tailKind
+    const f = textSource(text)
+    return { raw, source: buildConversationMealInterpretationSource(f.command, f.capture) }
+  }
+  it.each([
+    'no café da manhã.',
+    'no almoço',
+    'no jantar de hoje.',
+    'no lanche!',
+    'na ceia',
+    ', no café da manhã de hoje.',
+  ])('preserves the explicit current meal suffix %s without changing food evidence', (context) => {
+    const f = suffix('Comi iogurte natural200g ' + context)
+    const result = validateConversationMealInterpretationModel(f.raw, f.source)
+    expect(result).toEqual(f.raw)
+    expect(result.foods[0]?.name).toEqual(f.raw.foods[0]?.name)
+  })
+  it.each([
+    'other',
+    'report',
+    'separator',
+  ] as const)('accounts for a trailing meal context labeled %s with one genuine leading report', (kind) => {
+    const f = suffix('Comi iogurte natural200g no café da manhã.', kind)
+    expect(validateConversationMealInterpretationModel(f.raw, f.source).decision).toBe(
+      'reported_meal',
+    )
+  })
+  it('keeps the missing quantity missing in the observed unquantified report', () => {
+    const text = 'Comi iogurte natural no café da manhã.',
+      f = textSource(text),
+      start = text.indexOf('iogurte natural'),
+      end = start + 'iogurte natural'.length,
+      raw: MealInterpretationModelResult = {
+        schema: 'conversation.meal-interpretation.v1',
+        decision: 'reported_meal',
+        reason: 'explicit_report',
+        sources: [
+          {
+            unit: 'command_text',
+            classification: 'reported',
+            visual_indexes: [],
+            spans: [
+              { start: 0, end: start, kind: 'report', food_index: null },
+              { start, end, kind: 'food', food_index: 0 },
+              { start: end, end: text.length, kind: 'other', food_index: null },
+            ],
+          },
+        ],
+        foods: [
+          {
+            index: 0,
+            name: { unit: 'command_text', start, end },
+            quantity: null,
+            unit: null,
+            visual_index: null,
+          },
+        ],
+      }
+    expect(
+      validateConversationMealInterpretationModel(
+        raw,
+        buildConversationMealInterpretationSource(f.command, f.capture),
+      ),
+    ).toEqual(raw)
+  })
+  it.each([
+    'no sonho',
+    'no café da manhã de amanhã',
+    'no café da manhã de ontem',
+    'mas não no café da manhã',
+    'se fosse no café da manhã',
+    'no café da manhã?',
+    'no café da manhã mas não comi',
+    'no café da manhã da minha filha',
+    '"no café da manhã"',
+  ])('refuses unaccounted or non-current context %s', (context) => {
+    const f = suffix('Comi iogurte natural200g ' + context)
+    expect(validateConversationMealInterpretationModel(f.raw, f.source).decision).toBe(
+      'clarification_required',
+    )
+  })
+  it.each([
+    'Sonhei que comi',
+    'Não comi',
+    'Vou comer',
+    'Costumo comer',
+    'Minha filha comeu',
+  ])('a current meal suffix never establishes consumption for %s', (prefix) => {
+    const f = suffix(prefix + ' iogurte natural200g no café da manhã.')
+    expect(validateConversationMealInterpretationModel(f.raw, f.source).decision).toBe(
+      'clarification_required',
+    )
+  })
+  it('does not upgrade a model refusal or silently accept hidden unknown words', () => {
+    const f = suffix('Comi iogurte natural200g no café da manhã.')
+    f.raw.decision = 'clarification_required'
+    f.raw.reason = 'ambiguous'
+    expect(validateConversationMealInterpretationModel(f.raw, f.source).decision).toBe(
+      'clarification_required',
+    )
+    const unknown = suffix('Comi iogurte natural200g talvez no café da manhã.')
+    expect(validateConversationMealInterpretationModel(unknown.raw, unknown.source).decision).toBe(
+      'clarification_required',
+    )
+  })
+  it('cannot substitute a trailing meal context for an actual reporting predicate', () => {
+    const f = suffix('iogurte natural200g no café da manhã.')
+    at(f.raw.sources).classification = 'reported'
+    f.raw.reason = 'explicit_report'
+    expect(validateConversationMealInterpretationModel(f.raw, f.source).decision).toBe(
+      'clarification_required',
+    )
+  })
+})
+
 describe('closed conservative screening reasons', () => {
   it.each([
     ['quero200g', 'quero', '200', 'g', 'food_name'],

@@ -108,6 +108,11 @@ export interface ConversationMealCalculationSource {
 }
 const normalized = (s: string) =>
   s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/\s+/gu, ' ').trim()
+// TACO uses editorial separators such as "Iogurte, natural". Remove only a
+// comma between words from catalogue wording, never qualifiers, digits or
+// punctuation from the original patient source. Calculation still resolves
+// the unchanged whole input through its existing owned catalogue reader.
+const catalogueWording = (s: string) => normalized(s.replace(/(?<=\p{L}),\s*(?=\p{L})/gu, ' '))
 function unavailable(): never {
   throw new MobileApiError(
     503,
@@ -660,7 +665,7 @@ async function materializeConversationMealCore(
       const raw = structuredClone(result.data),
         rows = z.array(catalogRow).max(5).parse(raw)
       if (!isDeepStrictEqual(raw, rows)) unavailable()
-      const found = rows.some((row) => normalized(row.name_pt) === whole)
+      const found = rows.some((row) => catalogueWording(row.name_pt) === whole)
       wholeQualified.set(whole, found)
       return found
     }

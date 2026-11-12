@@ -175,9 +175,14 @@ describe('closed leading meal context preserves consumption authority', () => {
   ])('keeps the complete trailing discourse refused: %s', (suffix) => {
     expect(validate('No almoço, consumi ', suffix).decision).toBe('clarification_required')
   })
-  it('does not accept context alone or context after the food as consumption proof', () => {
+  it('does not accept a meal context alone as consumption proof', () => {
     expect(validate('No café da manhã, ').decision).toBe('clarification_required')
-    expect(validate('Consumi ', ' no almoço').decision).toBe('clarification_required')
+    expect(validate('Hoje, ', ' no almoço').decision).toBe('clarification_required')
+  })
+  it('preserves a genuine consumption predicate and all food references with a trailing current meal context', () => {
+    const model = riceModel('Consumi ', ' no almoço')
+    expect(validate('Consumi ', ' no almoço')).toEqual(model)
+    expect(model.foods[0]?.quantity).toEqual({ unit: 'command_text', start: 13, end: 16 })
   })
 })
 

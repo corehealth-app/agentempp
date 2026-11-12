@@ -426,7 +426,9 @@ final class FlowNeutralIntakeModel {
       {
         do { try await originals.discardOriginal(intakeID: intakeID) } catch ConversationOutboxError
           .commandNotFound
-        { /* No durable capture was admitted. */  }
+        {
+          // No durable capture was admitted.
+        }
         let capture = self.preparedCapture?.attachment
         self.clearCapture()
         self.prepared = nil

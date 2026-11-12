@@ -76,8 +76,10 @@ struct MediaStagingStore: Sendable {
         if lstat(file.path, &info) == 0 {
             guard info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid() else { throw MealCaptureFailure.invalidInput }
         } else if errno != ENOENT { throw MealCaptureFailure.unavailable }
-        var values = URLResourceValues(); values.isExcludedFromBackup = true
-        var directory = root; try directory.setResourceValues(values)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var directory = root
+        try directory.setResourceValues(values)
         try data.write(to: file, options: [.atomic, .completeFileProtection])
     }
 

@@ -172,9 +172,9 @@ function runtimeExactStringRoutes(value: string): string[] {
 // is sealed below; module11098 is newly certified in full, with the other17
 // compiled bodies still byte-identical. No old raw module body is claimed here.
 function certifyNutritionJournalSplitContent(text: string): void {
-  // T52 and R79 extend only the closed leading meal-context regex in module65556.
-  // R81 additionally observes closed reasons at unchanged conservative predicates.
-  // Its instrumentation reverses to the prior validator source byte-exactly.
+  // T52/R79 extend the report prefix; R82 also permits pure punctuation in `other`.
+  // R81 records closed guard reasons; R82 changes only its punctuation predicate.
+  // Reversing the R82 compiled predicate restores the R81 module byte-exactly.
   // R79 adds the optional current-day adjunct; reversing that sole compiled delta
   // reproduces the prior module hash exactly. No other module body changed.
   // Seal the reviewed validator source before accepting its complete compiled body;
@@ -190,7 +190,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('2c1fd13ef408404f4abf0782816cd090403c4279b2e0fc427da47e9fb920b42e')
+  ).toBe('29589d6558e63031bd75af6fb4b254eb702ba8483a6f5f713540dc98cd5a0746')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -239,7 +239,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:b0cda866116f43ab0a961ecb885bce7cd7808cef006d23f98d37faa66a9db3dc',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:948342f077c7f743eb867b44e942351827d29f37a1ee8ca10505fe55751495c4',
+      '65556:f837ea72aeb1c6304f3ee319583fa0466769d84c4fc0cbcf9e571ca7612a5daa',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
@@ -400,7 +400,7 @@ function certifyStructuredMealHelperT51() {
   )
   // R80 adds closed enum/count observations only for completed ambiguities.
   // R81 adds closed screening reason codes and JSON encoding of this safe projection.
-  // The reviewed source remains sealed; all363 other compiled module bodies,
+  // The reviewed source remains sealed; all363 other captured unique-ID entries,
   // helper bytes, route consumers and global scans remain unchanged.
   // T53 replaces private literal replay with source-owned token labels on the same edge.
   expect(
@@ -451,14 +451,19 @@ function certifyPhotoPurposeEdgesR62() {
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
-    ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
+    ['84359', '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab'],
+    ['63867', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
-  const gemini = bodies.get('84359') ?? ''
+  const geminiCurrent = bodies.get('84359') ?? ''
+  // R82's fresh build renumbers the byte-identical provider helper. Reverse
+  // exactly this one import before retaining the independent historical proofs.
+  const helperLinkR82 = 'd=c(63867)'
+  expect(geminiCurrent.split(helperLinkR82)).toHaveLength(2)
+  const gemini = geminiCurrent.replace(helperLinkR82, 'd=c(86248)')
   // T51's explicit OpenAI Zod helper changes only the one SDK loader link.
   // Reverse it to the preserved full R62 body before the independent R59 proof.
   const sdkLinkT51 = 'e=c(43296)'

@@ -370,7 +370,11 @@ export function validateConversationMealInterpretationModel(
       for (const span of s.spans) {
         const text = (input.text ?? '').slice(span.start, span.end)
         if (span.kind === 'other') {
+          // Labeling inert punctuation as `other` must not discard an otherwise
+          // complete report. Words, numbers, quotes and question marks still
+          // require semantic accounting; this never upgrades a model refusal.
           if (
+            !/^[\s,;:.!/]+$/u.test(text) &&
             !(
               s.classification === 'media_pointer' &&
               source.media_binding &&

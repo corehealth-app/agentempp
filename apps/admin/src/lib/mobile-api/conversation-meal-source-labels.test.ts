@@ -472,6 +472,100 @@ describe('source-preserving semantic labels', () => {
   ])('does not upgrade unsafe discourse merely because it names a meal: %s', (prefix) => {
     expect(milkReport(prefix).result.decision).toBe('clarification_required')
   })
+  function twoFoodReport(suffix: string) {
+    const text = `No café da manhã de hoje, consumi 200 mL de leite com 1 medida de whey${suffix}`,
+      input = source(text),
+      packet = api.prepareConversationMealSourceLabels(input),
+      fixed = [
+        label('report'),
+        label('report'),
+        label('report'),
+        label('report'),
+        label('report'),
+        label('report'),
+        label('report'),
+        label('report'),
+        label('quantity', 0),
+        label('unit', 0),
+        label('separator'),
+        label('food', 0),
+        label('separator'),
+        label('quantity', 1),
+        label('unit', 1),
+        label('separator'),
+        label('food', 1),
+      ],
+      labels = Object.fromEntries(
+        (packet.input.sources[0]?.tokens ?? []).map(([key], i) => [
+          key,
+          fixed[i] ?? label('other'),
+        ]),
+      ),
+      model = {
+        ...rice(),
+        reason: 'explicit_report',
+        sources: { command_text: { classification: 'reported', labels } },
+        foods: [
+          { index: 0, visual_index: null },
+          { index: 1, visual_index: null },
+        ],
+      },
+      materialized = packet.materialize(model)
+    return {
+      text,
+      input,
+      materialized,
+      result: validateConversationMealInterpretationModel(materialized, input),
+    }
+  }
+  it.each([
+    '.',
+    '...',
+    '!',
+    ',',
+    ';',
+    ':',
+  ])('keeps a consumed two-food report when terminal punctuation is labeled other: %s', (suffix) => {
+    const { text, result, materialized } = twoFoodReport(suffix)
+    expect(result.decision).toBe('reported_meal')
+    expect(result).toEqual(materialized)
+    expect(result.sources[0]?.spans.map((s) => text.slice(s.start, s.end)).join('')).toBe(text)
+    expect(
+      result.foods.map((f) =>
+        [f.name, f.quantity, f.unit].map((ref) => ref && text.slice(ref.start, ref.end)),
+      ),
+    ).toEqual([
+      ['leite', '200', 'mL'],
+      ['whey', '1', 'medida'],
+    ])
+  })
+  it('reproduces the observed two-food role counts with only the terminal period labeled other', () => {
+    const { materialized } = twoFoodReport('.')
+    const counts: Record<string, number> = {}
+    for (const span of materialized.sources[0]?.spans ?? [])
+      counts[span.kind] = (counts[span.kind] ?? 0) + 1
+    expect(counts).toEqual({ report: 1, separator: 6, quantity: 2, unit: 2, food: 2, other: 1 })
+  })
+  it.each([
+    '?',
+    '. não',
+    '. no sonho',
+    '. amanhã vou consumir',
+    '. minha filha',
+    ' + 200',
+    '“',
+    '-',
+  ])('does not ignore semantic or uncertain other content: %s', (suffix) => {
+    expect(twoFoodReport(suffix).result.decision).toBe('clarification_required')
+  })
+  it('does not upgrade a model clarification merely because its other span contains punctuation', () => {
+    const { input, materialized } = twoFoodReport('.')
+    const result = validateConversationMealInterpretationModel(
+      { ...materialized, decision: 'clarification_required', reason: 'ambiguous' },
+      input,
+    )
+    expect(result.decision).toBe('clarification_required')
+  })
   it.each([
     'missing token',
     'extra token',

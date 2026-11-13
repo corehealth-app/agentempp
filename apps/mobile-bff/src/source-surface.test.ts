@@ -262,7 +262,7 @@ function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string 
  * guard. All other modules, consumers and negative controls remain frozen. */
 function certifyPhotoReportR121(body: string): string {
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '877076af258df16e1974726f9f2b8a363b6f6b292b4bdfb974af0f67e1f78f8f',
+    '6acf1cdad7cdef6abd73e594ea1c0457407c9a2273ee52f760e6ebba1fa89bea',
   )
   return body
 }
@@ -292,7 +292,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('3c1d43020bcef4505bd616a1f353d68d039f0fdfd8d2cf495b049a48434ba6c5')
+  ).toBe('16bb5b77ea572fbfc3e6cfe124999dba0ecfef56410ae23eaf171cd799cedaca')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -354,7 +354,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:877076af258df16e1974726f9f2b8a363b6f6b292b4bdfb974af0f67e1f78f8f',
+      '65556:6acf1cdad7cdef6abd73e594ea1c0457407c9a2273ee52f760e6ebba1fa89bea',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',

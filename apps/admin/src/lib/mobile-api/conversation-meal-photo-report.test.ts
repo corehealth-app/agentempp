@@ -7,6 +7,7 @@ function photoReport(
   report = 'Acabei de almoçar',
   tail = 'esse prato.',
   kind: 'meal_photo' | 'audio_note' = 'meal_photo',
+  unit: 'media_caption' | 'media_context' = 'media_context',
 ) {
   const id = '10000000-0000-4000-8000-000000000001',
     text = `${report} ${tail}`
@@ -26,9 +27,9 @@ function photoReport(
       updated_at: '2026-11-13T16:37:00Z',
       processing_hash: 'c'.repeat(64),
     },
-    source_units: ['media_caption', 'vision_items'],
+    source_units: [unit, 'vision_items'],
     sources: [
-      { unit: 'media_caption', text, visual_items: [] },
+      { unit, text, visual_items: [] },
       {
         unit: 'vision_items',
         text: null,
@@ -42,7 +43,7 @@ function photoReport(
     decision: 'reported_meal',
     reason: 'explicit_report',
     sources: {
-      media_caption: {
+      [unit]: {
         classification: 'reported',
         labels: {} as Record<string, { kind: string; food_index: null }>,
       },
@@ -56,7 +57,9 @@ function photoReport(
   // Token labels are exact, ordered and complete; punctuation is retained.
   const tokens = packet.input.sources[0]?.tokens ?? []
   let cursor = 0
-  wire.sources.media_caption.labels = Object.fromEntries(
+  const labeledSource = wire.sources[unit]
+  if (!labeledSource) throw new Error('Missing fixture source')
+  labeledSource.labels = Object.fromEntries(
     tokens.map(([key, word]) => {
       const at = text.indexOf(word, cursor)
       if (at < 0) throw new Error('Missing fixture token')
@@ -111,6 +114,17 @@ describe('completed consumption report referring to a bound meal photograph', ()
     expect(
       validateConversationMealInterpretationModel(packet.materialize(wire), source).decision,
     ).toBe('clarification_required')
+  })
+  it('also preserves the explicit caption source without relabeling it', () => {
+    const { source, packet, wire } = photoReport(
+      'Acabei de almoçar',
+      'esse prato.',
+      'meal_photo',
+      'media_caption',
+    )
+    const result = validateConversationMealInterpretationModel(packet.materialize(wire), source)
+    expect(result.decision).toBe('reported_meal')
+    expect(result.sources[0]?.unit).toBe('media_caption')
   })
   it('rejects missing visual foods even when a positive photo binding is claimed', () => {
     const { source, packet, wire } = photoReport()

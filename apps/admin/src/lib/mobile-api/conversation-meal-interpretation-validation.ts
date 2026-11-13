@@ -235,7 +235,7 @@ function trailingPhotoPointerStart(
   visualCount: number,
 ): number | null {
   if (
-    source.unit !== 'media_caption' ||
+    !['media_caption', 'media_context'].includes(source.unit) ||
     source.classification !== 'reported' ||
     media?.kind !== 'meal_photo' ||
     visualCount === 0

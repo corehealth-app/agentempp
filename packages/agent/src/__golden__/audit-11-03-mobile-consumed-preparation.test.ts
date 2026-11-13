@@ -90,6 +90,16 @@ const foods = [
     fat_g: 1.24,
     fiber_g: 21.83,
   },
+  {
+    id: 288,
+    name_pt: 'Mandioca, farofa, temperada',
+    category: 'Verduras, hortaliças e derivados',
+    kcal_per_100g: 405.69,
+    protein_g: 2.06,
+    carbs_g: 80.3,
+    fat_g: 9.12,
+    fiber_g: 7.82,
+  },
 ].map((row) => ({ ...row, country_code: 'BR', similarity: 0.6 }))
 
 type Food = (typeof foods)[number]
@@ -567,5 +577,158 @@ describe('structured evidence of an actually applied cooked default', () => {
         annotations,
       ),
     ).rejects.toThrow('consumed_food_reference_unavailable')
+  })
+})
+
+
+describe('mobile consumed prepared-food reference — actual ordinary-photo farofa', () => {
+  it.each([
+    'farofa',
+    'farofa de mandioca',
+    'farofa de mandioca temperada',
+  ])('uses the verified existing reference for %s, visibly and editably, without a cooked claim', async (food_name) => {
+    const state = database()
+    const result = await calcMealMacros(
+      state.client,
+      [{ food_name, quantity_g: 80 }],
+      'BR',
+      undefined,
+      { ...POLICY, preparationAnnotations: 'consumed.preparation.v1' },
+    )
+    expect(result.items[0]).toMatchObject({
+      food_name: 'farofa de mandioca temperada',
+      matched_taco_id: 288,
+      quantity_g: 80,
+      kcal: 324.6,
+      protein_g: 1.65,
+      carbs_g: 64.24,
+      fat_g: 7.3,
+      fiber_g: 6.26,
+    })
+    expect(result.totals.kcal).toBe(324.6)
+    expect(result.user_warnings.join(' ')).toMatch(/referência.*estimada.*corrigid/)
+    expect(result.preparation_annotations ?? []).toEqual([])
+    expect(state.calls).toContain('mandioca, farofa, temperada')
+  })
+  it('never expands the legacy resolver or non-Brazilian consumption with this reference', async () => {
+    for (const country of ['BR', 'US']) {
+      const state = database()
+      await calcMealMacros(state.client, [{ food_name: 'farofa', quantity_g: 80 }], country)
+      expect(state.calls).not.toContain('mandioca, farofa, temperada')
+    }
+    const state = database()
+    await calcMealMacros(
+      state.client,
+      [{ food_name: 'farofa', quantity_g: 80 }],
+      'US',
+      undefined,
+      POLICY,
+    )
+    expect(state.calls).not.toContain('mandioca, farofa, temperada')
+  })
+  it.each([
+    'farofa de milho',
+    'farofa com ovo',
+    'farofa Yoki',
+    'farofa sem mandioca',
+  ])('preserves the explicit variant instead of discarding words: %s', async (food_name) => {
+    const state = database()
+    const input = [{ food_name, quantity_g: 80 }]
+    const legacy = await calcMealMacros(state.client, input, 'BR')
+    expect(await calcMealMacros(state.client, input, 'BR', undefined, POLICY)).toEqual(legacy)
+    expect(state.calls).not.toContain('mandioca, farofa, temperada')
+  })
+  it.each([
+    { missing: 288 },
+    { changed: 288 },
+  ])('fails closed when its verified row is absent or changed: %j', async (options) => {
+    await expect(
+      calcMealMacros(
+        database(options).client,
+        [{ food_name: 'farofa', quantity_g: 80 }],
+        'BR',
+        undefined,
+        POLICY,
+      ),
+    ).rejects.toThrow('consumed_food_reference_unavailable')
+  })
+  it('keeps the original-name active personal correction ahead of the prepared reference', async () => {
+    const state = database({
+      correction: true,
+      correctionName: 'farofa',
+      correctionTo: 'farofa personalizada',
+    })
+    const result = await calcMealMacros(
+      state.client,
+      [{ food_name: 'farofa', quantity_g: 80 }],
+      'BR',
+      OWNER,
+      POLICY,
+    )
+    expect(result.items[0]).toMatchObject({
+      food_name: 'farofa personalizada',
+      kcal: 80,
+      source: 'user_correction',
+    })
+    expect(state.calls).not.toContain('mandioca, farofa, temperada')
+  })
+  it('preserves approved label nutrition ahead of the estimated prepared reference', async () => {
+    const state = database()
+    const result = await calcMealMacros(
+      state.client,
+      [
+        {
+          food_name: 'farofa',
+          quantity_g: 80,
+          approved_nutrition: {
+            source: 'product_label',
+            kcal: 200,
+            protein_g: 3,
+            carbs_g: 40,
+            fat_g: 3,
+          },
+        },
+      ],
+      'BR',
+      undefined,
+      POLICY,
+    )
+    expect(result.items[0]).toMatchObject({
+      food_name: 'farofa',
+      kcal: 200,
+      source: 'product_label',
+    })
+    expect(state.calls).not.toContain('mandioca, farofa, temperada')
+  })
+  it('preserves both original input associations when aliases use the same reference', async () => {
+    const result = await calcMealMacros(
+      database().client,
+      [
+        { food_name: 'farofa', quantity_g: 80 },
+        { food_name: 'farofa de mandioca', quantity_g: 20 },
+      ],
+      'BR',
+      undefined,
+      POLICY,
+    )
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({
+      food_name: 'farofa de mandioca temperada',
+      quantity_g: 100,
+      kcal: 405.7,
+    })
+    expect(result.input_indexes).toEqual([[0, 1]])
+  })
+  it('preserves explicit manual zero rather than replacing it with the reference', async () => {
+    const state = database()
+    const result = await calcMealMacros(
+      state.client,
+      [{ food_name: 'farofa', quantity_g: 80, user_kcal: 0 }],
+      'BR',
+      undefined,
+      POLICY,
+    )
+    expect(result.items[0]).toMatchObject({ kcal: 0, source: 'user_kcal' })
+    expect(state.calls).not.toContain('mandioca, farofa, temperada')
   })
 })

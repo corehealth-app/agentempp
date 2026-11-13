@@ -1,6 +1,7 @@
 import { type EverydayFoodDefault, normalizeEverydayFoodName } from './everyday-food-defaults.js'
 
-/** Evidence emitted only by the verified cooked-default calculation branch. */
+/** Evidence emitted only by the verified cooked-default calculation branch.
+ * Prepared references are disclosed separately and never claim cooked input. */
 export interface ConsumedPreparationAnnotation {
   schema: 'consumed.preparation.v1'
   kind: 'default_cooked'
@@ -10,11 +11,18 @@ export interface ConsumedPreparationAnnotation {
   reference_id: `food_db:${number}`
 }
 
-/** Explicit mobile consumption policy approved03/11/2026. Not a global
- * replacement for the legacy preparation question. Values identify existing
- * verified TACO rows; they are never used as a substitute for the catalog.
+/** A prepared-food reference is approximate and must not emit a cooked-preparation annotation. */
+export interface ConsumedFoodDefault extends EverydayFoodDefault {
+  assumption?: 'prepared_reference'
+}
+
+/** Explicit mobile consumption policy, separate from legacy preparation.
+ * Cooked defaults were approved03/11/2026; a prepared reference is explicitly
+ * labeled approximate under the approved prepared-dish policy. Its own status
+ * does not claim the client's specific recipe. Values only identify existing
+ * verified TACO rows and never substitute for the current catalog.
  */
-export const CONSUMED_FOOD_DEFAULTS: readonly EverydayFoodDefault[] = [
+export const CONSUMED_FOOD_DEFAULTS: readonly ConsumedFoodDefault[] = [
   {
     said: ['arroz', 'arroz branco', 'arroz branco cozido', 'arroz cozido'],
     shown_as: 'arroz branco cozido',
@@ -52,9 +60,20 @@ export const CONSUMED_FOOD_DEFAULTS: readonly EverydayFoodDefault[] = [
     stated_on: '03/11/2026 — preparo cozido; preservar variedade explicitamente informada',
     status: 'confirmed',
   },
+  {
+    said: ['farofa', 'farofa de mandioca', 'farofa de mandioca temperada'],
+    shown_as: 'farofa de mandioca temperada',
+    catalog_name: 'Mandioca, farofa, temperada',
+    source_ref: 'TACO4:131',
+    per_100g: { kcal: 405.69, protein_g: 2.06, carbs_g: 80.3, fat_g: 9.12 },
+    stated_on:
+      '13/11/2026 — referência estimada e editável sob a política aprovada de pratos preparados; a receita específica não foi informada',
+    status: 'confirmation_pending',
+    assumption: 'prepared_reference',
+  },
 ]
 
-export function consumedFoodDefault(name: string, country: string): EverydayFoodDefault | null {
+export function consumedFoodDefault(name: string, country: string): ConsumedFoodDefault | null {
   if (country.toUpperCase() !== 'BR') return null
   const normalized = normalizeEverydayFoodName(name)
   return CONSUMED_FOOD_DEFAULTS.find((entry) => entry.said.includes(normalized)) ?? null

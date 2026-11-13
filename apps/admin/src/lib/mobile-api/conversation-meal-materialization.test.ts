@@ -1926,3 +1926,72 @@ describe('stored-answer original evidence and asynchronous snapshot preservation
     }
   })
 })
+
+
+describe('ordinary-photo catalog naming: prepared farofa reference', () => {
+  it('materializes the actual visual bare name without dropping the bean occurrence', async () => {
+    const f = visualFixture([
+      { name: 'feijão preto cozido', quantity_g_estimate: 150, confidence: 0.9 },
+      { name: 'farofa', quantity_g_estimate: 80, confidence: 0.85 },
+    ])
+    const result = prepared(await materialize(f, db()))
+    expect(result.inputs.map((x) => x.calculation_input)).toEqual([
+      { food_name: 'feijão preto cozido', quantity_g: 150 },
+      { food_name: 'farofa', quantity_g: 80 },
+    ])
+    expect(result.source_groups.map((x) => x.interpretation_food_indexes)).toEqual([[0], [1]])
+  })
+  it('feeds the public-photo observations through the actual shared calculator and preserves both editable source groups', async () => {
+    const f = visualFixture([
+      { name: 'feijão preto cozido', quantity_g_estimate: 150, confidence: 0.9 },
+      { name: 'farofa', quantity_g_estimate: 80, confidence: 0.85 },
+    ])
+    const state = calculationDb([
+      {
+        ...row('Feijão, preto, cozido', 709),
+        kcal_per_100g: 77.03,
+        protein_g: 4.48,
+        carbs_g: 14.01,
+        fat_g: 0.54,
+        fiber_g: 8.4,
+      },
+      {
+        ...row('Mandioca, farofa, temperada', 288),
+        kcal_per_100g: 405.69,
+        protein_g: 2.06,
+        carbs_g: 80.3,
+        fat_g: 9.12,
+        fiber_g: 7.82,
+      },
+    ])
+    const result = prepared(await materialize(f, state))
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((i) => i.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        preparationAnnotations: 'consumed.preparation.v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items.map((i) => [i.food_name, i.quantity_g, i.kcal])).toEqual([
+      ['feijão preto cozido', 150, 115.5],
+      ['farofa de mandioca temperada', 80, 324.6],
+    ])
+    expect(calc.totals.kcal).toBe(440.1)
+    expect(mapConversationMealCalculationSources(result, calc)).toMatchObject([
+      { input_indexes: [0], source_group_indexes: [0], quantity_basis: 'visual_estimate' },
+      { input_indexes: [1], source_group_indexes: [1], quantity_basis: 'visual_estimate' },
+    ])
+    // The bean already explicitly says cooked, and the farofa is only a prepared reference.
+    expect(calc.preparation_annotations).toEqual([])
+  })
+  it('uses the same whole-name qualification for a free-text report', async () => {
+    const f = fixture('farofa80g', [{ name: 'farofa', quantity: '80', unit: 'g' }])
+    const result = prepared(await materialize(f, db()))
+    expect(result.inputs[0]?.calculation_input).toEqual({ food_name: 'farofa', quantity_g: 80 })
+  })
+})

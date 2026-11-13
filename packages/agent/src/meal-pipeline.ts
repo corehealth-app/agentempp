@@ -2207,11 +2207,13 @@ export async function calcMealMacros(
         }
         if (consumed) {
           userWarnings.push(
-            `Considerei "${consumed.shown_as}" como referência para "${it.food_name}". O preparo e a variedade assumidos podem ser corrigidos.`,
+            consumed.assumption === 'prepared_reference'
+              ? `Usei "${consumed.shown_as}" como referência estimada para "${it.food_name}". A receita não foi identificada; os valores aproximados podem ser corrigidos.`
+              : `Considerei "${consumed.shown_as}" como referência para "${it.food_name}". O preparo e a variedade assumidos podem ser corrigidos.`,
           )
         }
         auditWarnings.push(
-          `"${it.food_name}" assumido como "${everyday.shown_as}" (${row.name_pt}; ${everyday.source_ref}) — ${consumed ? 'consumed-meal-v1, referência aprovada03/11/2026' : 'padrão do dia a dia, confirmação do cliente pendente'}.`,
+          `"${it.food_name}" assumido como "${everyday.shown_as}" (${row.name_pt}; ${everyday.source_ref}) — ${consumed?.assumption === 'prepared_reference' ? 'consumed-meal-v1, referência estimada de prato preparado; receita não identificada' : consumed ? 'consumed-meal-v1, referência aprovada03/11/2026' : 'padrão do dia a dia, confirmação do cliente pendente'}.`,
         )
         if (earlier && previous) {
           // The line of the first item is replaced, so its share leaves the
@@ -2238,6 +2240,7 @@ export async function calcMealMacros(
         if (
           includePreparationAnnotations &&
           consumed &&
+          consumed.assumption !== 'prepared_reference' &&
           !appliedPersonalCorrection &&
           !inputItem.approved_nutrition &&
           inputItem.user_kcal === undefined &&

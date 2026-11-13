@@ -174,7 +174,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-intake-router.ts',
-      '8115a94b482b96f9f97b0a1b054c2765446995c67252b624648b5dee8aa399d7',
+      'd4a62d927c1f3fc8006f4c0701fff0163fb812a422a5833f64ccafb527a5faae',
     ],
     [
       'conversation-meal-interpretation-contracts.ts',
@@ -371,6 +371,16 @@ function certifyNutritionJournalSplitContent(text: string): void {
 // full above, plus the new closed61104 lineage validator. No changed raw body
 // is presented as byte-identical. Independent Git13 trace proof attributes
 // every new physical edge; global scans below still inspect the entire graph.
+/** R128 changes only the router provider wire/schema and required-null
+ * translation. All three neighboring intake modules, canonical contracts,
+ * source/epoch fences, exact consumers and forbidden scans remain unchanged.
+ * Certify the entire new executable body; do not normalize away the change. */
+function certifyStructuredIntakeRouterR128(body: string): string {
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3',
+  )
+  return body
+}
 function certifyExactSharedTable(
   file: string,
   pins: readonly (readonly [string, string])[],
@@ -406,7 +416,7 @@ function certifyExactSharedTable(
       return [
         id,
         createHash('sha256')
-          .update(id === '6535' ? restoreImageParserLinkR106('6535', body) : body)
+          .update(id === '6535' ? certifyStructuredIntakeRouterR128(body) : body)
           .digest('hex'),
       ].join(':')
     }) ?? []
@@ -420,7 +430,7 @@ function certifyExactSharedTable(
  * recertifies the ordinary-kind workout codec in full. No global scan or
  * physical consumer assertion is exempted by this certificate. */
 function certifyIntakeMediaBridgeR102(body: string): void {
-  body = restoreImageParserLinkR106('6535', body)
+  body = certifyStructuredIntakeRouterR128(body)
   certifyOrdinaryPhotoSourcesR102()
   for (const [name, hash] of [
     [
@@ -446,9 +456,9 @@ function certifyIntakeMediaBridgeR102(body: string): void {
         .digest('hex'),
     ).toBe(hash)
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    'e5a83319c16c8c143001215de4824db60fd1e9b27472edc1593070057d3641d1',
+    '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3',
   )
-  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>an,K:()=>aq});')).toBe(true)
+  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>ao,K:()=>ar});')).toBe(true)
   for (const marker of [
     'X-Conversation-Media-Provenance',
     'MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED',
@@ -1034,13 +1044,13 @@ describe('authoritative Mobile API source surface', () => {
         ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
         ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-        ['6535', 'e5a83319c16c8c143001215de4824db60fd1e9b27472edc1593070057d3641d1'],
+        ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
       ]),
       body = bodies.get('6535') ?? ''
     expect(() => certifyIntakeMediaBridgeR102(body)).not.toThrow()
     for (const changed of [
-      body.replace('o:()=>an,', ''),
-      body.replace('o:()=>an,', 'o:()=>an,x:()=>an,'),
+      body.replace('o:()=>ao,', ''),
+      body.replace('o:()=>ao,', 'o:()=>ao,x:()=>ao,'),
       body.replace('MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'),
       body.replace('X-Conversation-Media-Provenance', 'X-Unapproved-Provenance'),
       body.replace('conversation.intake-result.v2', 'conversation.intake-result.v1'),
@@ -2412,12 +2422,12 @@ describe('authoritative Mobile API source surface', () => {
           ),
         )
         .digest('hex'),
-    ).toBe('8115a94b482b96f9f97b0a1b054c2765446995c67252b624648b5dee8aa399d7')
+    ).toBe('d4a62d927c1f3fc8006f4c0701fff0163fb812a422a5833f64ccafb527a5faae')
     const intakeBodies = certifyExactSharedTable(intakeChunk, [
       ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
       ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
       ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-      ['6535', 'e5a83319c16c8c143001215de4824db60fd1e9b27472edc1593070057d3641d1'],
+      ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
     ])
     certifyIntakeMediaBridgeR102(intakeBodies.get('6535') ?? '')
     // Full typed service code remains physically present, including dormant

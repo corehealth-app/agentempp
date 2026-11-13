@@ -121,6 +121,45 @@ describe('neutral provider routing without performed or nutrition authority', ()
     expect(Object.isFrozen(value)).toBe(true)
     expect(f.complete).toHaveBeenCalledOnce()
   })
+  it('constrains provider routing to a closed strict schema rather than unrestricted JSON', async () => {
+    const f = setup()
+    await f.router.route(source())
+    const format = f.complete.mock.calls[0]?.[0].responseFormat
+    expect(format).toMatchObject({
+      type: 'json_schema',
+      json_schema: {
+        name: 'conversation_intake_routing_v1',
+        strict: true,
+        schema: { type: 'object', additionalProperties: false },
+      },
+    })
+    if (!format || format.type !== 'json_schema') throw new Error('Expected strict provider wire')
+    expect(format.json_schema.schema?.required).toEqual(['schema', 'kind', 'reason', 'question'])
+    expect(f.complete.mock.calls[0]?.[0].provider).toEqual({ require_parameters: true })
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+  it.each([
+    'meal.report',
+    'workout.report',
+    'not_reported',
+  ] as const)('maps the required nullable provider question for %s to the unchanged canonical result', async (kind) => {
+    const f = setup(JSON.stringify({ ...decision, kind, question: null }))
+    expect(await f.router.route(source())).toEqual({ ...decision, kind })
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+  it.each([
+    { ...decision, question: null, owner_id: owner },
+    { ...decision, question: null, meal_type: 'almoco' },
+    { ...decision, kind: 'clarification_required', question: null },
+    { ...decision, question: { field: 'description', text: 'What?' } },
+  ])('never strips unknown keys or upgrades malformed nullable-question output', async (wire) => {
+    const f = setup(JSON.stringify(wire))
+    expect(await f.router.route(source())).toMatchObject({
+      kind: 'clarification_required',
+      reason: 'routing_unavailable',
+    })
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
   it('preserves literal full discourse and omits private authority and credentials', async () => {
     const f = setup(),
       text = '  Comi arroz200g; não comi feijão.\nPosso caminhar? 🥛'
@@ -130,7 +169,8 @@ describe('neutral provider routing without performed or nutrition authority', ()
       temperature: 0,
       maxRetries: 0,
       toolChoice: 'none',
-      responseFormat: { type: 'json_object' },
+      responseFormat: { type: 'json_schema', json_schema: { strict: true } },
+      provider: { require_parameters: true },
     })
     for (const key of ['tools', 'userId', 'metadata']) expect(call).not.toHaveProperty(key)
     const json = JSON.stringify(call)

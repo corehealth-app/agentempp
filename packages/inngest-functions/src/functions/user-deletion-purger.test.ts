@@ -121,3 +121,102 @@ describe('purgeDeletedUsers', () => {
 })
 
 import type { ServiceClient } from '@mpp/db'
+
+describe('conversational account purge retains upload barriers', () => {
+  const owner = 'b3b01000-0000-4000-8000-000000000101'
+  const cutoff = '2026-11-13T05:00:00.000Z'
+  function fixture(ready: unknown = false, error: unknown = null) {
+    const rows = [
+      {
+        id: 'ordinary',
+        kind: 'conversation_photo',
+        reevaluation_origin_version: null,
+        bucket_id: 'meal-photos',
+        object_path: `${owner}/ordinary.jpg`,
+      },
+      {
+        id: 'audio',
+        kind: 'audio_note',
+        reevaluation_origin_version: null,
+        bucket_id: 'audio-notes',
+        object_path: `${owner}/audio.m4a`,
+      },
+      {
+        id: 'legacy',
+        kind: 'meal_photo',
+        reevaluation_origin_version: null,
+        bucket_id: 'meal-photos',
+        object_path: `${owner}/legacy.jpg`,
+      },
+      {
+        id: 'clinical',
+        kind: 'body_checkin_photo',
+        reevaluation_origin_version: 1,
+        bucket_id: 'body-checkin-photos',
+        object_path: `${owner}/clinical.jpg`,
+      },
+    ]
+    const query = { select: vi.fn(), eq: vi.fn().mockResolvedValue({ data: rows, error: null }) }
+    query.select.mockReturnValue(query)
+    const remove = vi.fn().mockResolvedValue({ error: null })
+    const rpc = vi.fn(() => ({ abortSignal: vi.fn().mockResolvedValue({ data: ready, error }) }))
+    const client = {
+      from: vi.fn(() => query),
+      rpc,
+      storage: { from: vi.fn(() => ({ remove })) },
+    } as unknown as ServiceClient
+    const deps = createPurgeDependencies(client, { conversationMedia: true })
+    Object.assign(deps.repository, {
+      listUsersReadyForPurge: vi.fn().mockResolvedValue([{ id: owner }]),
+      prepareRecurringMediaPurge: vi.fn().mockResolvedValue(true),
+      deleteUserMediaCatalog: vi.fn().mockResolvedValue(undefined),
+      deleteUser: vi.fn().mockResolvedValue(true),
+    })
+    return { deps, remove, rpc, client }
+  }
+  it('waits before any physical or catalogue deletion while an ordinary payload is not sealed', async () => {
+    const f = fixture(false)
+    expect(await purgeDeletedUsers(f.deps, new Date('2026-11-13T06:00:00.000Z'))).toEqual({
+      purged: 0,
+      mediaRemoved: 0,
+    })
+    expect(f.remove).not.toHaveBeenCalled()
+    expect(f.deps.repository.prepareRecurringMediaPurge).not.toHaveBeenCalled()
+    expect(f.deps.repository.deleteUserMediaCatalog).not.toHaveBeenCalled()
+    expect(f.deps.repository.deleteUser).not.toHaveBeenCalled()
+    expect(f.rpc).toHaveBeenCalledWith('prepare_conversation_media_account_purge', {
+      p_user_id: owner,
+      p_cutoff: cutoff,
+    })
+  })
+  it('purges a ready account without deleting ordinary barriers, preserving generic and clinical cleanup', async () => {
+    const f = fixture(true)
+    expect(await purgeDeletedUsers(f.deps, new Date('2026-11-13T06:00:00.000Z'))).toEqual({
+      purged: 1,
+      mediaRemoved: 2,
+    })
+    expect(f.remove.mock.calls).toEqual([[[`${owner}/legacy.jpg`]], [[`${owner}/clinical.jpg`]]])
+    expect(f.deps.repository.deleteUser).toHaveBeenCalledWith(owner, cutoff)
+  })
+  it.each([
+    null,
+    1,
+    'true',
+    { ready: true },
+  ])('refuses malformed readiness %j before deleting anything', async (ready) => {
+    const f = fixture(ready)
+    await expect(purgeDeletedUsers(f.deps)).rejects.toThrow(
+      'Conversation media account purge unavailable',
+    )
+    expect(f.remove).not.toHaveBeenCalled()
+    expect(f.deps.repository.deleteUser).not.toHaveBeenCalled()
+  })
+  it('does not fall back to untracked deletion if the new RPC is missing', async () => {
+    const f = fixture(null, { message: 'private/provider/raw', code: 'PGRST202' })
+    await expect(purgeDeletedUsers(f.deps)).rejects.toThrow(
+      /^Conversation media account purge unavailable$/,
+    )
+    expect(f.remove).not.toHaveBeenCalled()
+    expect(f.deps.repository.deleteUser).not.toHaveBeenCalled()
+  })
+})

@@ -64,7 +64,8 @@ export const allFunctions = [
  * cron, no WhatsApp and no reminder function. An unknown name is refused so a
  * typo never widens the set. `media-clinical-staging` additionally opts into
  * recurring-photo disposition cleanup. `media-conversation-staging` also serves
- * scoped ordinary-photo/audio expiry; no previous set or production roster widens.
+ * scoped ordinary-photo/audio expiry and barrier-preserving account purge;
+ * no previous set or production roster widens.
  */
 const FUNCTION_SETS = {
   'media-staging': [mediaAssetProcessingFn],
@@ -73,6 +74,7 @@ const FUNCTION_SETS = {
     mediaAssetProcessingFn,
     reevaluationPhotoDispositionCleanupFn,
     conversationMediaRetentionCleanupFn,
+    userDeletionPurgerFn,
   ],
 } as const
 

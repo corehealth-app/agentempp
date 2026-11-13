@@ -11,7 +11,7 @@ Distributed build 17 remains text-only until a qualified successor is installed.
 | unset / production | Existing `allFunctions`, unchanged |
 | `media-staging` | Existing media processing only, unchanged |
 | `media-clinical-staging` | Existing processing and recurring-photo disposition, unchanged |
-| `media-conversation-staging` | Processing, recurring-photo disposition and scoped ordinary-media retention |
+| `media-conversation-staging` | Processing, recurring-photo disposition, scoped ordinary-media retention and guarded account purge |
 
 The new set is guarded at registration and again in privileged client creation.
 Both restricted sets require the exact `xitugspwfxkcluxvrdeg` Supabase origin,
@@ -26,7 +26,7 @@ nonclinical purpose guard under both restricted sets.
 
 The R108 source continuation adds guarded, version-targeted payload removal and
 a zero-byte non-upsert barrier; it preserves a barrier on retries. This remains
-unactivated pending issuer/account-deletion/barrier lifecycle proof. R109 has
+unactivated pending complete issuer/barrier lifecycle proof and connected account-deletion qualification. R109 has
 now qualified concurrent non-upsert completion and exact-version/stale deletion
 in the hosted private audio bucket; full photo/audio integration remains separate.
 See [Storage revocation qualification](conversation-storage-revocation-qualification.md)
@@ -106,9 +106,58 @@ deployment region; the worker project's current default differs from its last
 deployed region. Preserve the canonical alias and build 17 runtime dependency.
 
 Before activation, prove the current Inngest `performe-staging` application and
-the exact three registered functions/schedules. Qualify synthetic upload,
+the exact four registered functions/schedules (including guarded account purge). Qualify synthetic upload,
 processing, factual chat feedback, replay, cold edit/Undo and cross-tab agreement.
 Verify actual expired disposable QA object removal and catalog state while
 preserving unrelated rows and historical numeric facts. Existing provider cap
 and expiry remain binding. This source alone does not prove scheduler activity,
 remote deletion, physical capture, release readiness or Roberto acceptance.
+
+## Account deletion continuation (R110, source only)
+
+The conversational staging roster now also includes the existing quarter-hour
+`user-deletion-purger`. Previous rosters and the default production algorithm
+are preserved. Its real callback selects a dedicated ordinary-media preflight
+only under `media-conversation-staging`; the existing privileged-client target
+guard still applies. This fourth function is an intentional lifecycle change,
+not a permission to register the previous three-function candidate unchecked.
+
+Before recurring or generic deletion, the new backend-only preflight locks an
+eligible deleted owner at the existing cutoff, admits at most 100 ordinary
+photo/audio assets to the independent cleanup manifest and closes their catalogue
+status. The fair scoped expiry job performs version-targeted payload revocation.
+The account visit defers until every own ordinary path has both sweep evidence
+and a current ordinary zero-byte object in the private non-versioned bucket,
+with no direct-client Storage policy. Missing schema, malformed readiness,
+foreign debt identity, payloads, provider delete markers or unknown object
+versions cannot authorize account purge. Further visits advance beyond the first
+100 assets. No Storage bytes are mutated by SQL.
+
+A ready account's generic removal list excludes ordinary photo/audio paths;
+it retains legacy meal/document/clinical handling. The account and catalogue may
+then be purged without erasing their upload barriers or independent cleanup debt.
+This proves neither final issuance drain nor final technical-marker disposal.
+It does not adopt indefinite retention: the new functions remain unactivated
+until the separately qualified barrier settlement/lifecycle and connected QA.
+The 31 local rollback assertions and real factory/callback tests qualify source
+behavior; they are not evidence that a hosted account has been deleted this way.
+
+### Issuer and remover census
+
+Current source has three SDK upload-signing sites, all explicitly non-upsert:
+`supabase-media.ts` (generic and signup), `supabase-ordinary-media-upload.ts`
+(tracked ordinary intake), and `supabase-reevaluation-photo-upload.ts` (clinical).
+The current BFF upload tickets specify `x-upsert: false`; the shared native
+transport whitelists that header but does not independently enforce its value.
+The signed provider capability and its non-upsert semantics remain the authority,
+not a client header assertion. Clinical paths
+have their separate disposition protocol and are not admitted to this ordinary
+manifest. Legacy immutable deployments and requests already in flight remain
+part of issuance-drain qualification; a source census does not retire them.
+
+Generic expiry excludes already deleted catalogue rows; ordinary expiry closes
+those rows before Storage work. Replaying an explicit media delete for such a
+row returns without removing its barrier. Account purge now preserves barriers.
+An already-running old unversioned remover, metadata-mismatch cleanup and final
+marker settlement still need complete activation/drain qualification. No source
+or local test result here supersedes that gate.

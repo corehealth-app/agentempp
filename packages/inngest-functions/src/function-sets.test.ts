@@ -39,6 +39,7 @@ describe('functionsForSet', () => {
       'media-asset-processing',
       'reevaluation-photo-disposition-cleanup',
       'conversation-media-retention-cleanup',
+      'user-deletion-purger',
     ])
     expect(ids(functionsForSet('media-staging'))).toEqual(['media-asset-processing'])
     vi.stubEnv('INNGEST_FUNCTION_SET', 'media-clinical-staging')

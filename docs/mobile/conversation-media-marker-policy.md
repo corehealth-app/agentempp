@@ -51,3 +51,24 @@ continuam exigindo suas próprias evidências de QA.
 
 O aceite foi registrado em `TECHNICAL-MARKER-POLICY-ACCEPTED.json` do incremento
 R114, vinculado pelo hash à minuta apresentada e à resposta explícita do usuário.
+
+## Caracterização conectada R115
+
+Em 13/11/2026, um único áudio sintético de oito bytes na QA de staging percorreu
+emissão real da autorização, descarte pelo app, remoção antiga sem versão do
+marcador e envio atrasado pela autorização original. O Storage aceitou esse envio.
+Repetir o descarte pela API atual removeu os bytes recriados e restaurou o objeto
+de zero bytes; catálogo apagado, resultado nulo, dívida preservada e lease
+liberado foram conferidos no banco. Nenhuma refeição, treino ou intake foi criado.
+
+A remoção antiga foi reproduzida por diagnóstico efêmero autenticado, limitado à
+sessão e ao asset próprios, posteriormente excluído e conferido como ausente no
+provedor. Isso comprova a recuperação pelo descarte explícito, não a execução
+agendada nem a drenagem de todos os emissores/removers antigos. O gate R105-REVIEW-1
+permanece aberto. A composição real do worker e as operações em andamento ainda
+precisam de qualificação antes da liberação de foto/áudio.
+
+Para repetir esse diagnóstico, o SDK Storage instalado expõe o tamanho em
+`info().data.size` (`FileObjectV2`), não em `data.metadata.size`. O primeiro
+diagnóstico recusou a operação por essa diferença, sem remover o marcador; a
+correção tem regressão específica. Os dois Previews auxiliares foram removidos.

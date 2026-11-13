@@ -4,6 +4,35 @@ The approved photo/audio chat uses the existing processing worker and private
 Storage. Local tests and a READY deployment do not establish connected delivery.
 Distributed build 17 remains text-only until a qualified successor is installed.
 
+## Existing provider configuration qualification — R117
+
+A bounded auth-only diagnostic in each existing staging project proved that the
+currently inherited OpenRouter keys differ. Both returned HTTP 200 from the fixed
+`GET /api/v1/key` endpoint; no model inference was requested. A nonce-keyed HMAC
+was compared in memory, with only the equality result retained. Raw key values,
+provider labels and account identifiers were neither returned nor copied.
+
+At 2026-11-13 13:30 UTC, the app project's key had a USD 1 total limit and an expiry
+at 19:36 UTC that day (16:36 in São Paulo). The worker project's different key
+reported a USD 50 limit and no expiry. This does not establish the worker key's
+payer ownership and does not authorize using it for image inference. Preserve the
+user's instruction to use the same existing app key; a supported source for that
+existing secret and its continuity remain unresolved. No key, cap, expiry or
+project environment variable was changed.
+
+Both tiny diagnostic deployments were removed, with provider HTTP 404 confirming
+absence. Project settings, deployment protection, canonical routing and existing
+app/worker predecessors were preserved. Their source, 20 passing diagnostic guard
+tests and redacted evidence are retained outside the product tree. These were
+short-lived resources under the existing Vercel plan, with no new recurring
+service; build/runtime usage was not independently measured.
+
+Six UI tests additionally passed on iPhone 17 Pro / iOS 26.5: all four approved
+navigation tests and both meal-list editor tests, including an editable half
+measure of whey, its 15 g reference, save, item removal and undo. These are actual
+native taps against local synthetic fixtures; they do not replace connected
+nutrition/provider, camera/microphone, physical accessibility or release QA.
+
 ## Native unit qualification — R116
 
 The full `BodyFlowTests` target passed 3,486 executions with zero failures and

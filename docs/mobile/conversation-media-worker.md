@@ -295,3 +295,43 @@ identical; its framework entry is repinned after this extraction. Historical
 counts project only that proven file and its three edges; raw global counts and
 forbidden worker/admin/Stripe/action scans continue to inspect the entire build.
 No whole namespace or changed body is exempted from verification.
+
+## Connected simulator qualification (R113)
+
+The same R112 candidate was exercised by an actual Debug 1.0(18) simulator
+installation, without changing provider credentials, feature flags, the app's
+canonical address or TestFlight. A synthetic M4A was selected through the native
+Files picker, attached without a caption and sent once from the neutral Flow
+composer. The authoritative writer created exactly one lunch with milk 200 mL
+(206 g internally) and one estimated whey measure (30 g): 231.3 kcal and 29.93 g
+protein. The native current-item controls displayed the mL/measure references.
+
+The native undo-registration control was confirmed once and committed 291.79
+seconds after registration. Both new consumption rows were removed; the original
+receipt and audit operation remain. After stopping/relaunching the app,
+Alimentação showed only the previous confirmed records. A hash comparison kept
+the QA profile, all pre-existing meals, workouts, media, intakes, entitlements,
+events and original Auth session unchanged. Both newly owned Auth sessions and
+the temporary entitlement were closed; the simulator and copied Files fixture
+were closed/removed. This is simulator evidence, not physical-device, VoiceOver,
+camera, recording or TestFlight qualification.
+
+Direct native quantity editing was **not qualified** in this run: the automation
+reported keyboard actions but the field remained unchanged, and the editor was
+closed without saving. The successful connected API editing/undo-save evidence
+from R112 remains separate. Chat loading and registration responsiveness remain
+open performance gates; successful persistence alone does not qualify latency.
+
+Explicit disposal of this owned audio returned success, cleared the processing
+result and left one ordinary zero-byte non-delete-marker object with a successful
+sweep and no live claim. Its durable debt remains `legacy_untracked`; this does
+not settle old issuance or authorize indefinite marker retention. The proposed
+technical-marker policy is awaiting the owner's business decision. No release
+gate is waived by this QA run.
+
+The accompanying read-only census attested 24 unique uploaded source files for
+31 existing deployment indexes. It found 282 exact Git member comparisons and
+four differences: the same two worker configuration modules in two deployments,
+both exactly matching the preserved R288 publication overlay. These are uploaded
+source attestations, not hosted function-binary attestations or proof that all
+previously issued upload capabilities and unversioned removers have drained.

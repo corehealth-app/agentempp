@@ -26,7 +26,9 @@ nonclinical purpose guard under both restricted sets.
 
 The R108 source continuation adds guarded, version-targeted payload removal and
 a zero-byte non-upsert barrier; it preserves a barrier on retries. This remains
-unactivated pending hosted conditional-delete/concurrency and lifecycle proof.
+unactivated pending issuer/account-deletion/barrier lifecycle proof. R109 has
+now qualified concurrent non-upsert completion and exact-version/stale deletion
+in the hosted private audio bucket; full photo/audio integration remains separate.
 See [Storage revocation qualification](conversation-storage-revocation-qualification.md)
 for the actual evidence and its limits; `swept` still does not mean final disposal.
 
@@ -92,8 +94,8 @@ multi-session timing, scheduler and account-deletion lifecycle remain gates.
 
 The [connected Storage revocation characterization](conversation-storage-revocation-qualification.md)
 records a real empty-object/non-upsert conflict test and its QA closeout. It is
-a candidate barrier for the legacy issuance problem, not an activated cleanup
-strategy or proof of concurrent/final disposal.
+a barrier candidate with R109 hosted concurrency and stale-version protection
+evidence, not an activated cleanup strategy or proof of final disposal.
 
 ## Publication and acceptance
 

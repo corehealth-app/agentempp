@@ -223,6 +223,40 @@ function certifyOrdinaryPhotoSourcesR102(): void {
 // T43's actual intake runtime retains those three exports. The same source SHA
 // is sealed below; module11098 is newly certified in full, with the other17
 // compiled bodies still byte-identical. No old raw module body is claimed here.
+/** R106 changes no intake/nutrition/provider source here. The image-result
+ * parser moved from86248 to63867 when Storage issuance was factored. Reverse
+ * exactly one loader link, asserting both complete raw and restored bodies. */
+function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string {
+  const pins =
+    id === '6535'
+      ? [
+          'n=c(63867)',
+          'n=c(86248)',
+          '5dd4d1f49929e7180eecb655ba7279484d185a2e85a4a6d3059df70635462933',
+          'e5a83319c16c8c143001215de4824db60fd1e9b27472edc1593070057d3641d1',
+        ]
+      : [
+          'd=c(63867)',
+          'd=c(86248)',
+          '6a25ab4c20db09c31ca9d83123c2257bbdaf65293f54863daab1250b130c6c45',
+          'ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',
+        ]
+  const [from, to, current, previous] = pins
+  // Both actual builds were compared: Webpack's cached module allocation may
+  // retain the previous ID or relocate it. Only these two whole-body hashes
+  // qualify; every other executable-byte difference still fails.
+  if (createHash('sha256').update(body).digest('hex') === previous) return body
+  if (!from || !to) throw new Error('Missing exact parser link')
+  expect(
+    createHash('sha256').update(body).digest('hex'),
+    'certified nutrition-shared module contents / exact parser loader body',
+  ).toBe(current)
+  expect(body.split(from)).toHaveLength(2)
+  const restored = body.replace(from, to)
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(previous)
+  return restored
+}
+
 function certifyNutritionJournalSplitContent(text: string): void {
   certifyOrdinaryPhotoSourcesR102()
   // T52/R79 extend the report prefix; R82 also permits pure punctuation in `other`.
@@ -281,7 +315,14 @@ function certifyNutritionJournalSplitContent(text: string): void {
     }) ?? []
   expect(bodies, 'certified nutrition-shared module count').toHaveLength(20)
   expect(
-    bodies.map(({ id, body }) => `${id}:${createHash('sha256').update(body).digest('hex')}`).sort(),
+    bodies
+      .map(
+        ({ id, body }) =>
+          `${id}:${createHash('sha256')
+            .update(id === '67584' ? restoreImageParserLinkR106('67584', body) : body)
+            .digest('hex')}`,
+      )
+      .sort(),
     'certified nutrition-shared module contents',
   ).toEqual(
     [
@@ -346,7 +387,12 @@ function certifyExactSharedTable(
       const id = property.name.getText(source)
       const body = property.initializer.getText(source)
       bodies.set(id, body)
-      return [id, createHash('sha256').update(body).digest('hex')].join(':')
+      return [
+        id,
+        createHash('sha256')
+          .update(id === '6535' ? restoreImageParserLinkR106('6535', body) : body)
+          .digest('hex'),
+      ].join(':')
     }) ?? []
   expect(observed.sort()).toEqual(pins.map(([id, hash]) => `${id}:${hash}`).sort())
   return bodies
@@ -358,6 +404,7 @@ function certifyExactSharedTable(
  * recertifies the ordinary-kind workout codec in full. No global scan or
  * physical consumer assertion is exempted by this certificate. */
 function certifyIntakeMediaBridgeR102(body: string): void {
+  body = restoreImageParserLinkR106('6535', body)
   certifyOrdinaryPhotoSourcesR102()
   for (const [name, hash] of [
     [
@@ -533,15 +580,27 @@ function certifyPhotoPurposeEdgesR62() {
   const chunks = semanticChunks(['analyzeConversationImage', 'conversation.image-result.v1'])
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
+  const parserId = readFileSync(chunk, 'utf8').includes('86248:') ? '86248' : '63867'
   const bodies = certifyExactSharedTable(chunk, [
-    ['84359', 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'],
-    ['86248', 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
+    [
+      '84359',
+      parserId === '86248'
+        ? 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'
+        : '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab',
+    ],
+    [parserId, 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'],
   ])
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
-  const rawGeminiR102 = bodies.get('84359') ?? ''
+  const currentGeminiR106 = bodies.get('84359') ?? ''
+  expect(currentGeminiR106.split(`d=c(${parserId})`)).toHaveLength(2)
+  const rawGeminiR102 =
+    parserId === '63867' ? currentGeminiR106.replace('d=c(63867)', 'd=c(86248)') : currentGeminiR106
+  expect(createHash('sha256').update(rawGeminiR102).digest('hex')).toBe(
+    'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed',
+  )
   // The R102 reviewed writer now shares the pure observation helper. Webpack
   // relocates the byte-identical parser to86248; reverse exactly one loader
   // link to the complete R101 body before retaining every older proof below.
@@ -687,7 +746,7 @@ const absorbedSelectorRoutes = new Set([
   ...reviewRoutes,
   '/api/mobile/v1/workouts/[id]/strength-clarification/route',
 ])
-function certifyPhysicalModule(file: string, id: string, allowedHashes: readonly string[]): void {
+function certifyPhysicalModule(file: string, id: string, allowedHashes: readonly string[]): string {
   const text = readFileSync(file, 'utf8'),
     source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   const found: ts.ArrowFunction[] = []
@@ -705,6 +764,7 @@ function certifyPhysicalModule(file: string, id: string, allowedHashes: readonly
   const body = found[0]?.getText(source) ?? ''
   expect(allowedHashes).toContain(createHash('sha256').update(body).digest('hex'))
   expect(text.startsWith('"use strict";') || body.startsWith('(a,b,c)=>{"use strict";')).toBe(true)
+  return body
 }
 function certifyAbsorbedWorkoutSelector(): void {
   const copies = semanticChunks(['MOBILE_WORKOUT_REGISTRATION_PROJECT_REF']),
@@ -1506,10 +1566,43 @@ describe('authoritative Mobile API source surface', () => {
     expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_INTAKES_ENABLED')).toEqual(
       [...conversationIntakeAppPaths, '/api/mobile/v1/media/route'].sort(),
     )
+    // R106 intentionally adds the isolated issuance gate and SDK/ticket handoff.
+    // Seal its complete source as well as the one changed physical route body.
+    for (const [file, hash] of [
+      [
+        'apps/admin/src/app/api/mobile/v1/media/route.ts',
+        '11d9c9291b8560b1df7c69a566f05619dc90124b463f98275be36912b1715925',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/media-service.ts',
+        '5f01a075092a340a8cf19022eeb7502703f9676873b4e15839ac610e2a436e99',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/supabase-media.ts',
+        '2b7cfc42e451de51fe87ca5a75f5730d827fc76aeabe071d4cd63818d6d1a48b',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/ordinary-media-upload.ts',
+        'a93401a85b521e39f2fc8d84254c592a21a1dffc89b8c06c97c8179170c415c2',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/supabase-ordinary-media-upload.ts',
+        '7057bda7cb70e34c335616fa448f32349e65ab1b29da4f550de2ebc8ad179c91',
+      ],
+      [
+        'packages/core/src/conversation-photo-purpose.ts',
+        '807949006001d7d235cb8c9bcdf017b4b0d0187c698824df29637ea9362080ca',
+      ],
+    ])
+      expect(
+        createHash('sha256')
+          .update(readFileSync(resolve(appRoot, '../..', file ?? '')))
+          .digest('hex'),
+      ).toBe(hash)
     const entry = currentAppPathsManifest()['/api/mobile/v1/media/route']
     expect(entry).toBeTypeOf('string')
     certifyPhysicalModule(resolve(buildRoot, 'server', entry ?? ''), '8135', [
-      '541137bac128a8705a63063545655a6aa9c9f2fe90ee53e6d01b391f02993ac7',
+      '532cacc54a6443ffa361c6fb57529650cb59c1fde06465571e9d7c9c70178d2d',
     ])
   })
 
@@ -1932,9 +2025,49 @@ describe('authoritative Mobile API source surface', () => {
     ])
       expect(vendorSource).not.toContain(marker)
     const { isEdge: purposeEdge, chunk: ordinaryPhotoChunk } = certifyPhotoPurposeEdgesR62()
+    // R106's actual HEAD baseline/current NFT comparison proves only17 edges
+    // to the newly factored issuer chunk: six replace2339, eleven are additive.
+    // Pin full physical code + exact consumers; project only those eleven for
+    // historical counts. Raw global scans and current totals still include all.
+    const ordinaryIssuerChunk = uniqueChunk([
+      'prepare_conversation_media_upload',
+      'register_conversation_media_upload',
+    ])
+    certifyExactSharedTable(ordinaryIssuerChunk, [
+      ['83201', '48a22f1ec3e0a816eb14e62793c70d5719a040bccd022583021dbb6c28577811'],
+    ])
+    const issuerReplacementRoutes = new Set([
+      '/api/mobile/v1/me/route',
+      '/api/mobile/v1/meal-drafts/route',
+      '/api/mobile/v1/pending/route',
+      '/api/mobile/v1/registrations/[id]/confirm/route',
+      '/api/mobile/v1/registrations/[id]/route',
+      '/api/mobile/v1/registrations/propose/route',
+    ])
+    const issuerAddedRoutes = new Set([
+      '/api/mobile/v1/media/[id]/complete/route',
+      '/api/mobile/v1/media/[id]/process/route',
+      '/api/mobile/v1/media/[id]/route',
+      '/api/mobile/v1/media/route',
+      '/api/mobile/v1/onboarding/body-photos/[id]/complete/route',
+      '/api/mobile/v1/onboarding/body-photos/consent/route',
+      '/api/mobile/v1/onboarding/body-photos/route',
+      '/api/mobile/v1/plan-drafts/[id]/confirm/route',
+      '/api/mobile/v1/plan-drafts/[id]/route',
+      '/api/mobile/v1/plan-drafts/route',
+      '/api/mobile/v1/plan-imports/route',
+    ])
+    expect(issuerReplacementRoutes.size).toBe(6)
+    expect(issuerAddedRoutes.size).toBe(11)
+    expect(chunkConsumers(ordinaryIssuerChunk)).toEqual(
+      [...issuerReplacementRoutes, ...issuerAddedRoutes].sort(),
+    )
     const priorTargets = (route: string): string[] =>
       tracedTargets(route).filter(
-        (target) => target !== nextHttpSplit && !purposeEdge(route, target),
+        (target) =>
+          target !== nextHttpSplit &&
+          !purposeEdge(route, target) &&
+          !(target === ordinaryIssuerChunk && issuerAddedRoutes.has(route)),
       )
     // Webpack now compiles the unchanged workout repository twice. Keep all
     // actual trace/consumer/security checks physical. Collapse ONLY these two
@@ -1978,7 +2111,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(
       allRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0) +
         absorbedReferences(allRoutes),
-    ).toBe(8202 + 16)
+    ).toBe(8202 + 16 + 11)
     expect(mobileTargets.size + 1).toBe(218)
     expect(repositoryUniqueSize([...mobileTargets]) + 1).toBe(217)
     expect(tracedTargets(webhookRoute)).toHaveLength(104)
@@ -2261,7 +2394,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(
       [...allRoutes, webhookRoute].reduce((sum, route) => sum + tracedTargets(route).length, 0) +
         absorbedReferences(allRoutes),
-    ).toBe(8202 + 16 + 104)
+    ).toBe(8202 + 16 + 104 + 11)
     expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(116)
     // T48 extracts the three unchanged read-page modules certified above into
     // one new regular file, reached exactly once by each of the two readers.
@@ -2283,7 +2416,8 @@ describe('authoritative Mobile API source surface', () => {
         1 +
         2 +
         12 +
-        123, // R93: exactly the new read-only origin route NFT edges.
+        123 + // R93: exactly the new read-only origin route NFT edges.
+        11, // R106: exact newly factored issuer edges, independently pinned above.
     )
     expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1)
     expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1)
@@ -2803,15 +2937,36 @@ describe('authoritative Mobile API source surface', () => {
       '/api/mobile/v1/registrations/[id]/route',
       '/api/mobile/v1/registrations/[id]/confirm/route',
     ].sort()
-    expect(
-      historicalRoutes.filter((route) => physicalTargets(route).includes(draftChunk)).sort(),
-    ).toEqual(draftRoutes)
-    for (const route of draftRoutes) {
+    // R106 factors the media factory out of old2339. Its unchanged draft
+    // module98163 now co-locates in an existing trace for five routes and is
+    // inline in meal-drafts. The actual baseline comparison shows no added
+    // draft edge. Prove all six complete bodies, including prior raw bytes.
+    const inlineDraftRoute = '/api/mobile/v1/meal-drafts/route'
+    expect(chunkConsumers(draftChunk)).toEqual(
+      draftRoutes.filter((route) => route !== inlineDraftRoute),
+    )
+    const inlineDraftEntry = currentAppPathsManifest()[inlineDraftRoute]
+    if (!inlineDraftEntry) throw new Error('Missing existing draft entry')
+    for (const file of [draftChunk, resolve(buildRoot, 'server', inlineDraftEntry)]) {
+      const body = certifyPhysicalModule(file, '98163', [
+        '36a92c5c57d553e0046193480d1b34db62d1ddc8309ce2e31c577b954f39b172',
+        '051bbb7642daacf8399d07c53a4e26b501db653607ac00cd0b79e448e26c2510',
+      ])
+      // The chunk has a local directive; the inline copy inherits the entry's
+      // directive. certifyPhysicalModule requires strict mode for both forms.
+      if (body.startsWith('(a,b,c)=>{"use strict";'))
+        expect(body.split('(a,b,c)=>{"use strict";')).toHaveLength(2)
       expect(
-        physicalTargets(route).filter((target) => target === draftChunk),
-        route,
-      ).toEqual([draftChunk])
+        createHash('sha256')
+          .update(body.replace('(a,b,c)=>{"use strict";', '(a,b,c)=>{'))
+          .digest('hex'),
+      ).toBe('051bbb7642daacf8399d07c53a4e26b501db653607ac00cd0b79e448e26c2510')
     }
+    expect(
+      historicalRoutes
+        .filter((route) => route === inlineDraftRoute || tracedTargets(route).includes(draftChunk))
+        .sort(),
+    ).toEqual(draftRoutes)
 
     // Identify the pure fact parser by stable semantics and exact reachability.
     // Generated chunk numbers are never an allowlist.
@@ -2892,10 +3047,22 @@ describe('authoritative Mobile API source surface', () => {
     )
     expect(baselineReferences + absorbedBaseline).toBe(5326)
     expect(baselineTargets.size + 1).toBe(176)
-    // Removing only the separately authorized six references reproduces E2's
-    // original50 graph. All other historical graph assertions stay intact.
+    // The six replacement references now hold the factored issuer, while the
+    // unchanged draft body is co-located/inline as proved above. Only that
+    // exact six-route slot is projected from E2's original50 graph.
+    expect(
+      historicalRoutes
+        .filter(
+          (route) =>
+            !Object.hasOwn(addedRoutes, route) &&
+            physicalTargets(route).includes(ordinaryIssuerChunk),
+        )
+        .sort(),
+    ).toEqual(draftRoutes)
     expect(baselineReferences + absorbedBaseline - draftRoutes.length).toBe(5320)
-    expect([...baselineTargets].filter((target) => target !== draftChunk).length + 1).toBe(175)
+    expect([...baselineTargets].filter((target) => target !== ordinaryIssuerChunk).length + 1).toBe(
+      175,
+    )
 
     const beyondBaseline = (route: string): string[] =>
       [...new Set(physicalTargets(route))].filter((target) => !baselineTargets.has(target))

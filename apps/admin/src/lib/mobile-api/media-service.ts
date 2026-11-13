@@ -95,7 +95,16 @@ export interface MediaProcessingEventGateway {
   }): Promise<void>
 }
 
+export interface MediaSignedUpload {
+  signed_url: string
+  method: 'PUT'
+  headers: Record<string, string>
+  expires_at: string
+}
+
 export interface MediaServiceDependencies {
+  /** Explicit trusted opt-in; absence preserves legacy signing. */
+  ordinaryUploads?: { issue(asset: MediaAssetRecord): Promise<MediaSignedUpload> }
   repository: MediaAssetRepository
   storage: MediaStorageGateway
   events: MediaProcessingEventGateway
@@ -345,7 +354,11 @@ export async function createMediaAssetRecord(
       if (asset.status !== 'pending_upload')
         throw new MobileApiError(409, 'media_upload_not_pending', 'Media upload is not pending')
     }
-    const upload = shouldSign ? await signedUpload(deps, asset, now) : null
+    const upload = shouldSign
+      ? deps.ordinaryUploads && ['conversation_photo', 'audio_note'].includes(asset.kind)
+        ? await deps.ordinaryUploads.issue(asset)
+        : await signedUpload(deps, asset, now)
+      : null
     purpose(asset)
     if (input.kind === 'conversation_photo') {
       const latest = requireOwnedAsset(await deps.repository.findOwned(userId, asset.id))

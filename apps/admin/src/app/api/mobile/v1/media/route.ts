@@ -1,4 +1,7 @@
-import { conversationPhotoMobileEnabled } from '@mpp/core/conversation-photo-purpose'
+import {
+  conversationMediaUploadTicketsEnabled,
+  conversationPhotoMobileEnabled,
+} from '@mpp/core/conversation-photo-purpose'
 import { mediaUploadInputSchema, resourceIdSchema } from '@/lib/mobile-api/contracts'
 import { MobileApiError, mobileSuccess, readJsonBody } from '@/lib/mobile-api/http'
 import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
@@ -26,7 +29,16 @@ export const POST = createMobileRoute(async (context) => {
   const createResponse = async () =>
     mobileSuccess(
       await createMediaAsset(
-        createSupabaseMediaDependencies(context.supabase),
+        createSupabaseMediaDependencies(
+          context.supabase,
+          conversationMediaUploadTicketsEnabled()
+            ? {
+                ordinaryUploadTickets: {
+                  storageOrigin: process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+                },
+              }
+            : {},
+        ),
         context.auth.userId,
         input,
         context.request.headers.get('idempotency-key') ?? '',

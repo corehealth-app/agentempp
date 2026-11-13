@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  conversationMediaUploadTicketsEnabled,
   conversationPhotoMobileEnabled,
   conversationPhotoWorkerEnabled,
 } from './conversation-photo-purpose.js'
@@ -68,5 +69,25 @@ describe('explicit staging-only nonclinical photo purpose', () => {
   ])('refuses another target %s without fallback', (url) => {
     expect(conversationPhotoMobileEnabled({ ...mobile, NEXT_PUBLIC_SUPABASE_URL: url })).toBe(false)
     expect(conversationPhotoWorkerEnabled({ ...worker, SUPABASE_URL: url })).toBe(false)
+  })
+})
+
+describe('ordinary media ticket rollout gate', () => {
+  it('requires the server media protocol and exact current staging, independently of photo availability', () => {
+    const env = {
+      MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED: 'true',
+      MOBILE_CONVERSATION_INTAKES_ENABLED: 'true',
+      MOBILE_CURRENT_CLINICAL_PROJECT_REF: 'xitugspwfxkcluxvrdeg',
+      NEXT_PUBLIC_SUPABASE_URL: origin,
+    }
+    expect(conversationMediaUploadTicketsEnabled(env)).toBe(true)
+    for (const key of Object.keys(env))
+      expect(conversationMediaUploadTicketsEnabled({ ...env, [key]: '' })).toBe(false)
+    expect(
+      conversationMediaUploadTicketsEnabled({
+        ...env,
+        NEXT_PUBLIC_SUPABASE_URL: 'https://xuxehkhdvjivitduarvb.supabase.co',
+      }),
+    ).toBe(false)
   })
 })

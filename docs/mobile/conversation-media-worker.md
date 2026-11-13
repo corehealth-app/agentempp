@@ -57,6 +57,33 @@ SDK and official [filter](https://supabase.com/docs/reference/javascript/in)
 and [removal](https://supabase.com/docs/reference/javascript/storage-from-remove)
 references. Controlled SDK fetches are not live Storage deletion evidence.
 
+## Tracked ordinary upload issuance (source only)
+
+The BFF's existing `MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED` and intake flags,
+clinical project ref and exact `NEXT_PUBLIC_SUPABASE_URL` jointly opt into the new
+ordinary ticket issuer. The default/generic and clinical upload paths retain
+their behavior. A request header cannot opt in. Deploy the additive ticket
+migration before enabling this code; missing RPCs fail before Storage signing,
+without an untracked fallback.
+
+For each new photo/audio upload attempt the issuer commits a private ticket,
+asks the installed SDK for a non-upsert signed URL, validates its exact
+origin/path and reads the actual provider expiry, then persists that expiry
+before checking current catalogue authority or returning the URL. Supabase
+documents a [two-hour upload capability](https://supabase.com/docs/reference/javascript/storage-from-createsigneduploadurl);
+the returned expiry is recorded rather than guessed from the local clock.
+Anomalously long or expired capabilities are withheld after bookkeeping. No
+URL, JWT, caption or model output enters the ticket ledger or error response.
+
+The ticket manifest survives catalogue deletion. A first late registration
+reopens the original cleanup debt and invalidates older sweep claims; replaying
+the same registration does not invalidate a newer claim. Catalog, ticket and
+debt locks use that common order. A pending attempt whose signing result is
+unknown remains unresolved. None of this certifies that immutable older
+issuers drained, so the existing `legacy_untracked` debt remains unsettled.
+Local rollback/SDK tests qualify these contracts only; connected Storage and
+multi-session timing, scheduler and account-deletion lifecycle remain gates.
+
 ## Publication and acceptance
 
 Reuse worker project `prj_0SRds3zTc57EB0sExjYPygKGEgBx` and BFF project

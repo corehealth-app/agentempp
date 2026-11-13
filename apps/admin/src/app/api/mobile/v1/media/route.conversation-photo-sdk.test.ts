@@ -132,12 +132,22 @@ describe('conversation photo through real Supabase adapter', () => {
     )
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED', undefined)
     vi.stubEnv('MOBILE_CONVERSATION_PHOTOS_ENABLED', 'true')
     vi.stubEnv('MOBILE_CONVERSATION_INTAKES_ENABLED', 'true')
     vi.stubEnv('MOBILE_CURRENT_CLINICAL_PROJECT_REF', 'xitugspwfxkcluxvrdeg')
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
   })
   afterEach(() => vi.unstubAllEnvs())
+  it('requires the durable ticket contract before signing when the trusted media protocol is enabled', async () => {
+    vi.stubEnv('MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED', 'true')
+    const f = fixture()
+    ports.client.mockReturnValue(f.sdk)
+    const response = await request()
+    expect(response.status).toBe(503)
+    expect((await response.json()).error.code).toBe('ordinary_media_upload_unavailable')
+    expect(f.signed).not.toHaveBeenCalled()
+  })
   it('returns an upload ticket and replays the same row through the actual handler/factory', async () => {
     const f = fixture()
     ports.client.mockReturnValue(f.sdk)

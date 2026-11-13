@@ -8,6 +8,8 @@ import type {
   MediaServiceDependencies,
   MediaStorageGateway,
 } from './media-service'
+import { issueOrdinaryMediaUpload } from './ordinary-media-upload'
+import { createSupabaseOrdinaryMediaUploadDependencies } from './supabase-ordinary-media-upload'
 
 const mediaAssetRowSchema = z.object({
   id: z.string().uuid(),
@@ -305,8 +307,13 @@ function createStorage(supabase: ServiceClient): MediaStorageGateway {
 
 export function createSupabaseMediaDependencies(
   supabase: ServiceClient,
-  options: { signupPhotos?: boolean; reevaluationSchema?: true } = {},
+  options: {
+    signupPhotos?: boolean
+    reevaluationSchema?: true
+    ordinaryUploadTickets?: { storageOrigin: string }
+  } = {},
 ): MediaServiceDependencies {
+  const ordinaryUploadTickets = options.ordinaryUploadTickets
   return {
     // Static schema capability, not a client-controlled creation flag. Deploy
     // the origin migration first; a missing column must fail without fallback.
@@ -316,6 +323,17 @@ export function createSupabaseMediaDependencies(
       options.reevaluationSchema === true && options.signupPhotos !== true,
     ),
     storage: createStorage(supabase),
+    ...(ordinaryUploadTickets
+      ? {
+          ordinaryUploads: {
+            issue: (asset: MediaAssetRecord) =>
+              issueOrdinaryMediaUpload(
+                createSupabaseOrdinaryMediaUploadDependencies(supabase, ordinaryUploadTickets),
+                asset,
+              ),
+          },
+        }
+      : {}),
     planDrafts: {
       async hasOpenDraftOfMedia(userId, assetId) {
         const { data, error } = await (

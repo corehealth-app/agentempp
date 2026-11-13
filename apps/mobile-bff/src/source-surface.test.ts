@@ -257,21 +257,14 @@ function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string 
   return restored
 }
 
-/** The closed first-person adjunct is the sole executable validation change.
- * Removing its exact eight bytes restores the complete prior certified body;
- * no other source guard, module, route or consumer is projected away. */
-function restoreSpokenSubjectR112(body: string): string {
+/** R121 deliberately adds completed-meal photo reporting and a closed plate
+ * pointer. Pin the entire new compiled validator, without projecting away any
+ * guard. All other modules, consumers and negative controls remain frozen. */
+function certifyPhotoReportR121(body: string): string {
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '936761dc1bce11b991734de2b4240d566d4ce86ed704dfa154c695e4f645e811',
+    '877076af258df16e1974726f9f2b8a363b6f6b292b4bdfb974af0f67e1f78f8f',
   )
-  const from = '(?: de hoje)?,?(?: eu)?$/u',
-    to = '(?: de hoje)?,?$/u'
-  expect(body.split(from)).toHaveLength(2)
-  const restored = body.replace(from, to)
-  expect(createHash('sha256').update(restored).digest('hex')).toBe(
-    'bc8a85d99b59cacdfaa40f396e9b30a23ac696f60563c519a8c28bff12e3f81b',
-  )
-  return restored
+  return body
 }
 
 function certifyNutritionJournalSplitContent(text: string): void {
@@ -286,9 +279,8 @@ function certifyNutritionJournalSplitContent(text: string): void {
   // R95 accounts for the complete trailing current-meal context. Module65556's
   // helper/guard plus compiler-local renaming reverse byte-exactly to R82;
   // all other18 compiled bodies remain byte-identical. No consumer is exempted.
-  // R98 also accounts for the separately labeled whole leading meal adjunct.
-  // Removing only that helper/skip and reversing AST-local identifier allocation
-  // restores the complete R95 body byte-exactly; the other18 bodies are unchanged.
+  // R121 adds a bounded completed-report + trailing photo pointer. This module
+  // now has a complete new source/body pin; no prior guards are projected away.
   expect(
     createHash('sha256')
       .update(
@@ -300,7 +292,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('f4175d7322943b05f06b4bbdaba7634a99b4867f4f8dfea921052abe21ada745')
+  ).toBe('3c1d43020bcef4505bd616a1f353d68d039f0fdfd8d2cf495b049a48434ba6c5')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -340,7 +332,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
               id === '67584'
                 ? restoreImageParserLinkR106('67584', body)
                 : id === '65556'
-                  ? restoreSpokenSubjectR112(body)
+                  ? certifyPhotoReportR121(body)
                   : body,
             )
             .digest('hex')}`,
@@ -362,7 +354,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:bc8a85d99b59cacdfaa40f396e9b30a23ac696f60563c519a8c28bff12e3f81b',
+      '65556:877076af258df16e1974726f9f2b8a363b6f6b292b4bdfb974af0f67e1f78f8f',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',

@@ -160,7 +160,7 @@ function reportMarker(text: string): boolean {
   // establish consumption without the existing explicit predicate, assign a
   // meal slot/date, or permit any other source text to be omitted. The optional
   // current-day adjunct is still part of the same wholly observed report span.
-  return /^(?:no (?:cafe da manha|almoco|jantar)(?: de hoje)?,? )?(?:(?:hoje|agora) )?(?:(?:eu )?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei|consumi|ingeri)|(?:eu )?acabei de (?:comer|beber|tomar)|i (?:just )?(?:ate|drank)|i have (?:eaten|drunk))(?: (?:hoje|agora))?$/u.test(
+  return /^(?:no (?:cafe da manha|almoco|jantar)(?: de hoje)?,? )?(?:(?:hoje|agora) )?(?:(?:eu )?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei|consumi|ingeri)|(?:eu )?acabei de (?:comer|beber|tomar|almocar|jantar|lanchar|cear)|i (?:just )?(?:ate|drank)|i have (?:eaten|drunk))(?: (?:hoje|agora))?$/u.test(
     v,
   )
 }
@@ -224,6 +224,35 @@ function trailingMealContextStart(
 }
 const pointer =
   /^(?:(?:meu|minha|my|este|esta|esse|essa|this|a|o) )?(?:almoco|jantar|cafe da manha|lanche|refeicao|prato|meal|plate|breakfast|lunch|dinner|isto|isso|it|this)[.!]?$/u
+/** A completed first-person report may refer to the actual bound photograph.
+ * Consume only the complete trailing plate pointer, not arbitrary discourse or
+ * a textual food/quantity. The model must already report consumption; visual
+ * coverage, the reporting predicate and every other source remain validated. */
+function trailingPhotoPointerStart(
+  source: MealInterpretationModelResult['sources'][number],
+  text: string,
+  media: ConversationMealInterpretationSource['media_binding'],
+  visualCount: number,
+): number | null {
+  if (
+    source.unit !== 'media_caption' ||
+    source.classification !== 'reported' ||
+    media?.kind !== 'meal_photo' ||
+    visualCount === 0
+  )
+    return null
+  const reports = source.spans.filter((span) => span.kind === 'report')
+  const report = reports[0]
+  if (reports.length !== 1 || !report || !reportMarker(text.slice(report.start, report.end)))
+    return null
+  const tail = source.spans.filter((span) => span.start >= report.end)
+  if (
+    !tail.length ||
+    tail.some((span) => span.food_index !== null || !['other', 'separator'].includes(span.kind))
+  )
+    return null
+  return pointer.test(plain(text.slice(report.end))) ? report.end : null
+}
 const positives = new Set(['explicit_report', 'nominal_food_list', 'explicit_media_action'])
 function unclear(source: ConversationMealInterpretationSource): MealInterpretationModelResult {
   return freezeInterpretation({
@@ -427,10 +456,17 @@ export function validateConversationMealInterpretationModel(
       let hasFood = false
       const leadingContextEnd = leadingMealContextEnd(s, input.text ?? '')
       const contextStart = trailingMealContextStart(s, input.text ?? '')
+      const photoPointerStart = trailingPhotoPointerStart(
+        s,
+        input.text ?? '',
+        source.media_binding,
+        visual.size,
+      )
       for (const span of s.spans) {
         const text = (input.text ?? '').slice(span.start, span.end)
         if (leadingContextEnd !== null && span.end <= leadingContextEnd) continue
         if (contextStart !== null && span.start >= contextStart) continue
+        if (photoPointerStart !== null && span.start >= photoPointerStart) continue
         if (span.kind === 'other') {
           // Labeling inert punctuation as `other` must not discard an otherwise
           // complete report. Words, numbers, quotes and question marks still

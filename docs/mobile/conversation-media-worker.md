@@ -4,6 +4,61 @@ The approved photo/audio chat uses the existing processing worker and private
 Storage. Local tests and a READY deployment do not establish connected delivery.
 Distributed build 17 remains text-only until a qualified successor is installed.
 
+## Connected synthetic audio qualification — R112
+
+On 2026-11-13 a five-second, locally synthesized Portuguese audio note completed
+real upload, the existing Groq transcription worker, interpretation with the
+BFF's existing OpenRouter configuration, and the official meal writer. No caption
+or transcript was supplied with the upload. No provider key was created, revealed,
+copied or changed. This proves that the inherited app configuration worked for
+these calls; it does not establish worker/app OpenRouter secret equality or future
+validity beyond the existing key's lifetime and allowance.
+
+The source-bound BFF preview is `dpl_4rnKPG685sQYpT1os75v4SmJSauU`, commit
+`aaf5ddae2c210713835944aa423bd281f5318cbd`, region `gru1`. Its nonsecret protocol
+flags were explicitly sent in the deployment API's `env` object. Merely placing
+those flags in the uploaded nested `vercel.json` did not activate the protocol in
+the first attempt. Both superseded R112 previews were removed and returned 404;
+the qualified candidate is retained for successor qualification, with a review
+within 24 hours. Canonical routing, build 17 and the registered worker were not
+changed. Photo processing was not enabled by this candidate.
+
+The actual transcript, “No almoço eu tomei 200 mililitros de leite com uma medida
+de whey”, exposed a guard that rejected a separately labeled first-person subject
+after the meal adjunct. The correction accounts only for the optional `eu` in
+that closed prefix; genuine consumption predicates and the existing checks for
+negation, future intent, habits, attribution and complete source coverage remain.
+Two failing cases became green alongside 26 adversarial/refusal cases. The root
+suite passed 16,219 tests across 602 files and seven tasks; both Next builds,
+admin/BFF type checks, changed-file lint and compiled-source certificates passed.
+
+The connected result saved one lunch with two items: 200 mL of milk and one
+estimated, editable 30 g measure of whey, totaling approximately 231.3 kcal and
+29.9 g protein. All six feedback sections were present. Technical replay returned
+the same receipt. Editing only the whey to 15 g recalculated that item; undoing
+the edit restored it. Reopened journal and nutrition projections agreed with the
+current facts, while the original receipt remained historical. The registration
+undo window elapsed and was not exercised in this round; undo-save was exercised.
+The successful intake took about 58 seconds, which is server-path evidence, not
+native responsiveness qualification.
+
+The owned audio payload was removed through the leased, version-targeted API.
+The closed catalogue had no processing result; Storage held only an ordinary
+zero-byte barrier, with one tracked upload ticket and an acknowledged sweep.
+The empty barrier and durable debt are intentionally retained pending proven
+legacy issuer/remover drain. They are not final deletion. Domain history and
+numeric nutrition projections remained readable after payload removal. Prior QA
+rows/profile were unchanged, and the one temporary entitlement and new Auth
+session were explicitly closed without removing the preexisting session.
+
+Evidence: `performe-r112-issuer-census-20261113/qa-spoken-subject/VERIFIED.json`
+in the local Codex SDD cache. The metadata census covered 30 READY deployments,
+23 source commits and four historical media-service variants; 32 executable
+characterizations describe their behavior. This is not hosted-source byte
+attestation or a complete drain proof. The authenticated Inngest observation
+still showed two registered functions, not the planned four. No new worker
+registration, retention schedule, iOS archive or TestFlight delivery is claimed.
+
 ## Database deployment status — R111
 
 On 2026-11-13 the five additive migrations from `20261113023500` through

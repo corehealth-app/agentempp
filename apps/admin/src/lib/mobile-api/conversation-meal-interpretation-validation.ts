@@ -252,7 +252,12 @@ function trailingPhotoPointerStart(
     tail.some((span) => span.food_index !== null || !['other', 'separator'].includes(span.kind))
   )
     return null
-  return pointer.test(plain(text.slice(report.end))) ? report.end : null
+  const tailText = plain(text.slice(report.end))
+  // A literal reference to this bound photo is inert context, just like
+  // "esse prato". Match the entire tail so future/negative/third-party clauses,
+  // questions and explicit quantities still require semantic accounting.
+  const boundPhotoPointer = /^(?:(?:o|a|este|esta|esse|essa) )?(?:prato|refeicao) da foto[.!]?$/u
+  return pointer.test(tailText) || boundPhotoPointer.test(tailText) ? report.end : null
 }
 const positives = new Set(['explicit_report', 'nominal_food_list', 'explicit_media_action'])
 function unclear(source: ConversationMealInterpretationSource): MealInterpretationModelResult {

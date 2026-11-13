@@ -257,12 +257,13 @@ function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string 
   return restored
 }
 
-/** R121 deliberately adds completed-meal photo reporting and a closed plate
- * pointer. Pin the entire new compiled validator, without projecting away any
- * guard. All other modules, consumers and negative controls remain frozen. */
-function certifyPhotoReportR121(body: string): string {
+/** R127 extends only the complete bound-photo pointer after an independently
+ * proved consumption predicate. The observed build changes only module65556;
+ * all other19 complete module hashes, consumers and negative controls match.
+ * Pin the full new source/body, rather than masking the changed executable. */
+function certifyPhotoReportR127(body: string): string {
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '6aa1eb31161573f314276195b339d05d06c56c917efe9e348024e7070b957256',
+    '2046e9b3d50e7b17b4cb3c3aaff106d5296c47414430baa3d9358cd26da73221',
   )
   return body
 }
@@ -292,7 +293,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('13f4b94f4acd7e3a21f7a8f8438f0300afc937416e0525b430391c5d1dd7dea7')
+  ).toBe('c6c04b6665b9545ac9d47751e9585c5cdb2581bae3d64b621cbcc6d0eb6224c1')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -332,7 +333,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
               id === '67584'
                 ? restoreImageParserLinkR106('67584', body)
                 : id === '65556'
-                  ? certifyPhotoReportR121(body)
+                  ? certifyPhotoReportR127(body)
                   : body,
             )
             .digest('hex')}`,
@@ -354,7 +355,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:6aa1eb31161573f314276195b339d05d06c56c917efe9e348024e7070b957256',
+      '65556:2046e9b3d50e7b17b4cb3c3aaff106d5296c47414430baa3d9358cd26da73221',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',
@@ -537,8 +538,11 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '5d3e6642ebb177b0959730180a0246e067bf218908cce2f4618fea48b7ac42b2',
+    'fbeb7ccbd4e0850bcc1f6d4cc203c2b08067cd40410f2e050c8c68a2f18f0d6c',
   )
+  // R127 changes only the complete-photo example in the literal prompt; pin
+  // its entire new source. Provider helper bytes, parsing and route consumers
+  // are unchanged and independently certified below.
   // R80 adds closed enum/count observations only for completed ambiguities.
   // R81 adds closed screening reason codes and JSON encoding of this safe projection.
   // R83 changes only the literal role-boundary prompt; source identity stays sealed.

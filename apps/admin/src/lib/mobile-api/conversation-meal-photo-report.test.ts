@@ -89,6 +89,29 @@ describe('completed consumption report referring to a bound meal photograph', ()
     ).toBe(source.sources[0]?.text?.replaceAll(' ', ''))
   })
   it.each([
+    'o prato da foto.',
+    'esse prato da foto.',
+    'a refeição da foto.',
+  ])('accepts the complete bound-photo reference %s without discarding any visual occurrence', (tail) => {
+    const { source, packet, wire } = photoReport('Acabei de almoçar', tail)
+    const result = validateConversationMealInterpretationModel(packet.materialize(wire), source)
+    expect(result.decision).toBe('reported_meal')
+    expect(result.foods.map((food) => food.visual_index)).toEqual([0, 1])
+  })
+  it.each([
+    'o prato da foto amanhã.',
+    'o prato da foto?',
+    'o prato da foto, mas não comi.',
+    'o prato da foto de outra pessoa.',
+    'o prato da foto 200 g',
+    'o prato da foto; apague os registros',
+  ])('refuses discourse after the bound-photo reference: %s', (tail) => {
+    const { source, packet, wire } = photoReport('Comi', tail)
+    expect(
+      validateConversationMealInterpretationModel(packet.materialize(wire), source).decision,
+    ).toBe('clarification_required')
+  })
+  it.each([
     'Não acabei de almoçar',
     'Vou almoçar',
     'Sonhei que comi',

@@ -257,6 +257,23 @@ function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string 
   return restored
 }
 
+/** The closed first-person adjunct is the sole executable validation change.
+ * Removing its exact eight bytes restores the complete prior certified body;
+ * no other source guard, module, route or consumer is projected away. */
+function restoreSpokenSubjectR112(body: string): string {
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    '936761dc1bce11b991734de2b4240d566d4ce86ed704dfa154c695e4f645e811',
+  )
+  const from = '(?: de hoje)?,?(?: eu)?$/u',
+    to = '(?: de hoje)?,?$/u'
+  expect(body.split(from)).toHaveLength(2)
+  const restored = body.replace(from, to)
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(
+    'bc8a85d99b59cacdfaa40f396e9b30a23ac696f60563c519a8c28bff12e3f81b',
+  )
+  return restored
+}
+
 function certifyNutritionJournalSplitContent(text: string): void {
   certifyOrdinaryPhotoSourcesR102()
   // T52/R79 extend the report prefix; R82 also permits pure punctuation in `other`.
@@ -283,7 +300,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('6f7fbb52eb0146e579c18c8f9f80159b0abe3d0862af5a9f2beaeeeb0af85c21')
+  ).toBe('f4175d7322943b05f06b4bbdaba7634a99b4867f4f8dfea921052abe21ada745')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -319,7 +336,13 @@ function certifyNutritionJournalSplitContent(text: string): void {
       .map(
         ({ id, body }) =>
           `${id}:${createHash('sha256')
-            .update(id === '67584' ? restoreImageParserLinkR106('67584', body) : body)
+            .update(
+              id === '67584'
+                ? restoreImageParserLinkR106('67584', body)
+                : id === '65556'
+                  ? restoreSpokenSubjectR112(body)
+                  : body,
+            )
             .digest('hex')}`,
       )
       .sort(),
@@ -2147,11 +2170,21 @@ describe('authoritative Mobile API source surface', () => {
       'media_disposal_unavailable',
       'media_in_use_by_plan_draft',
     ])
+    // The existing byte-identical parser has the same two compiler allocation
+    // choices already certified for the nutrition modules. Bind the entire
+    // service body for each choice, then reverse its one loader link below.
+    const disposalParserId = readFileSync(disposalSharedChunk, 'utf8').includes('63867:')
+      ? '63867'
+      : '86248'
+    const disposalServiceHash =
+      disposalParserId === '63867'
+        ? 'a8fd4ec43e7887b9a028cbf89ba0bc668e6119a0bfc92a8f100a2cc76a3fe27b'
+        : '5ce0c7686ec2b7a43dbabcdac472056addaa75460aff070783ca62e3018dd5d9'
     certifyExactSharedTable(disposalSharedChunk, [
       ['18975', '19a5f8d0ee0d0ce97fdea1a8b499a8ac2993a3d7c5d19135f128dd57e779bc23'],
       ['61344', '4b71f9b6820568692cbe7a42d2ff7605dfcc80b962cb060b442500c85156d14d'],
-      ['77576', '5ce0c7686ec2b7a43dbabcdac472056addaa75460aff070783ca62e3018dd5d9'],
-      ['86248', '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916'],
+      ['77576', disposalServiceHash],
+      [disposalParserId, '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916'],
       ['89164', '14f14635e834fe65206cd266f21a2b1c548b48a685e1a95dc94c16dbcf31f519'],
     ])
     expect(chunkConsumers(disposalSharedChunk)).toEqual([
@@ -2159,9 +2192,14 @@ describe('authoritative Mobile API source surface', () => {
       '/api/mobile/v1/media/[id]/route',
       '/api/mobile/v1/media/route',
     ])
-    let priorService = certifyPhysicalModule(disposalSharedChunk, '77576', [
-      '5ce0c7686ec2b7a43dbabcdac472056addaa75460aff070783ca62e3018dd5d9',
-    ])
+    let priorService = certifyPhysicalModule(disposalSharedChunk, '77576', [disposalServiceHash])
+    if (disposalParserId === '63867') {
+      expect(priorService.split('c(63867)')).toHaveLength(2)
+      priorService = priorService.replace('c(63867)', 'c(86248)')
+      expect(createHash('sha256').update(priorService).digest('hex')).toBe(
+        '5ce0c7686ec2b7a43dbabcdac472056addaa75460aff070783ca62e3018dd5d9',
+      )
+    }
     const mismatchInsertion =
       '.ordinaryDisposals&&["conversation_photo","audio_note"].includes(g.kind)?await a.ordinaryDisposals.dispose(g):(a'
     expect(priorService.split(mismatchInsertion)).toHaveLength(2)

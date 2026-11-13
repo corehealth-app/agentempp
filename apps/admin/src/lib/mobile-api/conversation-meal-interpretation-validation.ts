@@ -183,7 +183,10 @@ function leadingMealContextEnd(
       .some((span) => span.food_index !== null || !['other', 'separator'].includes(span.kind))
   )
     return null
-  return /^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia)(?: de hoje)?,?$/u.test(
+  // A separately labeled first-person subject still belongs to this exact
+  // prefix. The following report span must independently contain the genuine
+  // consumption predicate; negations, quotes and other clauses remain refused.
+  return /^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia)(?: de hoje)?,?(?: eu)?$/u.test(
     plain(text.slice(0, report.start)),
   )
     ? report.start

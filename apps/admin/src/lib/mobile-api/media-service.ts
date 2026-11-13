@@ -105,6 +105,8 @@ export interface MediaSignedUpload {
 export interface MediaServiceDependencies {
   /** Explicit trusted opt-in; absence preserves legacy signing. */
   ordinaryUploads?: { issue(asset: MediaAssetRecord): Promise<MediaSignedUpload> }
+  /** Trusted rollout only; this commits closure before versioned byte revocation. */
+  ordinaryDisposals?: { dispose(asset: MediaAssetRecord): Promise<void> }
   repository: MediaAssetRepository
   storage: MediaStorageGateway
   events: MediaProcessingEventGateway
@@ -439,8 +441,12 @@ export async function completeMediaUploadRecord(
   }
   const contentType = info.contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? null
   if (info.size !== asset.declared_size_bytes || contentType !== asset.mime_type) {
-    await deps.storage.remove(asset.bucket_id, asset.object_path)
-    await deps.repository.markUploadFailed(userId, assetId, 'metadata_mismatch')
+    if (deps.ordinaryDisposals && ['conversation_photo', 'audio_note'].includes(asset.kind)) {
+      await deps.ordinaryDisposals.dispose(asset)
+    } else {
+      await deps.storage.remove(asset.bucket_id, asset.object_path)
+      await deps.repository.markUploadFailed(userId, assetId, 'metadata_mismatch')
+    }
     throw new MobileApiError(
       422,
       'media_upload_mismatch',
@@ -490,6 +496,15 @@ export async function deleteMediaAsset(
   now = new Date(),
 ) {
   const asset = requireOwnedAsset(await deps.repository.findOwned(userId, assetId))
+  if (deps.ordinaryDisposals && ['conversation_photo', 'audio_note'].includes(asset.kind)) {
+    // Retry the committed cleanup debt even when an uncertain earlier request
+    // already closed the catalogue. A tombstone alone is not byte revocation.
+    await deps.ordinaryDisposals.dispose(asset)
+    const current = requireOwnedAsset(await deps.repository.findOwned(userId, assetId))
+    if (current.status !== 'deleted')
+      throw new MobileApiError(503, 'media_disposal_unavailable', 'Media deletion unavailable')
+    return mediaAssetDto(current)
+  }
   if (asset.status === 'deleted') return mediaAssetDto(asset)
   // A document under reading or review is its draft's source: the patient
   // discards the draft first, and then the document.

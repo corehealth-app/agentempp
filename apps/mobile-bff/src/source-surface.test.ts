@@ -1559,13 +1559,54 @@ describe('authoritative Mobile API source surface', () => {
       expect(routes).not.toContain(route)
   })
 
-  test('keeps the photo-purpose opt-in local to its upload transport', () => {
-    expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_PHOTOS_ENABLED')).toEqual([
-      '/api/mobile/v1/media/route',
-    ])
-    expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_INTAKES_ENABLED')).toEqual(
-      [...conversationIntakeAppPaths, '/api/mobile/v1/media/route'].sort(),
+  test('keeps photo-purpose and disposal gates on the closed media transports', () => {
+    // R111 shares the unchanged purpose module with the two disposal entries.
+    // Whole source certificates below bind their calls to the ticket gate, not
+    // photo analysis; the new privileged RPC graph is restricted separately.
+    const disposalRoutes = [
+      '/api/mobile/v1/media/[id]/complete/route',
+      '/api/mobile/v1/media/[id]/route',
+    ]
+    expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_PHOTOS_ENABLED')).toEqual(
+      [...disposalRoutes, '/api/mobile/v1/media/route'].sort(),
     )
+    for (const marker of [
+      'claim_conversation_media_disposal',
+      'inspect_conversation_media_payload_revocation',
+      'acknowledge_conversation_media_expiry_sweep',
+    ])
+      expect(runtimeMarkerRoutes(marker)).toEqual(disposalRoutes.slice().sort())
+    expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_INTAKES_ENABLED')).toEqual(
+      [...conversationIntakeAppPaths, ...disposalRoutes, '/api/mobile/v1/media/route'].sort(),
+    )
+    // Exact reviewed R111 sources; no broad source/hash exemptions.
+    for (const [file, hash] of [
+      [
+        'apps/admin/src/app/api/mobile/v1/media/[id]/route.ts',
+        '1ddf7ae3a7c583a7328f219060c4b62e9c42d82fe595767282e6b415e0472058',
+      ],
+      [
+        'apps/admin/src/app/api/mobile/v1/media/[id]/complete/route.ts',
+        'b5067a20e3a88265e4365a61ee944f138701eb49e7e5744458d36e85bfc53c4b',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/ordinary-media-disposal.ts',
+        'e055f56af6b7db1f52301bf787424cd7f4a6c9d2659a118b7514d03c172a15b4',
+      ],
+      [
+        'packages/core/src/conversation-media-revocation.ts',
+        '4445c13dfb17813e42c555a598ccdffc939c34fa48c92587995000ef97eccb12',
+      ],
+      [
+        'packages/core/package.json',
+        '65017035408828386d6f7ff67f2ebbd472408bd0feecd01e11c74e56af84cbea',
+      ],
+    ])
+      expect(
+        createHash('sha256')
+          .update(readFileSync(resolve(appRoot, '../..', file ?? '')))
+          .digest('hex'),
+      ).toBe(hash)
     // R106 intentionally adds the isolated issuance gate and SDK/ticket handoff.
     // Seal its complete source as well as the one changed physical route body.
     for (const [file, hash] of [
@@ -1575,11 +1616,11 @@ describe('authoritative Mobile API source surface', () => {
       ],
       [
         'apps/admin/src/lib/mobile-api/media-service.ts',
-        '5f01a075092a340a8cf19022eeb7502703f9676873b4e15839ac610e2a436e99',
+        '4ee5784c6795abf56f9e72034e58ca2200288dd0936525d2b6543158611e710c',
       ],
       [
         'apps/admin/src/lib/mobile-api/supabase-media.ts',
-        '2b7cfc42e451de51fe87ca5a75f5730d827fc76aeabe071d4cd63818d6d1a48b',
+        '39495666e1e6866ab1eb6e3deee25d7f6ded58534153358b53c24b4eaf4d06ee',
       ],
       [
         'apps/admin/src/lib/mobile-api/ordinary-media-upload.ts',
@@ -1601,9 +1642,33 @@ describe('authoritative Mobile API source surface', () => {
       ).toBe(hash)
     const entry = currentAppPathsManifest()['/api/mobile/v1/media/route']
     expect(entry).toBeTypeOf('string')
-    certifyPhysicalModule(resolve(buildRoot, 'server', entry ?? ''), '8135', [
-      '532cacc54a6443ffa361c6fb57529650cb59c1fde06465571e9d7c9c70178d2d',
+    // The upload source is unchanged. Extracting its two pure purpose helpers
+    // into the closed shared table below relocates the full framework module.
+    certifyPhysicalModule(resolve(buildRoot, 'server', entry ?? ''), '49777', [
+      '8ca9a3e581e81d73eb2d620974c424df5333fc088d0ef345315aa19d467e0112',
     ])
+    for (const [route, id, hash] of [
+      [
+        '/api/mobile/v1/media/[id]/route',
+        '82635',
+        '2142720a3775b78022d343173a090529e6215d164c1a49051af37d889adad139',
+      ],
+      [
+        '/api/mobile/v1/media/[id]/complete/route',
+        '49523',
+        '8dc0e654afd13a863be5a9bddb9fb0a7b61c1a29254208c428c3f10feeb4a7e6',
+      ],
+    ]) {
+      const target = currentAppPathsManifest()[route ?? '']
+      expect(target).toBeTypeOf('string')
+      const file = resolve(buildRoot, 'server', target ?? '')
+      certifyPhysicalModule(file, id ?? '', [hash ?? ''])
+      // Complete neutral revocation primitive + real SDK adapter, with no
+      // worker import, is the same closed body in these two entries only.
+      certifyPhysicalModule(file, '2464', [
+        '947188b98e60791650095e03225fc49cbc290e63a72757e59eec21fcaecefa75',
+      ])
+    }
   })
 
   test('keeps the nutrition live call graph on the journal instant helper and readonly runtime only', () => {
@@ -2034,8 +2099,18 @@ describe('authoritative Mobile API source surface', () => {
       'register_conversation_media_upload',
     ])
     certifyExactSharedTable(ordinaryIssuerChunk, [
-      ['83201', '48a22f1ec3e0a816eb14e62793c70d5719a040bccd022583021dbb6c28577811'],
+      ['83201', '0ed6623bafb670f6e71c132424f9807fe6f7ea0f30e562976cfa6613a3e3581a'],
     ])
+    // Removing this single optional-port spread reconstructs every byte of
+    // the previously certified factory. No old body is admitted by prefix.
+    const factory = certifyPhysicalModule(ordinaryIssuerChunk, '83201', [
+      '0ed6623bafb670f6e71c132424f9807fe6f7ea0f30e562976cfa6613a3e3581a',
+    ])
+    const addition = '...b.ordinaryDisposals?{ordinaryDisposals:b.ordinaryDisposals}:{},'
+    expect(factory.split(addition)).toHaveLength(2)
+    expect(createHash('sha256').update(factory.replace(addition, '')).digest('hex')).toBe(
+      '48a22f1ec3e0a816eb14e62793c70d5719a040bccd022583021dbb6c28577811',
+    )
     const issuerReplacementRoutes = new Set([
       '/api/mobile/v1/me/route',
       '/api/mobile/v1/meal-drafts/route',
@@ -2062,10 +2137,50 @@ describe('authoritative Mobile API source surface', () => {
     expect(chunkConsumers(ordinaryIssuerChunk)).toEqual(
       [...issuerReplacementRoutes, ...issuerAddedRoutes].sort(),
     )
+    // R111's new shared table adds precisely three NFT edges. The helpers
+    // are now factored out of their old inline copies; all five modules are
+    // closed here. Three are literal prior bodies. The media service changes
+    // reconstruct the complete prior body after removing the two reviewed
+    // disposal branches. The new 574-byte module contains only existing flags.
+    const disposalSharedChunk = uniqueChunk([
+      'MOBILE_CONVERSATION_PHOTOS_ENABLED',
+      'media_disposal_unavailable',
+      'media_in_use_by_plan_draft',
+    ])
+    certifyExactSharedTable(disposalSharedChunk, [
+      ['18975', '19a5f8d0ee0d0ce97fdea1a8b499a8ac2993a3d7c5d19135f128dd57e779bc23'],
+      ['61344', '4b71f9b6820568692cbe7a42d2ff7605dfcc80b962cb060b442500c85156d14d'],
+      ['77576', '5ce0c7686ec2b7a43dbabcdac472056addaa75460aff070783ca62e3018dd5d9'],
+      ['86248', '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916'],
+      ['89164', '14f14635e834fe65206cd266f21a2b1c548b48a685e1a95dc94c16dbcf31f519'],
+    ])
+    expect(chunkConsumers(disposalSharedChunk)).toEqual([
+      '/api/mobile/v1/media/[id]/complete/route',
+      '/api/mobile/v1/media/[id]/route',
+      '/api/mobile/v1/media/route',
+    ])
+    let priorService = certifyPhysicalModule(disposalSharedChunk, '77576', [
+      '5ce0c7686ec2b7a43dbabcdac472056addaa75460aff070783ca62e3018dd5d9',
+    ])
+    const mismatchInsertion =
+      '.ordinaryDisposals&&["conversation_photo","audio_note"].includes(g.kind)?await a.ordinaryDisposals.dispose(g):(a'
+    expect(priorService.split(mismatchInsertion)).toHaveLength(2)
+    priorService = priorService.replace(mismatchInsertion, '')
+    const deleteInsertion =
+      'if(a.ordinaryDisposals&&["conversation_photo","audio_note"].includes(e.kind)){await a.ordinaryDisposals.dispose(e);let d=l(await a.repository.findOwned(b,c));if("deleted"!==d.status)throw new f.t0(503,"media_disposal_unavailable","Media deletion unavailable");return j(d)}'
+    expect(priorService.split(deleteInsertion)).toHaveLength(2)
+    priorService = priorService.replace(deleteInsertion, '')
+    const closedMismatch = 'markUploadFailed(b,c,"metadata_mismatch"))'
+    expect(priorService.split(closedMismatch)).toHaveLength(2)
+    priorService = priorService.replace(closedMismatch, 'markUploadFailed(b,c,"metadata_mismatch")')
+    expect(createHash('sha256').update(priorService).digest('hex')).toBe(
+      'f1bae64338d545292a31d72af6e2b3d20f428fa2035b695667fdd12438c642bc',
+    )
     const priorTargets = (route: string): string[] =>
       tracedTargets(route).filter(
         (target) =>
           target !== nextHttpSplit &&
+          target !== disposalSharedChunk &&
           !purposeEdge(route, target) &&
           !(target === ordinaryIssuerChunk && issuerAddedRoutes.has(route)),
       )
@@ -2102,6 +2217,7 @@ describe('authoritative Mobile API source surface', () => {
         ),
         nextHttpSplit,
         ordinaryPhotoChunk,
+        disposalSharedChunk,
       ].sort(),
     )
     // All75 keep8202 references. The verified duplicate is217 physical targets,
@@ -2111,9 +2227,9 @@ describe('authoritative Mobile API source surface', () => {
     expect(
       allRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0) +
         absorbedReferences(allRoutes),
-    ).toBe(8202 + 16 + 11)
-    expect(mobileTargets.size + 1).toBe(218)
-    expect(repositoryUniqueSize([...mobileTargets]) + 1).toBe(217)
+    ).toBe(8202 + 16 + 11 + 3)
+    expect(mobileTargets.size + 1).toBe(219)
+    expect(repositoryUniqueSize([...mobileTargets]) + 1).toBe(218)
     expect(tracedTargets(webhookRoute)).toHaveLength(104)
     expect(tracedTargets(webhookRoute).filter((target) => !mobileTargets.has(target))).toEqual([
       realpathSync(
@@ -2390,11 +2506,11 @@ describe('authoritative Mobile API source surface', () => {
         ]),
       ].sort(),
     )
-    expect(legacyTargets.size).toBe(218) // one absorbed selector target vs original218
+    expect(legacyTargets.size).toBe(219) // R111: exactly one qualified shared target added
     expect(
       [...allRoutes, webhookRoute].reduce((sum, route) => sum + tracedTargets(route).length, 0) +
         absorbedReferences(allRoutes),
-    ).toBe(8202 + 16 + 104 + 11)
+    ).toBe(8202 + 16 + 104 + 11 + 3)
     expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(116)
     // T48 extracts the three unchanged read-page modules certified above into
     // one new regular file, reached exactly once by each of the two readers.
@@ -2417,10 +2533,11 @@ describe('authoritative Mobile API source surface', () => {
         2 +
         12 +
         123 + // R93: exactly the new read-only origin route NFT edges.
-        11, // R106: exact newly factored issuer edges, independently pinned above.
+        11 + // R106: exact newly factored issuer edges, independently pinned above.
+        3, // R111: closed five-module shared table, exact three media consumers.
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1)
-    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1)
+    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1)
     expect(surface.nftDirectoryTargetCount).toBe(2)
     const additions = new Set(
       currentClinicalRouteAdditions.map((path) => `/api/mobile/v1/${path.replace(/\.ts$/, '')}`),
@@ -2616,6 +2733,10 @@ describe('authoritative Mobile API source surface', () => {
             ...edge.otherAdded,
             '/api/mobile/v1/onboarding/health/route',
             '/api/mobile/v1/onboarding/reconsent/route',
+            // R111: same exact project flag gates only these two disposal entries;
+            // their clinical-reader graph is unchanged and checked separately.
+            '/api/mobile/v1/media/[id]/complete/route',
+            '/api/mobile/v1/media/[id]/route',
             '/api/mobile/v1/media/route',
           ].sort(),
         )

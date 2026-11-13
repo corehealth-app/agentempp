@@ -485,3 +485,80 @@ describe('mobile media service', () => {
     expect(result).toMatchObject({ id: ASSET_ID, status: 'uploaded' })
   })
 })
+
+describe('ordinary media disposal does not reopen upload capabilities', () => {
+  function fixture(
+    kind: 'conversation_photo' | 'audio_note',
+    status: MediaAssetRecord['status'] = 'pending_upload',
+  ) {
+    let current = asset({
+      kind,
+      status,
+      bucket_id: kind === 'audio_note' ? 'audio-notes' : 'meal-photos',
+    })
+    const deps = makeDeps(current)
+    vi.mocked(deps.repository.findOwned).mockImplementation(async () => current)
+    const dispose = vi.fn(async () => {
+      current = { ...current, status: 'deleted', deleted_at: '2026-11-13T06:00:00.000Z' }
+    })
+    Object.assign(deps, { ordinaryDisposals: { dispose } })
+    return { deps, dispose }
+  }
+  it.each([
+    'conversation_photo',
+    'audio_note',
+  ] as const)('uses leased revocation for %s deletion instead of unversioned Storage removal', async (kind) => {
+    const f = fixture(kind)
+    expect(await deleteMediaAsset(f.deps, USER_ID, ASSET_ID)).toMatchObject({
+      id: ASSET_ID,
+      status: 'deleted',
+    })
+    expect(f.dispose).toHaveBeenCalledOnce()
+    expect(f.deps.storage.remove).not.toHaveBeenCalled()
+    expect(f.deps.repository.markDeleted).not.toHaveBeenCalled()
+  })
+  it('retries unfinished revocation even when the earlier request already closed the catalogue', async () => {
+    const f = fixture('audio_note', 'deleted')
+    expect(await deleteMediaAsset(f.deps, USER_ID, ASSET_ID)).toMatchObject({ status: 'deleted' })
+    expect(f.dispose).toHaveBeenCalledOnce()
+    expect(f.deps.storage.remove).not.toHaveBeenCalled()
+  })
+  it.each([
+    'conversation_photo',
+    'audio_note',
+  ] as const)('revokes a mismatched %s payload without the legacy remove-then-fail sequence', async (kind) => {
+    const f = fixture(kind)
+    vi.mocked(f.deps.storage.getObjectInfo).mockResolvedValue({
+      size: 1300,
+      contentType: 'wrong/type',
+      etag: null,
+    })
+    await expect(completeMediaUpload(f.deps, USER_ID, ASSET_ID)).rejects.toMatchObject({
+      code: 'media_upload_mismatch',
+      status: 422,
+    })
+    expect(f.dispose).toHaveBeenCalledOnce()
+    expect(f.deps.storage.remove).not.toHaveBeenCalled()
+    expect(f.deps.repository.markUploadFailed).not.toHaveBeenCalled()
+    expect(f.deps.repository.markUploaded).not.toHaveBeenCalled()
+  })
+  it('does not acknowledge deletion if payload revocation is unavailable', async () => {
+    const f = fixture('audio_note')
+    f.dispose.mockRejectedValue(
+      new MobileApiError(503, 'media_disposal_unavailable', 'Unavailable'),
+    )
+    await expect(deleteMediaAsset(f.deps, USER_ID, ASSET_ID)).rejects.toMatchObject({
+      code: 'media_disposal_unavailable',
+    })
+    expect(f.deps.storage.remove).not.toHaveBeenCalled()
+    expect(f.deps.repository.markDeleted).not.toHaveBeenCalled()
+  })
+  it('requires the authoritative closed catalogue after successful revocation', async () => {
+    const f = fixture('audio_note')
+    f.dispose.mockImplementation(async () => {})
+    await expect(deleteMediaAsset(f.deps, USER_ID, ASSET_ID)).rejects.toMatchObject({
+      code: 'media_disposal_unavailable',
+    })
+    expect(f.deps.storage.remove).not.toHaveBeenCalled()
+  })
+})

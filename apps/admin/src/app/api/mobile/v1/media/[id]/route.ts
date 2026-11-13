@@ -1,7 +1,9 @@
+import { conversationMediaUploadTicketsEnabled } from '@mpp/core/conversation-photo-purpose'
 import { resourceIdSchema } from '@/lib/mobile-api/contracts'
 import { mobileSuccess } from '@/lib/mobile-api/http'
 import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
 import { deleteMediaAsset, getMediaAsset } from '@/lib/mobile-api/media-service'
+import { createOrdinaryMediaDisposal } from '@/lib/mobile-api/ordinary-media-disposal'
 import { createMobileRouteWithContext } from '@/lib/mobile-api/route'
 import { createSupabaseMediaDependencies } from '@/lib/mobile-api/supabase-media'
 
@@ -33,7 +35,12 @@ export const DELETE = createMobileRouteWithContext<MediaRouteContext>(
     return executeSupabaseIdempotent(context, { media_asset_id: id }, async () =>
       mobileSuccess(
         await deleteMediaAsset(
-          createSupabaseMediaDependencies(context.supabase, { reevaluationSchema: true }),
+          createSupabaseMediaDependencies(context.supabase, {
+            reevaluationSchema: true,
+            ...(conversationMediaUploadTicketsEnabled()
+              ? { ordinaryDisposals: createOrdinaryMediaDisposal(context.supabase) }
+              : {}),
+          }),
           context.auth.userId,
           id,
         ),

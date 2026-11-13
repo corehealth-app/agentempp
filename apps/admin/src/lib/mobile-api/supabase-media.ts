@@ -311,6 +311,7 @@ export function createSupabaseMediaDependencies(
     signupPhotos?: boolean
     reevaluationSchema?: true
     ordinaryUploadTickets?: { storageOrigin: string }
+    ordinaryDisposals?: MediaServiceDependencies['ordinaryDisposals']
   } = {},
 ): MediaServiceDependencies {
   const ordinaryUploadTickets = options.ordinaryUploadTickets
@@ -323,6 +324,7 @@ export function createSupabaseMediaDependencies(
       options.reevaluationSchema === true && options.signupPhotos !== true,
     ),
     storage: createStorage(supabase),
+    ...(options.ordinaryDisposals ? { ordinaryDisposals: options.ordinaryDisposals } : {}),
     ...(ordinaryUploadTickets
       ? {
           ordinaryUploads: {

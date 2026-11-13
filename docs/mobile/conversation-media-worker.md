@@ -42,9 +42,10 @@ cleanup obligation before giving the worker a leased Storage task. Missing
 schema fails before bytes. Body, gym, legacy meal photos and plan documents do
 not enter this schedule. The old generic factory keeps its original ordering.
 
-A successful Storage removal acknowledges a sweep, **not final disposal**.
-Already-issued uploads and old build-17/R95 signing requests may still recreate
-bytes. Their durable manifests remain eligible after catalogue deletion; leases
+Payload revocation acknowledges a sweep, **not final disposal**.
+The verified non-upsert barrier blocks later uploads while it remains present.
+Untracked old issuers and immutable unversioned removers remain part of the final
+barrier lifecycle qualification. Their durable manifests remain eligible after catalogue deletion; leases
 and oldest-visit ordering yield to other assets, and uncertain/failed requests
 retain retry obligations. The manifest survives catalogue deletion and holds no
 caption or model output. Current API code also refuses new expired ordinary
@@ -158,6 +159,60 @@ part of issuance-drain qualification; a source census does not retire them.
 Generic expiry excludes already deleted catalogue rows; ordinary expiry closes
 those rows before Storage work. Replaying an explicit media delete for such a
 row returns without removing its barrier. Account purge now preserves barriers.
-An already-running old unversioned remover, metadata-mismatch cleanup and final
-marker settlement still need complete activation/drain qualification. No source
+R111 now routes current explicit deletion and metadata-mismatch cleanup through
+the shared version-aware primitive. Already-running old unversioned removers and
+final marker settlement still need complete activation/drain qualification. No source
 or local test result here supersedes that gate.
+
+## Explicit deletion and upload mismatch (R111, source only)
+
+The owned DELETE and upload-completion transports opt into an ordinary disposal
+port under the unchanged exact staging protocol gate. They construct the real
+adapter only in those two transports; the common Supabase factory only forwards
+that optional port. Clinical and generic consumers do not gain an unconditional
+new RPC dependency. Missing schema, a busy lease, a foreign claim or an uncertain
+Storage result fails without falling back to plain-path removal.
+
+The new backend-only `claim_conversation_media_disposal` RPC enrolls the original
+owner/path in the same independent debt, closes the catalogue and then returns an
+exclusive lease. It never steals a live worker claim. A new attempt can resume a
+completed/expired lease, including after the catalogue disappears. Expiry,
+account cleanup and explicit disposal use the same claim/ack semantics. No SQL
+writes Storage objects or claims final issuance drain.
+
+The neutral `@mpp/core/conversation-media-revocation` primitive contains the same
+closed inspection and version-targeted revoke/seal algorithm previously used by
+the expiry worker. It has no SDK, environment or job imports. Both the worker and
+the API bind its ports to the real SDK. Already installed zero-byte barriers are
+inspected and preserved; lost responses keep durable debt. The API acknowledges
+only after the inspection succeeds, then rereads the authoritative closed row
+before returning deletion success. A metadata mismatch uses the same mechanism
+and still returns the original 422 mismatch result. Other media retain their
+existing behavior. No food/workout fact, receipt or XP writer is changed.
+
+Local qualification includes actual SDK serialization with synthetic responses,
+seven behavioral RED-to-GREEN cases, the existing 22 expiry/SDK cases and 22 new
+rollback assertions. The processing fixture was corrected to satisfy all
+existing catalogue constraints; no constraint or production rule was relaxed.
+Connected photo/audio processing, real deletion through these new API paths,
+legacy issuer/remover retirement, final marker settlement and release remain
+separate gates. Five additive migrations (R105/R106/R108/R110/R111) are not
+activated merely by this source change.
+
+### Build certificate continuation
+
+The BFF certificate pins the complete two disposal handlers and their shared
+3554-byte primitive/SDK adapter, with all three new RPC markers confined to those
+two entries. The common factory differs by exactly one 66-byte optional-port
+spread; removing it reconstructs its complete previously certified body. The
+media service differs by exactly 385 inserted bytes for the two disposal
+branches; removing those reconstructs its complete prior compiled body.
+Thirteen other source functions, including upload creation, remain identical.
+
+Webpack factors five reviewed modules into one new shared file for exactly three
+media entries: three literal prior bodies, the changed/reversible media service,
+and a 574-byte pure flag module from unchanged source. The upload source remains
+identical; its framework entry is repinned after this extraction. Historical
+counts project only that proven file and its three edges; raw global counts and
+forbidden worker/admin/Stripe/action scans continue to inspect the entire build.
+No whole namespace or changed body is exempted from verification.

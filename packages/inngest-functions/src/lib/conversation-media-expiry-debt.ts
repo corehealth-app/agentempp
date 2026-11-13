@@ -1,26 +1,12 @@
+import {
+  conversationMediaRevocationAckSchema as ack,
+  conversationMediaRevocationClaimSchema as item,
+  revokeConversationMediaPayload,
+} from '@mpp/core/conversation-media-revocation'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MediaRetentionDependencies } from '../functions/media-retention-cleanup.js'
 
-const uuid = z
-  .string()
-  .uuid()
-  .refine((v) => v === v.toLowerCase())
-const item = z
-  .object({
-    asset_id: uuid,
-    user_id: uuid,
-    kind: z.enum(['conversation_photo', 'audio_note']),
-    bucket_id: z.enum(['meal-photos', 'audio-notes']),
-    object_path: z.string().min(1).max(512),
-    claim_token: uuid,
-  })
-  .strict()
-  .refine(
-    (v) =>
-      v.bucket_id === (v.kind === 'conversation_photo' ? 'meal-photos' : 'audio-notes') &&
-      new RegExp(`^${v.user_id}/${v.asset_id}\\.[a-z0-9]+$`).test(v.object_path),
-  )
 const page = z
   .object({
     schema: z.literal('conversation.media-expiry-page.v1'),
@@ -28,38 +14,6 @@ const page = z
     has_more: z.boolean(),
   })
   .strict()
-const ack = z
-  .object({
-    schema: z.literal('conversation.media-expiry-ack.v1'),
-    asset_id: uuid,
-    user_id: uuid,
-    claim_token: uuid,
-    state: z.literal('waiting_for_issuance_drain'),
-  })
-  .strict()
-const revocationState = z
-  .object({
-    schema: z.literal('conversation.media-revocation-state.v1'),
-    asset_id: uuid,
-    user_id: uuid,
-    claim_token: uuid,
-    bucket_id: z.enum(['meal-photos', 'audio-notes']),
-    object_path: z.string().min(1).max(512),
-    bucket_private: z.literal(true),
-    versioning: z.literal('DISABLED'),
-    mime_type: z.enum(['image/jpeg', 'audio/mp4']),
-    state: z.enum(['absent', 'empty', 'payload']),
-    size_bytes: z.number().int().min(0).max(26214400).nullable(),
-    object_version: uuid.nullable(),
-  })
-  .strict()
-  .refine((v) =>
-    v.state === 'absent'
-      ? v.size_bytes === null && v.object_version === null
-      : v.state === 'empty'
-        ? v.size_bytes === 0 && v.object_version !== null
-        : v.size_bytes !== null && v.size_bytes > 0 && v.object_version !== null,
-  )
 /** SQL first commits a private cleanup obligation and closes the catalogue.
  * A non-upsert empty object prevents later writes without retaining the payload.
  * Neither that object nor an acknowledgment proves final ticket-drain/disposal.
@@ -75,26 +29,6 @@ export function createConversationMediaExpiryDependencies(
   async function invoke(name: string, args: Record<string, unknown>) {
     const result = await api.rpc(name, args)
     if (!result || result.error !== null) throw Error('Conversation media expiry unavailable')
-    return result.data
-  }
-  async function inspect(x: z.infer<typeof item>) {
-    const result = revocationState.safeParse(
-      await invoke('inspect_conversation_media_payload_revocation', {
-        p_asset_id: x.asset_id,
-        p_user_id: x.user_id,
-        p_claim_token: x.claim_token,
-      }),
-    )
-    if (
-      !result.success ||
-      result.data.asset_id !== x.asset_id ||
-      result.data.user_id !== x.user_id ||
-      result.data.claim_token !== x.claim_token ||
-      result.data.bucket_id !== x.bucket_id ||
-      result.data.object_path !== x.object_path ||
-      result.data.mime_type !== (x.kind === 'conversation_photo' ? 'image/jpeg' : 'audio/mp4')
-    )
-      throw Error('Conversation media revocation unavailable')
     return result.data
   }
   return {
@@ -147,34 +81,35 @@ export function createConversationMediaExpiryDependencies(
         if (!x) throw Error('Conversation media expiry claim unavailable')
         sealed.delete(x.asset_id)
         try {
-          const before = await inspect(x)
-          // Removing a pre-existing barrier would reopen the capability's path.
-          if (before.state !== 'empty') {
-            const storage = client.storage.from(bucketId)
-            if (before.state === 'payload') {
-              // The pinned SDK serializes prefixes unchanged. Its string-only
-              // types predate Storage's {path,versionId} DELETE HTTP contract.
-              // Delete only the inspected version: a stale job must never erase
-              // a newer empty barrier installed while this request was paused.
-              const versioned = storage as unknown as {
+          await revokeConversationMediaPayload(x, {
+            inspect: () =>
+              invoke('inspect_conversation_media_payload_revocation', {
+                p_asset_id: x.asset_id,
+                p_user_id: x.user_id,
+                p_claim_token: x.claim_token,
+              }),
+            async removeVersion(version) {
+              // SDK forwards the versioned HTTP prefix unchanged; never fall
+              // back to an unversioned path that could erase a newer barrier.
+              const storage = client.storage.from(bucketId) as unknown as {
                 remove(
                   paths: Array<{ path: string; versionId: string }>,
                 ): PromiseLike<{ error: unknown }>
               }
-              if (!before.object_version) throw Error('Object version unavailable')
-              const { error } = await versioned.remove([
-                { path: objectPath, versionId: before.object_version },
-              ])
+              const { error } = await storage.remove([{ path: objectPath, versionId: version }])
               if (error) throw Error('Removal failed')
-            }
-            const { error } = await storage.upload(objectPath, new Uint8Array(0), {
-              upsert: false,
-              contentType: before.mime_type,
-              cacheControl: '0',
-            })
-            if (error) throw Error('Barrier write uncertain')
-            if ((await inspect(x)).state !== 'empty') throw Error('Barrier not observed')
-          }
+            },
+            async installEmpty(mimeType) {
+              const { error } = await client.storage
+                .from(bucketId)
+                .upload(objectPath, new Uint8Array(0), {
+                  upsert: false,
+                  contentType: mimeType,
+                  cacheControl: '0',
+                })
+              if (error) throw Error('Barrier write uncertain')
+            },
+          })
           sealed.add(x.asset_id)
         } catch {
           // Preserve the debt. The next claim inspects first, including after a

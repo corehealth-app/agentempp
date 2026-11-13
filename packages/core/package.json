@@ -11,6 +11,7 @@
     "./progress": "./src/progress-calc.ts",
     "./nutrition": "./src/nutrition.ts",
     "./types": "./src/types.ts",
+    "./conversation-media-revocation": "./src/conversation-media-revocation.ts",
     "./conversation-photo-purpose": "./src/conversation-photo-purpose.ts",
     "./health-check": "./src/health-check-contracts.ts",
     "./reevaluation-form": "./src/reevaluation-form-contracts.ts",

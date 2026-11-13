@@ -4,6 +4,7 @@ export { inngest } from './client.js'
 import { bufferListenerFn } from './functions/buffer-listener.js'
 import { coachContentPackActivationFn } from './functions/coach-content-pack-activation.js'
 import { conversationMediaRetentionCleanupFn } from './functions/conversation-media-retention-cleanup.js'
+import { conversationUserDeletionPurgerFn } from './functions/conversation-user-deletion-purger.js'
 import { dailyAuditFn } from './functions/daily-audit.js'
 import { dailyCloserFn } from './functions/daily-closer.js'
 import { dailyGapCheckerFn } from './functions/daily-gap-checker.js'
@@ -74,7 +75,7 @@ const FUNCTION_SETS = {
     mediaAssetProcessingFn,
     reevaluationPhotoDispositionCleanupFn,
     conversationMediaRetentionCleanupFn,
-    userDeletionPurgerFn,
+    conversationUserDeletionPurgerFn,
   ],
 } as const
 
@@ -82,6 +83,7 @@ type ServedFunction =
   | (typeof allFunctions)[number]
   | typeof reevaluationPhotoDispositionCleanupFn
   | typeof conversationMediaRetentionCleanupFn
+  | typeof conversationUserDeletionPurgerFn
 export function functionsForSet(name: string | undefined): readonly ServedFunction[] {
   if (name === undefined || name === '') return allFunctions
   const selected = (FUNCTION_SETS as Record<string, readonly ServedFunction[]>)[name]
@@ -95,6 +97,7 @@ export {
   bufferListenerFn,
   coachContentPackActivationFn,
   conversationMediaRetentionCleanupFn,
+  conversationUserDeletionPurgerFn,
   dailyAuditFn,
   dailyCloserFn,
   dailyGapCheckerFn,

@@ -2,7 +2,23 @@
 
 The approved photo/audio chat uses the existing processing worker and private
 Storage. Local tests and a READY deployment do not establish connected delivery.
-Distributed build 17 remains text-only until a qualified successor is installed.
+Distributed build 18 remains text-only; its internal release does not qualify
+photo/audio. Older numbered sections below record their historical checkpoints.
+
+## Account-purge execution boundary — R124
+
+The `media-conversation-staging` roster selects a dedicated account-purge
+callback. It retains the scheduler ID `user-deletion-purger` and the existing
+bounded purge algorithm, including ordinary-media preflight and retained empty
+barriers. Before constructing a privileged client, inside the durable step it
+rechecks the exact staging set and effective Supabase origin. A callback selected
+earlier refuses execution if those settings change; it cannot fall back to the
+generic account purger. Errors expose no private provider details.
+
+The production/all roster still selects the original callback, and neither
+older restricted media roster gains account deletion. This source qualification
+does not activate the four-function staging roster or certify actual account
+deletion, old-remover/upload drain, scheduled disposal or native media release.
 
 ## Existing provider configuration qualification — R117
 

@@ -6,7 +6,7 @@ import { prepareConversationMealSourceLabels } from './conversation-meal-source-
 function photoReport(
   report = 'Acabei de almoçar',
   tail = 'esse prato.',
-  kind: 'meal_photo' | 'audio_note' = 'meal_photo',
+  kind: 'conversation_photo' | 'meal_photo' | 'audio_note' = 'conversation_photo',
   unit: 'media_caption' | 'media_context' = 'media_context',
 ) {
   const id = '10000000-0000-4000-8000-000000000001',

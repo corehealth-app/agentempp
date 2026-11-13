@@ -537,7 +537,7 @@ function certifyStructuredMealHelperT51() {
     'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    '50d604e2c9c48c7c134bcbda298f55c779682c1b0f423fd7e5bd78d1b2366baa',
+    '5d3e6642ebb177b0959730180a0246e067bf218908cce2f4618fea48b7ac42b2',
   )
   // R80 adds closed enum/count observations only for completed ambiguities.
   // R81 adds closed screening reason codes and JSON encoding of this safe projection.

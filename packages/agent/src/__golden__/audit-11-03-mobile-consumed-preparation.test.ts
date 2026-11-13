@@ -100,6 +100,16 @@ const foods = [
     fat_g: 9.12,
     fiber_g: 7.82,
   },
+  {
+    id: 279,
+    name_pt: 'Farinha, de mandioca, torrada',
+    category: 'Verduras, hortaliças e derivados',
+    kcal_per_100g: 365.27,
+    protein_g: 1.23,
+    carbs_g: 89.19,
+    fat_g: 0.29,
+    fiber_g: 6.54,
+  },
 ].map((row) => ({ ...row, country_code: 'BR', similarity: 0.6 }))
 
 type Food = (typeof foods)[number]
@@ -730,5 +740,57 @@ describe('mobile consumed prepared-food reference — actual ordinary-photo faro
     )
     expect(result.items[0]).toMatchObject({ kcal: 0, source: 'user_kcal' })
     expect(state.calls).not.toContain('mandioca, farofa, temperada')
+  })
+})
+
+describe('mobile reference for ordinary-photo cassava flour', () => {
+  it.each([
+    'farinha de mandioca',
+    'farinha de mandioca torrada',
+  ])('discloses the verified toasted reference for %s without inventing cooked evidence', async (food_name) => {
+    const result = await calcMealMacros(
+      database().client,
+      [{ food_name, quantity_g: 50 }],
+      'BR',
+      undefined,
+      { ...POLICY, preparationAnnotations: 'consumed.preparation.v1' },
+    )
+    expect(result.items[0]).toMatchObject({
+      food_name: 'farinha de mandioca torrada',
+      matched_taco_id: 279,
+      quantity_g: 50,
+      kcal: 182.6,
+      protein_g: 0.61,
+      carbs_g: 44.59,
+      fat_g: 0.14,
+      fiber_g: 3.27,
+    })
+    expect(result.user_warnings.join(' ')).toMatch(/referência estimada/)
+    expect(result.preparation_annotations).toEqual([])
+  })
+  it.each([
+    { missing: 279 },
+    { changed: 279 },
+  ])('refuses missing or drifted flour reference instead of pricing generic150kcal: %j', async (options) => {
+    await expect(
+      calcMealMacros(
+        database(options).client,
+        [{ food_name: 'farinha de mandioca', quantity_g: 50 }],
+        'BR',
+        undefined,
+        POLICY,
+      ),
+    ).rejects.toThrow('consumed_food_reference_unavailable')
+  })
+  it.each([
+    'farinha de mandioca crua',
+    'farinha de milho',
+    'farinha de mandioca Yoki',
+  ])('does not discard explicit variant or brand %s', async (food_name) => {
+    const state = database()
+    const input = [{ food_name, quantity_g: 50 }]
+    const old = await calcMealMacros(state.client, input, 'BR')
+    expect(await calcMealMacros(state.client, input, 'BR', undefined, POLICY)).toEqual(old)
+    expect(state.calls).not.toContain('farinha, de mandioca, torrada')
   })
 })

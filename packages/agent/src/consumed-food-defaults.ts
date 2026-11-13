@@ -71,6 +71,17 @@ export const CONSUMED_FOOD_DEFAULTS: readonly ConsumedFoodDefault[] = [
     status: 'confirmation_pending',
     assumption: 'prepared_reference',
   },
+  {
+    said: ['farinha de mandioca', 'farinha de mandioca torrada'],
+    shown_as: 'farinha de mandioca torrada',
+    catalog_name: 'Farinha, de mandioca, torrada',
+    source_ref: 'TACO4:122',
+    per_100g: { kcal: 365.27, protein_g: 1.23, carbs_g: 89.19, fat_g: 0.29 },
+    stated_on:
+      '13/11/2026 — referência estimada e editável para o acompanhamento preparado; não afirma que o preparo foi observado',
+    status: 'confirmation_pending',
+    assumption: 'prepared_reference',
+  },
 ]
 
 export function consumedFoodDefault(name: string, country: string): ConsumedFoodDefault | null {

@@ -1995,3 +1995,17 @@ describe('ordinary-photo catalog naming: prepared farofa reference', () => {
     expect(result.inputs[0]?.calculation_input).toEqual({ food_name: 'farofa', quantity_g: 80 })
   })
 })
+
+describe('second actual public-photo analysis wording', () => {
+  it('qualifies cassava flour as its own reference without equating it to farofa', async () => {
+    const f = visualFixture([
+      { name: 'feijão preto cozido', quantity_g_estimate: 150, confidence: 0.9 },
+      { name: 'farinha de mandioca', quantity_g_estimate: 50, confidence: 0.85 },
+    ])
+    const result = prepared(await materialize(f, db()))
+    expect(result.inputs.map((x) => x.calculation_input)).toEqual([
+      { food_name: 'feijão preto cozido', quantity_g: 150 },
+      { food_name: 'farinha de mandioca', quantity_g: 50 },
+    ])
+  })
+})

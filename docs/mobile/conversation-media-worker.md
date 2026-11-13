@@ -84,6 +84,11 @@ issuers drained, so the existing `legacy_untracked` debt remains unsettled.
 Local rollback/SDK tests qualify these contracts only; connected Storage and
 multi-session timing, scheduler and account-deletion lifecycle remain gates.
 
+The [connected Storage revocation characterization](conversation-storage-revocation-qualification.md)
+records a real empty-object/non-upsert conflict test and its QA closeout. It is
+a candidate barrier for the legacy issuance problem, not an activated cleanup
+strategy or proof of concurrent/final disposal.
+
 ## Publication and acceptance
 
 Reuse worker project `prj_0SRds3zTc57EB0sExjYPygKGEgBx` and BFF project

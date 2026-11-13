@@ -10,14 +10,15 @@ import UIKit
 /// `RealAccountSampleDataTests.accessibilityTree` does), and the node keeps
 /// the identifier TOGETHER with its label and frame.
 ///
-/// What it cannot read: the content of a SwiftUI `ScrollView`. Measured on
+/// Older runtimes did not expose the content of a SwiftUI `ScrollView`. Measured on
 /// 2026-10-11 with this walk and with the two older ones — a step drawn by
 /// itself reads whole, the same step inside a `ScrollView` reads as zero
 /// nodes, with or without a `NavigationStack`, as a bare view or at the root
 /// of its own window. So a step is hosted by itself, and of the sign-up
-/// container the walk reads exactly what sits OUTSIDE the scrolling column
-/// (the column itself is read by the UI tests and, as geometry, through
-/// `Host.scrollViews()`).
+/// container the old walk read only what sat outside the scrolling column.
+/// Current runtimes expose the column too. Callers measuring fixed commands
+/// explicitly exclude its native/AX subtree; geometry stays independently
+/// measured through `Host.scrollViews()`.
 @MainActor
 enum SignUpRenderingProbe {
     struct Node: CustomStringConvertible {
@@ -74,11 +75,12 @@ enum SignUpRenderingProbe {
             controller.view.layoutIfNeeded()
         }
 
-        func nodes() -> [Node] {
+        func nodes(excludingScrollingContent: Bool = false) -> [Node] {
             settle()
             UIAccessibility.post(notification: .screenChanged, argument: controller.view)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-            return SignUpRenderingProbe.nodes(in: controller.view)
+            return SignUpRenderingProbe.nodes(in: controller.view,
+                                              excludingScrollingContent: excludingScrollingContent)
         }
 
         /// Pure observation of the actual hosting view and its UIWindow.
@@ -152,12 +154,35 @@ enum SignUpRenderingProbe {
         return host.nodes()
     }
 
-    static func nodes(in root: UIView) -> [Node] {
+    static func nodes(in root: UIView, excludingScrollingContent: Bool = false) -> [Node] {
         var nodes: [Node] = []
         var visited: Set<ObjectIdentifier> = []
+        var excluded: Set<ObjectIdentifier> = []
+        func exclude(_ object: NSObject, depth: Int = 0) {
+            guard depth < 48, excluded.insert(ObjectIdentifier(object)).inserted else { return }
+            if let elements = object.accessibilityElements {
+                for case let element as NSObject in elements { exclude(element, depth: depth + 1) }
+            } else {
+                let count = object.accessibilityElementCount()
+                if count > 0 && count < 2_000 {
+                    for index in 0..<count {
+                        if let element = object.accessibilityElement(at: index) as? NSObject {
+                            exclude(element, depth: depth + 1)
+                        }
+                    }
+                }
+            }
+            (object as? UIView)?.subviews.forEach { exclude($0, depth: depth + 1) }
+        }
+        func findScrollingSubtrees(_ view: UIView) {
+            if view is UIScrollView { exclude(view) }
+            else { view.subviews.forEach(findScrollingSubtrees) }
+        }
+        if excludingScrollingContent { findScrollingSubtrees(root) }
         let identifierSelector = NSSelectorFromString("accessibilityIdentifier")
         func collect(_ object: NSObject, depth: Int = 0) {
-            guard depth < 48, visited.insert(ObjectIdentifier(object)).inserted else { return }
+            guard depth < 48, !excluded.contains(ObjectIdentifier(object)),
+                  visited.insert(ObjectIdentifier(object)).inserted else { return }
             var identifier = ""
             if object.responds(to: identifierSelector),
                let value = object.perform(identifierSelector)?.takeUnretainedValue() as? String {

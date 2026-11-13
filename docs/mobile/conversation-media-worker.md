@@ -4,6 +4,32 @@ The approved photo/audio chat uses the existing processing worker and private
 Storage. Local tests and a READY deployment do not establish connected delivery.
 Distributed build 17 remains text-only until a qualified successor is installed.
 
+## Native unit qualification — R116
+
+The full `BodyFlowTests` target passed 3,486 executions with zero failures and
+zero skipped tests on iPhone 17 Pro / iOS 26.5, using normal local ad-hoc signing.
+The preceding unsigned test package failed 30 Keychain-dependent cases, including
+explicit OSStatus -34018 checks. No assertion or production Keychain guard was
+relaxed: the signed rerun used the same source and included every unit test.
+This count includes parameterized executions, not 3,486 newly added tests.
+
+The ten rendering methods previously failing at R114 were also reproduced before
+correction. The password probe now distinguishes disclosed static text from the
+native secure field's masked accessibility value. It additionally checks that
+hidden fields never expose the synthetic plaintext. Fixed-command measurements
+now explicitly exclude the native scroll subtree, which current runtimes expose
+in the accessibility tree. Boundary tests distinguish identical controls inside
+and outside that subtree and reject a misplaced top Back command. Existing
+geometry, focus, native-control identity and pixel checks remain. The subscription
+icon uses the central vocabulary with the same `creditcard` glyph.
+
+For Keychain-dependent unit runs, keep `CODE_SIGN_IDENTITY=-`,
+`CODE_SIGNING_ALLOWED=YES` and `CODE_SIGNING_REQUIRED=NO`; no Apple account login
+or distribution certificate is involved. `CODE_SIGNING_ALLOWED=NO` is not an
+equivalent test environment. The result does not qualify the separate UI-test
+target, physical accessibility/performance, provider identity, scheduled media
+retention, TestFlight or Roberto acceptance. R105's retention finding remains open.
+
 ## Cold canonical history compatibility — R114
 
 Connected native QA found that a saved neutral-media child in a V1 canonical

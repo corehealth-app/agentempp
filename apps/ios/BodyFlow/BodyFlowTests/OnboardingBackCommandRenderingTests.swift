@@ -68,7 +68,7 @@ final class OnboardingBackCommandRenderingTests: XCTestCase {
                 let host = SignUpRenderingProbe.host(container(model, language), width: 393)
                 defer { host.detach() }
                 let column = try scrollingColumn(host, context)
-                let nodes = host.nodes()
+                let nodes = host.nodes(excludingScrollingContent: true)
                 let fixed = fixedCommands(nodes)
                 XCTAssertEqual(
                     fixed.count, 1,
@@ -103,14 +103,14 @@ final class OnboardingBackCommandRenderingTests: XCTestCase {
             distance, BodyFlowSpacing.minimumTapTarget,
             "“Sua rotina” must be longer than the screen for this test to prove anything"
         )
-        let before = host.nodes()
+        let before = host.nodes(excludingScrollingContent: true)
         let topBefore = try XCTUnwrap(
             fixedCommands(before).first { $0.identifier == Self.topIdentifier },
             "No way back outside the scrolling column of “Sua rotina”. Outside it: \(before)"
         )
 
         column.scroll.setContentOffset(CGPoint(x: 0, y: distance), animated: false)
-        let after = host.nodes()
+        let after = host.nodes(excludingScrollingContent: true)
         XCTAssertEqual(column.scroll.contentOffset.y, distance, accuracy: 1, "The column did not keep the scroll")
         let topAfter = try XCTUnwrap(
             fixedCommands(after).first { $0.identifier == Self.topIdentifier },
@@ -135,7 +135,7 @@ final class OnboardingBackCommandRenderingTests: XCTestCase {
                     )
                     defer { host.detach() }
                     let column = try scrollingColumn(host, context)
-                    let nodes = host.nodes()
+                    let nodes = host.nodes(excludingScrollingContent: true)
                     let top = try XCTUnwrap(
                         fixedCommands(nodes).first { $0.identifier == Self.topIdentifier },
                         "No way back outside the scrolling column (\(context)). Outside it: \(nodes)"
@@ -182,7 +182,7 @@ final class OnboardingBackCommandRenderingTests: XCTestCase {
         let host = SignUpRenderingProbe.host(container(.preview(step: .welcome)), width: 393)
         defer { host.detach() }
         _ = try scrollingColumn(host, "Boas-vindas")
-        let nodes = host.nodes()
+        let nodes = host.nodes(excludingScrollingContent: true)
         XCTAssertTrue(fixedCommands(nodes).isEmpty, "\(nodes)")
     }
 
@@ -205,19 +205,19 @@ final class OnboardingBackCommandRenderingTests: XCTestCase {
         let host = SignUpRenderingProbe.host(container(model), width: 393)
         defer { host.detach() }
         _ = try scrollingColumn(host, "new acceptance, documents")
-        let first = host.nodes()
+        let first = host.nodes(excludingScrollingContent: true)
         XCTAssertTrue(fixedCommands(first).isEmpty, "\(first)")
 
         await model.continueFromCurrentStep()
         XCTAssertEqual(model.step, .completion)
-        let review = host.nodes()
+        let review = host.nodes(excludingScrollingContent: true)
         XCTAssertEqual(
             fixedCommands(review).map(\.identifier), [Self.topIdentifier],
             "The review of a new acceptance leads back to the documents. Outside the column: \(review)"
         )
         await model.back()
         XCTAssertEqual(model.step, .consent)
-        XCTAssertTrue(fixedCommands(host.nodes()).isEmpty)
+        XCTAssertTrue(fixedCommands(host.nodes(excludingScrollingContent: true)).isEmpty)
     }
 
     /// While the answer of "Concluir cadastro" is unknown the draft is
@@ -233,7 +233,7 @@ final class OnboardingBackCommandRenderingTests: XCTestCase {
         let host = SignUpRenderingProbe.host(container(model), width: 393)
         defer { host.detach() }
         _ = try scrollingColumn(host, "pending completion")
-        let nodes = host.nodes()
+        let nodes = host.nodes(excludingScrollingContent: true)
         XCTAssertTrue(fixedCommands(nodes).isEmpty, "\(nodes)")
     }
 
@@ -249,7 +249,7 @@ final class OnboardingBackCommandRenderingTests: XCTestCase {
         let host = SignUpRenderingProbe.host(container(model), width: 393)
         defer { host.detach() }
         _ = try scrollingColumn(host, "entry message")
-        let nodes = host.nodes()
+        let nodes = host.nodes(excludingScrollingContent: true)
         XCTAssertTrue(fixedCommands(nodes).isEmpty, "\(nodes)")
     }
 

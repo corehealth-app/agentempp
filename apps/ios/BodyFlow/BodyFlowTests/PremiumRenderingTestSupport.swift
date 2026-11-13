@@ -43,6 +43,7 @@ enum PremiumRenderingTestSupport {
         var hint: String = ""
         /// The element's `accessibilityIdentifier`, when it has one.
         var identifier: String = ""
+        var isStaticText: Bool = false
         var description: String { "\(label): button=\(isButton), frame=\(frame)" }
     }
 
@@ -99,7 +100,8 @@ enum PremiumRenderingTestSupport {
                     value: object.accessibilityValue ?? "",
                     hint: object.accessibilityHint ?? "",
                     identifier: (object as? UIAccessibilityIdentification)?
-                        .accessibilityIdentifier ?? ""
+                        .accessibilityIdentifier ?? "",
+                    isStaticText: object.accessibilityTraits.contains(.staticText)
                 ))
             }
             if let elements = object.accessibilityElements {

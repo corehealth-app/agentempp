@@ -201,7 +201,7 @@ struct ProfileRootView: View {
                 Section {
                     NavigationLink(value: AppRoute.billingPlans) {
                         FeatureActionLabel(title: copy("billing.title"), detail: copy("billing.profile-detail"),
-                            systemImage: "creditcard", showsDisclosureIndicator: false)
+                            systemImage: BodyFlowSymbol.subscription.systemName, showsDisclosureIndicator: false)
                     }
                     .buttonStyle(.bodyFlowRow)
                     .frame(minHeight: BodyFlowSpacing.minimumTapTarget)

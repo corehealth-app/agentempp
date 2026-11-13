@@ -396,7 +396,23 @@ final class AuthPasswordFieldRenderingTests: XCTestCase {
     /// The readable text of the field: not a button, spoken as the field's
     /// own name with the typed text as its value.
     private func shownText(_ probes: [Probe]) -> Probe? {
-        probes.first { !$0.isButton && $0.label == "Senha" && !$0.value.isEmpty }
+        // UIKit exposes a masked, nonempty value for the native secure field.
+        // The disclosed overlay is static text; bullets are not disclosed text.
+        probes.first { $0.isStaticText && !$0.isButton && $0.label == "Senha" && !$0.value.isEmpty }
+    }
+
+    func testHiddenSecureAccessibilityNeverContainsPlaintext() throws {
+        let secret = "Synthetic-visibility-check"
+        let box = EyeBox(text: secret)
+        let live = host(box, .signIn)
+        defer { live.detach() }
+        for _ in 0..<2 {
+            XCTAssertFalse(live.probe().contains { $0.value == secret })
+            XCTAssertTrue(try XCTUnwrap(live.nativeViews(UITextField.self).first).isSecureTextEntry)
+            box.touchEye()
+            XCTAssertEqual(shownText(live.probe())?.value, secret)
+            box.touchEye()
+        }
     }
 
     private func host(_ box: EyeBox, _ form: Form) -> PremiumRenderingTestSupport.LiveAccessibilityHost {

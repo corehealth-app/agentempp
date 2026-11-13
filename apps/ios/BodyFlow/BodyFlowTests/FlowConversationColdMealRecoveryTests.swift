@@ -9,6 +9,61 @@ import Testing
 
 @MainActor @Suite("Cold meal canonical origin recovery", .serialized)
 struct FlowConversationColdMealRecoveryTests {
+  @Test func mediaChildRecoversCurrentFactsAfterColdStartWithoutPublicCommandOrACK() async throws {
+    let f = try await ColdMealRecoveryFixture()
+    defer { f.disk.remove() }
+    var canonical = try journalMediaChildPage()
+    canonical["auth_user_id"] = f.canonical["auth_user_id"]
+    let row = (canonical["items"] as! [[String: Any]])[0]
+    let result = row["result"] as! [String: Any]
+    var group = f.group
+    group["input_hash"] = result["input_hash"]
+    group["original_receipt"] = result["receipt"]
+    await f.install(canonicalPages: ["": try neutralHTTP(canonical)], groupReplies: [f.commandID.uuidString.lowercased(): try neutralHTTP(group)])
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    let loaded = try #require(session.model.currentGroup(commandID: f.commandID))
+    #expect(loaded.originalInputHash == result["input_hash"] as? String)
+    #expect(session.model.mealEditActions(commandID: f.commandID) != nil)
+    #expect(session.model.savedRows.isEmpty && session.model.savedEffectRevision == 0)
+    #expect(session.model.mealEditor?.pendingEntries.isEmpty == true)
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+    await session.close()
+  }
+  @Test func unrelatedMediaChildDoesNotBlockRecoveryOfTextMeal() async throws {
+    let f = try await ColdMealRecoveryFixture()
+    defer { f.disk.remove() }
+    var canonical = try journalMediaChildPage()
+    // This page includes a media-origin child for another command. Its typed
+    // historical source must be readable without becoming a queued command.
+    var media = (canonical["items"] as! [[String: Any]])[0]
+    var original = media["original_command"] as! [String: Any]
+    let id = "10000000-0000-4000-8000-000000000006"
+    original["command_id"] = id
+    let hash = ConversationMealCommand.digest(try JSONSerialization.data(withJSONObject: original, options: [.sortedKeys, .withoutEscapingSlashes]))
+    var result = media["result"] as! [String: Any]
+    var receipt = result["receipt"] as! [String: Any]
+    result["command_id"] = id; result["input_hash"] = hash
+    receipt["command_id"] = id; receipt["input_hash"] = hash
+    receipt["provider_key"] = "conversation.meal/\(canonical["owner_id"]!)/\(id)"
+    result["receipt"] = receipt
+    media["event_id"] = "command/" + id
+    media["original_command"] = original; media["result"] = result
+    canonical["items"] = [media]
+    // Use a separately paginated page so canonical ordering remains intrinsic.
+    canonical["auth_user_id"] = f.canonical["auth_user_id"]
+    canonical["has_more"] = true; canonical["next_cursor"] = "older-owned-page"
+    await f.install(canonicalPages: ["": try neutralHTTP(canonical), "older-owned-page": try neutralHTTP(f.canonical)])
+    let session = try await f.open()
+    await session.model.loadHistory()
+    await session.model.loadCurrentGroup(commandID: f.commandID)
+    #expect(session.model.currentGroup(commandID: f.commandID) != nil)
+    #expect(session.model.mealEditActions(commandID: f.commandID) != nil)
+    #expect(session.model.savedRows.isEmpty && session.model.savedEffectRevision == 0)
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await session.close()
+  }
   #if canImport(UIKit)
     @Test(arguments: [false, true])
     func independentlyRecoveredMealRendersActualPerItemPencil(_ english: Bool) async throws {

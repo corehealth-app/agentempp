@@ -54,14 +54,14 @@ enum FlowConversationHistoryVersion: Sendable { case v1, v2, v3 }
 @MainActor @Observable
 final class FlowConversationModel {
   private struct HistoricalMealOrigin: Sendable {
-    let command: ConversationMealCommand
+    let commandID: UUID
+    let inputHash: String
     let ownerID: UUID
     let epoch: UUID
     let admittedAt: String
     let receipt: SavedConversationMealCommandResultSnapshot.Receipt
-    var inputHash: String { command.inputHash }
     func matches(_ group: ConversationMealGroupSnapshot) -> Bool {
-      group.commandID == command.commandID && group.ownerID == ownerID && group.epoch == epoch
+      group.commandID == commandID && group.ownerID == ownerID && group.epoch == epoch
         && group.originalInputHash == inputHash && group.originalReceipt.report == receipt
         && ConversationProtocolInstant(group.admittedAt) == ConversationProtocolInstant(admittedAt)
     }
@@ -1210,7 +1210,7 @@ final class FlowConversationModel {
     guard let entry = coldMealCandidate(commandID: commandID),
       let origin = historicalMealOrigins[commandID],
       let identity = acceptedIdentity, case .meal(let meal) = entry.record,
-      origin.command.commandID == commandID,
+      origin.commandID == commandID,
       origin.receipt.commandID == commandID.uuidString.lowercased(),
       origin.receipt.inputHash == origin.inputHash,
       origin.ownerID == identity.ownerID, origin.epoch == identity.epoch,
@@ -1279,7 +1279,13 @@ final class FlowConversationModel {
             previous = row
             if case .command(let original) = row, case .saved(let saved) = original.result {
               origins[original.originalCommand.commandID] = .init(
-                command: original.originalCommand, ownerID: context.ownerID, epoch: context.epoch,
+                commandID: original.originalCommand.commandID, inputHash: original.originalCommand.inputHash,
+                ownerID: context.ownerID, epoch: context.epoch,
+                admittedAt: saved.admittedAt, receipt: saved.receipt)
+            } else if case .mediaIntake(let original) = row, case .saved(let saved) = original.result {
+              origins[original.origin.commandID] = .init(
+                commandID: original.origin.commandID, inputHash: original.origin.inputHash,
+                ownerID: context.ownerID, epoch: context.epoch,
                 admittedAt: saved.admittedAt, receipt: saved.receipt)
             }
           }

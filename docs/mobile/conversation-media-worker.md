@@ -4,6 +4,30 @@ The approved photo/audio chat uses the existing processing worker and private
 Storage. Local tests and a READY deployment do not establish connected delivery.
 Distributed build 17 remains text-only until a qualified successor is installed.
 
+## Cold canonical history compatibility — R114
+
+Connected native QA found that a saved neutral-media child in a V1 canonical
+page invalidated cold recovery of every current meal on that page. The server
+correctly preserves the internal `report_actual_record` source and versioned
+`intake_origin`; the iOS reader previously parsed every source as an outbound
+public `ConversationMealCommand`, which correctly refuses that internal form.
+
+The reader now has a separate closed, read-only media-child entry. It verifies
+the canonical source hash, epoch, receipt, ordering and current-group binding.
+It is never an outbound command, queue ticket or delivery ACK. Cold recovery
+uses this historical identity to read current official facts; it does not replay
+the record. Existing public command admission remains unchanged. Regression
+coverage includes media and neighboring text origins, malformed sources,
+closed-day actions, current edits, Auth/patient isolation and durable outboxes.
+
+The temporary diagnostic decoded both actual QA pages (25 and 13 entries);
+three internal media children reproduced the original failure. Its source and
+RED/GREEN evidence are retained in the R114 local evidence directory. Permanent
+synthetic tests have no dependency on those local QA files. Full-suite native
+qualification is still partial: ten rendering failures reproduce in the frozen
+pre-change package, and the broad run did not complete. Scoped passing tests
+do not supersede the remaining release, retention and physical-device gates.
+
 ## Connected synthetic audio qualification — R112
 
 On 2026-11-13 a five-second, locally synthesized Portuguese audio note completed
@@ -335,3 +359,13 @@ four differences: the same two worker configuration modules in two deployments,
 both exactly matching the preserved R288 publication overlay. These are uploaded
 source attestations, not hosted function-binary attestations or proof that all
 previously issued upload capabilities and unversioned removers have drained.
+
+### Owner decision after R113
+
+The owner subsequently approved retention of empty technical markers while old
+versions/capabilities remain. The accepted scope and limits are recorded in
+[the marker policy](conversation-media-marker-policy.md). This changes the
+retention decision, not the technical readiness verdict: payload disposal,
+old-remover stability, bounded cleanup, connected photo/account-deletion QA and
+release qualification remain required. R113's pending-decision text above is its
+historical checkpoint, not the current business decision.

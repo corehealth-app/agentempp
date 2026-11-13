@@ -65,18 +65,28 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
     let at: String
     let result: ConversationMealEditResultSnapshot
   }
+  struct MediaIntakeEntry: Sendable {
+    let eventID: String
+    let at: String
+    let origin: ConversationJournalMediaOrigin
+    let result: ConversationMealCommandReply
+    let terminalReceipt: ConversationMealDecisionReceiptSnapshot?
+  }
   enum Entry: Sendable {
     case command(CommandEntry)
+    case mediaIntake(MediaIntakeEntry)
     case edit(EditEntry)
     var eventID: String {
       switch self {
       case .command(let v): v.eventID
+      case .mediaIntake(let v): v.eventID
       case .edit(let v): v.eventID
       }
     }
     var at: String {
       switch self {
       case .command(let v): v.at
+      case .mediaIntake(let v): v.at
       case .edit(let v): v.at
       }
     }
@@ -177,10 +187,14 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
     ])
     let sourceValue = try o.required("original_command")
     let originalFields = try sourceValue.object(
-      required: ["command_protocol", "command_id", "kind", "source"], optional: ["meal_type"])
+      required: ["command_protocol", "command_id", "kind", "source"], optional: ["meal_type", "intake_origin"])
     let explicitMealType = try originalFields["meal_type"].map { try $0.string() }
     let source = try sourceValue.data()
-    let command = try ConversationMealCommand(wireBody: source)
+    let media = try originalFields["intake_origin"].map { _ in try ConversationJournalMediaOrigin(sourceValue) }
+    let command = try media == nil ? ConversationMealCommand(wireBody: source) : nil
+    guard let commandID = command?.commandID ?? media?.commandID,
+      let inputHash = command?.inputHash ?? media?.inputHash else { throw ConversationMealEditInvalid.value }
+    if let media { try editCheck(media.epoch == epoch) }
     let result = try o.required("result").decode(ConversationMealCommandReply.self, selection: selection)
     let terminal = try o.required("terminal_receipt").optional {
       try $0.decode(ConversationMealDecisionReceiptSnapshot.self)
@@ -188,15 +202,15 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
     let at = try o.required("at").clock()
     let id = try o.required("event_id").string()
     try editCheck(
-      id == "command/\(command.commandID.uuidString.lowercased())"
+      id == "command/\(commandID.uuidString.lowercased())"
         && editInstant(at) <= editInstant(observedAt))
     switch result {
     case .saved(let saved):
       if let explicitMealType { try editCheck(saved.receipt.mealType.rawValue == explicitMealType) }
       try editCheck(
         saved.ownerID == ownerID.uuidString.lowercased()
-          && saved.commandID == command.commandID.uuidString.lowercased()
-          && saved.inputHash == command.inputHash && saved.epoch == epoch.uuidString.lowercased()
+          && saved.commandID == commandID.uuidString.lowercased()
+          && saved.inputHash == inputHash && saved.epoch == epoch.uuidString.lowercased()
           && terminal == nil)
       try editCheck(
         editInstant(at) == editInstant(saved.admittedAt)
@@ -206,8 +220,8 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
       }
     case .state(let state):
       try editCheck(
-        state.status != .absent && state.ownerID == ownerID && state.commandID == command.commandID
-          && state.inputHash == command.inputHash && state.epoch == epoch)
+        state.status != .absent && state.ownerID == ownerID && state.commandID == commandID
+          && state.inputHash == inputHash && state.epoch == epoch)
       if state.status == .notRecorded {
         guard let terminal else { throw ConversationMealEditInvalid.value }
         try editCheck(
@@ -217,6 +231,10 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
         try editCheck(terminal == nil)
       }
     }
+    if let media {
+      return .mediaIntake(.init(eventID: id, at: at, origin: media, result: result, terminalReceipt: terminal))
+    }
+    guard let command else { throw ConversationMealEditInvalid.value }
     return .command(
       .init(
         eventID: id, at: at, originalCommand: command, result: result, terminalReceipt: terminal))

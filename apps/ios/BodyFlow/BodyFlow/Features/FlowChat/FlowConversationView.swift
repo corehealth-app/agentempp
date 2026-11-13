@@ -448,6 +448,12 @@ struct FlowConversationView: View {
         .padding(BodyFlowSpacing.md)
         .accessibilityIdentifier("conversation.journal.decision")
       }
+    case .mediaIntake(let value):
+      source(value.origin.source)
+      Text(english ? "Historical media report" : "Relato histórico com anexo")
+        .font(BodyFlowTypography.caption)
+      // Historical origin is deliberately not a client command or local ACK.
+      // The V3 conversation reads current facts through its scoped ports.
     case .edit(let value):
       Label(editNotice(value.result.receipt.kind), systemImage: "clock.arrow.circlepath")
         .font(BodyFlowTypography.caption).foregroundStyle(BodyFlowColor.secondaryText)

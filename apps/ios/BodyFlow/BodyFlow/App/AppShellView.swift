@@ -10,6 +10,7 @@ struct AppShellView: View {
     @State private var todayViewModel: TodayViewModel
     @State private var planViewModel: PlanViewModel
     @State private var nutritionViewModel: NutritionWindowModel
+    @State private var trainingViewModel: TrainingWindowModel
     @State private var progressViewModel: ProgressViewModel
     @State private var historyViewModel: HistoryViewModel
     @State private var historyCoordinator: HistoryFeatureCoordinator
@@ -105,6 +106,10 @@ struct AppShellView: View {
             initialValue: PlanViewModel(provider: sessionOwner.plan)
         )
         _nutritionViewModel = State(initialValue: NutritionWindowModel(provider: sessionOwner.nutrition,
+            expectedAuthUserID: UUID(uuidString: userID), isCurrent: { [weak sessionOwner] in
+                sessionOwner?.isInvalidated == false
+            }))
+        _trainingViewModel = State(initialValue: TrainingWindowModel(provider: sessionOwner.training,
             expectedAuthUserID: UUID(uuidString: userID), isCurrent: { [weak sessionOwner] in
                 sessionOwner?.isInvalidated == false
             }))
@@ -671,7 +676,8 @@ struct AppShellView: View {
             NutritionWindowRootView(model: nutritionViewModel,
                 revision: invalidationCenter.revision(for: .today), isSelected: selectedTab == .plan)
         case .register:
-            ConversationalPlanRootView(model: planViewModel, tab: .register, scope: .training, selectedTab: tabSelection)
+            TrainingWindowRootView(model: trainingViewModel, plan: planViewModel,
+                revision: invalidationCenter.revision(for: .today), isSelected: selectedTab == .register)
         case .progress:
             ProgressRootView(model: progressViewModel, selectedTab: tabSelection, clinicalFull: clinicalFullModel,
                 navigationTitle: navigationLayout.title(for: .progress, language: presentationLanguage))

@@ -14,6 +14,7 @@ final class Prompt14SessionOwner {
     let history: any HistoryProviding
     let plan: any PlanProviding
     let nutrition: any NutritionWindowProviding
+    let training: any TrainingWindowProviding
     let currentObjective: (any CurrentObjectiveProviding)?
     let coverLoader: any ContentCoverLoading
     let flowConversation: FlowConversationShellCoordinator?
@@ -44,6 +45,7 @@ final class Prompt14SessionOwner {
     private let historyReference: Prompt14CapabilityReference<any HistoryProviding>
     private let planReference: Prompt14CapabilityReference<any PlanProviding>
     private let nutritionReference: Prompt14CapabilityReference<any NutritionWindowProviding>
+    private let trainingReference: Prompt14CapabilityReference<any TrainingWindowProviding>
     private let objectiveReference: Prompt14CapabilityReference<any CurrentObjectiveProviding>?
     private let progressReference: Prompt14CapabilityReference<any ProgressProviding>
     private let meReference: Prompt14CapabilityReference<any MeProviding>
@@ -82,6 +84,7 @@ final class Prompt14SessionOwner {
         let historyReference = Prompt14CapabilityReference(readerSession?.history ?? dependencies.history)
         let planReference = Prompt14CapabilityReference(readerSession?.plan ?? dependencies.plan)
         let nutritionReference = Prompt14CapabilityReference<any NutritionWindowProviding>(readerSession?.nutrition ?? UnavailableNutritionWindowProvider())
+        let trainingReference = Prompt14CapabilityReference<any TrainingWindowProviding>(readerSession?.training ?? UnavailableTrainingWindowProvider())
         let objectiveReference = (readerSession?.currentObjective ?? dependencies.currentObjective)
             .map { Prompt14CapabilityReference($0) }
         let progressReference = Prompt14CapabilityReference(readerSession?.progress ?? dependencies.progress)
@@ -99,6 +102,7 @@ final class Prompt14SessionOwner {
         self.historyReference = historyReference
         self.planReference = planReference
         self.nutritionReference = nutritionReference
+        self.trainingReference = trainingReference
         self.objectiveReference = objectiveReference
         self.progressReference = progressReference
         self.meReference = meReference
@@ -140,6 +144,7 @@ final class Prompt14SessionOwner {
         history = Prompt14HistoryCapability(gate: gate, reference: historyReference)
         plan = Prompt14PlanCapability(gate: gate, reference: planReference)
         nutrition = Prompt14NutritionCapability(gate: gate, reference: nutritionReference)
+        training = Prompt14TrainingCapability(gate: gate, reference: trainingReference)
         currentObjective = objectiveReference.map { Prompt14ObjectiveCapability(gate: gate, reference: $0) }
         progress = Prompt14ProgressCapability(
             gate: gate,
@@ -331,6 +336,7 @@ final class Prompt14SessionOwner {
             || historyReference.hasValue
             || planReference.hasValue
             || nutritionReference.hasValue
+            || trainingReference.hasValue
             || objectiveReference?.hasValue == true
             || progressReference.hasValue
             || meReference.hasValue
@@ -442,6 +448,7 @@ final class Prompt14SessionOwner {
                 historyReference.release()
                 planReference.release()
                 nutritionReference.release()
+                trainingReference.release()
                 objectiveReference?.release()
                 progressReference.release()
                 meReference.release()
@@ -1016,6 +1023,23 @@ private struct Prompt14NutritionCapability: NutritionWindowProviding {
         try await gate.perform {
             guard let capability = reference.current() else { throw CancellationError() }
             return try await capability.nutritionWindow(date: date)
+        }
+    }
+}
+
+private struct Prompt14TrainingCapability: TrainingWindowProviding {
+    let gate: Prompt14SessionOperationGate
+    let reference: Prompt14CapabilityReference<any TrainingWindowProviding>
+    func rebindTrainingWindow(_ reference: TrainingWindowReadReference, date: String?) async throws -> TrainingWindowSnapshot {
+        try await gate.perform {
+            guard let capability = self.reference.current() else { throw CancellationError() }
+            return try await capability.rebindTrainingWindow(reference, date: date)
+        }
+    }
+    func trainingWindow(date: String?) async throws -> TrainingWindowSnapshot {
+        try await gate.perform {
+            guard let capability = reference.current() else { throw CancellationError() }
+            return try await capability.trainingWindow(date: date)
         }
     }
 }

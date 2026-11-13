@@ -2,11 +2,18 @@
  * composition obtains the scope from actual existing-account clinical reads. */
 
 import { createHash } from 'node:crypto'
-import { addIsoDateDays, getLocalDateString, getLocalDayUtcBounds } from '@mpp/agent'
+import { getLocalDateString, getLocalDayUtcBounds } from '@mpp/agent'
 import { z } from 'zod'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
 import { MobileApiError } from './http'
 import { hashMobileRequest } from './idempotency'
+import {
+  clinicalWindowDates as nutritionWindowDates,
+  type OwnedClinicalWindowScope,
+  parseOwnedClinicalWindowScope,
+} from './owned-clinical-window'
+
+export { clinicalWindowDates as nutritionWindowDates } from './owned-clinical-window'
 
 const uuid = z.string().uuid()
 const clock = z.string().datetime({ offset: true })
@@ -18,41 +25,7 @@ const civil = z
     const d = new Date(`${v}T00:00:00Z`)
     return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === v
   })
-const policySchema = z
-  .object({
-    version: z.literal(1),
-    observed_at: clock,
-    assessment: z.enum(['complete', 'incomplete']),
-    recording_allowed: z.boolean(),
-    pause_weight_loss_guidance: z.boolean(),
-    professional_assessment_recommended: z.boolean(),
-    phase_selection_pending: z.boolean(),
-    target_source: z.enum(['assigned_phase', 'official_only', 'unavailable']),
-    hide: z
-      .object({
-        objective: z.boolean(),
-        calories: z.boolean(),
-        protein: z.boolean(),
-        balance: z.boolean(),
-        block: z.boolean(),
-        budget: z.boolean(),
-      })
-      .strict(),
-  })
-  .strict()
-const scopeSchema = z
-  .object({
-    authUserID: uuid,
-    ownerID: uuid,
-    epoch: uuid,
-    timezone: z.string().min(1).max(100),
-    currentLocalDate: civil,
-    observedAt: clock,
-    binding: z.string().min(1),
-    policy: policySchema,
-  })
-  .strict()
-export type NutritionWindowScope = z.infer<typeof scopeSchema>
+export type NutritionWindowScope = OwnedClinicalWindowScope
 export interface NutritionWindowDependencies {
   observe(): Promise<NutritionWindowScope>
   capture(window: ReturnType<typeof nutritionWindowDates>): Promise<unknown>
@@ -263,22 +236,7 @@ function invalid(): never {
     'A complete nutrition window is unavailable',
   )
 }
-export function nutritionWindowDates(timezone: string, selectedDate: string) {
-  const date = civil.parse(selectedDate)
-  new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date(0))
-  const weekday = (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7
-  const start = addIsoDateDays(date, -weekday)
-  const dates = Array.from({ length: 7 }, (_, i) => addIsoDateDays(start, i))
-  const end = addIsoDateDays(start, 6)
-  return {
-    dates,
-    selectedDate: date,
-    weekStart: start,
-    weekEnd: end,
-    startUTC: getLocalDayUtcBounds(timezone, start).startIso,
-    endUTC: getLocalDayUtcBounds(timezone, end).endExclusiveIso,
-  }
-}
+
 function capture(raw: unknown, owner: string): Capture {
   const parsed = captureSchema.safeParse(raw)
   if (!parsed.success) return invalid()
@@ -373,7 +331,7 @@ export function projectNutritionWindow(
   selectedDate: string | undefined,
   raw: unknown,
 ) {
-  const scope = scopeSchema.parse(rawScope),
+  const scope = parseOwnedClinicalWindowScope(rawScope),
     window = nutritionWindowDates(scope.timezone, selectedDate ?? scope.currentLocalDate),
     value = capture(raw, scope.ownerID)
   if (value.snapshots.some((d) => !window.dates.includes(d.date))) return invalid()
@@ -457,13 +415,13 @@ export async function readNutritionWindow(
 ) {
   const observe = dependencies.observe.bind(dependencies),
     read = dependencies.capture.bind(dependencies)
-  const before = scopeSchema.parse(await observe())
+  const before = parseOwnedClinicalWindowScope(await observe())
   if (before.ownerID !== auth.userId || before.authUserID !== auth.authUserId) return changed()
   const window = nutritionWindowDates(before.timezone, selectedDate ?? before.currentLocalDate)
   const first = capture(await read(window), before.ownerID)
   const second = capture(await read(window), before.ownerID)
   if (version(first) !== version(second)) return changed()
-  const after = scopeSchema.parse(await observe())
+  const after = parseOwnedClinicalWindowScope(await observe())
   if (
     after.ownerID !== before.ownerID ||
     after.authUserID !== before.authUserID ||

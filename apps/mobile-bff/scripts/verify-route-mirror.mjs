@@ -3,8 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedCount = 92
-const expectedHash = 'd59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152'
+const expectedCount = 93
+const expectedHash = '379b260d910f1364041880fb6aab30c458c9a8b511760735a9396aa8a058b5cf'
 const linkedOriginRoute = 'conversation/meal-commands/[commandId]/origin/route.ts'
 const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
 const originsRoute = 'conversation/intakes/route.ts'
@@ -19,6 +19,7 @@ const workoutTransports = new Map([
   ['conversation/workout-commands/[commandId]/route.ts', 'GET'],
 ])
 const nutritionWindowRoute = 'nutrition/window/route.ts'
+const trainingWindowRoute = 'training/window/route.ts'
 const previousCount = 78
 const previousHash = '3ab0b1fdb146ab6a06846b5702cfa70a1a7b997d73b3235655ec248c32f68874'
 const addedReadEditRoutes = new Set([
@@ -200,10 +201,23 @@ if (omissions.length !== 0) fail(`OMITTED_WRAPPERS:${omissions.length}`)
 if (exportMismatches.length !== 0) fail(`EXPORT_MISMATCHES:${exportMismatches.length}`)
 if (sourcePathMismatches.length !== 0) fail(`SOURCE_PATH_MISMATCHES:${sourcePathMismatches.length}`)
 
-for (const [surface, records] of [
+for (const [surface, currentRecords] of [
   ['SOURCE', sources],
   ['WRAPPER', wrappers],
 ]) {
+  const training = currentRecords.find((record) => record.path === trainingWindowRoute)
+  if (JSON.stringify(training?.exports) !== JSON.stringify(['GET', 'dynamic', 'runtime']))
+    fail(`${surface}_TRAINING_EXPORTS`)
+  // Exact new endpoint only: every original92 path+export remains pinned.
+  const records = currentRecords.filter((record) => record.path !== trainingWindowRoute)
+  const beforeTrainingHash = hashRecords(records)
+  console.info(`${surface}_PRIOR92_ROUTE_EXPORT_COUNT=${records.length}`)
+  console.info(`${surface}_PRIOR92_ROUTE_EXPORT_STREAM_SHA256=${beforeTrainingHash}`)
+  if (
+    records.length !== 92 ||
+    beforeTrainingHash !== 'd59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152'
+  )
+    fail(`${surface}_PRE_TRAINING_CHANGED`)
   // T48 adds only the cold-origin GET beside the original intake POST.
   // Freeze the full T47 stream before applying any older historical boundary.
   const beforeLinked = records.filter((record) => record.path !== linkedOriginRoute)

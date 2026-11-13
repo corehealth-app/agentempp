@@ -1,0 +1,71 @@
+{
+  "schema": "training.window.v1",
+  "auth_user_id": "a2222222-2222-4222-8222-222222222222",
+  "owner_id": "a1111111-1111-4111-8111-111111111111",
+  "epoch": "a3333333-3333-4333-8333-333333333333",
+  "timezone": "America/Sao_Paulo",
+  "current_local_date": "2026-11-04",
+  "selected_local_date": "2026-11-04",
+  "week_start": "2026-11-02",
+  "week_end": "2026-11-08",
+  "observed_at": "2026-11-04T15:00:00.000001Z",
+  "source_version": "2d1fbc12cc45a08003171fbcf5ae3482b3b9c4e440eb3132426bcc6b7924b36c",
+  "completeness": "complete",
+  "clinical_policy": {
+    "version": 1,
+    "observed_at": "2026-11-04T15:00:00.000000Z",
+    "assessment": "complete",
+    "recording_allowed": true,
+    "pause_weight_loss_guidance": false,
+    "professional_assessment_recommended": false,
+    "phase_selection_pending": false,
+    "target_source": "official_only",
+    "hide": {
+      "objective": false,
+      "calories": false,
+      "protein": false,
+      "balance": false,
+      "block": false,
+      "budget": false
+    }
+  },
+  "days": [
+    {
+      "local_date": "2026-11-02",
+      "workouts": []
+    },
+    {
+      "local_date": "2026-11-03",
+      "workouts": []
+    },
+    {
+      "local_date": "2026-11-04",
+      "workouts": [
+        {
+          "id": "a4444444-4444-4444-8444-444444444444",
+          "workout_type": "Caminhada",
+          "duration_min": 30,
+          "estimated_kcal": 116,
+          "intensity": "leve",
+          "performed_at": "2026-11-04T14:00:00.000001Z"
+        }
+      ]
+    },
+    {
+      "local_date": "2026-11-05",
+      "workouts": []
+    },
+    {
+      "local_date": "2026-11-06",
+      "workouts": []
+    },
+    {
+      "local_date": "2026-11-07",
+      "workouts": []
+    },
+    {
+      "local_date": "2026-11-08",
+      "workouts": []
+    }
+  ]
+}

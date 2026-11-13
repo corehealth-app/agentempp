@@ -80,17 +80,19 @@ describe('current-authority clarification in the fresh mobile server build', () 
     expect(
       source.find((record) => record.path === 'auth/password-recovery/route.ts')?.exports,
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
-    expect(source).toHaveLength(92)
+    expect(source).toHaveLength(93)
     expect(
       createHash('sha256')
         .update(source.map((record) => `${record.path}\0${record.exports.join(',')}\n`).join(''))
         .digest('hex'),
-    ).toBe('d59c9ee8bdb67a450c40c45bdc4f287233a2fe21aaa531c7ae08c19b23342152')
+    ).toBe('379b260d910f1364041880fb6aab30c458c9a8b511760735a9396aa8a058b5cf')
     expect(
       source.find((record) => record.path === 'conversation/intakes/route.ts')?.exports,
     ).toEqual(['GET', 'POST', 'maxDuration', 'runtime'])
     const beforeLinked = source.filter(
-      (record) => record.path !== 'conversation/meal-commands/[commandId]/origin/route.ts',
+      (record) =>
+        record.path !== 'training/window/route.ts' &&
+        record.path !== 'conversation/meal-commands/[commandId]/origin/route.ts',
     )
     expect(beforeLinked).toHaveLength(91)
     expect(

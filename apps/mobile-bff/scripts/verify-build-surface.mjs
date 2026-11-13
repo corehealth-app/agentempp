@@ -3,10 +3,10 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const expectedMobileRouteCount = 92
-const expectedMobileRouteHash = 'e040081491bac0281bba6c8694893386c0d41958ed70767fea712d16212d5e54'
-const expectedRouteCount = 93
-const expectedRouteHash = 'e5d968718a4e2130b59bea56f3e9050d1cdbcc099b74bed5da94825c0308858e'
+const expectedMobileRouteCount = 93
+const expectedMobileRouteHash = '22926ab33b91fc36dde1834843c56d38fb6b06fe00de0294fe79e54529ba3013'
+const expectedRouteCount = 94
+const expectedRouteHash = '4ff0c3610291b53b1a8245597f673be4443dcace0b6aae86a819e63a3629c3ab'
 const linkedOriginRoute = '/api/mobile/v1/conversation/meal-commands/[commandId]/origin'
 const intakeTransports = new Set([
   '/api/mobile/v1/conversation/intakes',
@@ -19,6 +19,7 @@ const workoutTransports = new Set([
   '/api/mobile/v1/conversation/workout-commands/[commandId]',
 ])
 const nutritionWindowRoute = '/api/mobile/v1/nutrition/window'
+const trainingWindowRoute = '/api/mobile/v1/training/window'
 const addedReadEditRoutes = new Set([
   '/api/mobile/v1/conversation/journal',
   '/api/mobile/v1/conversation/meal-commands/[commandId]/meal',
@@ -561,10 +562,26 @@ function verifyBuildSurface() {
     `BUILD_NFT_ALLOWLISTED_DIRECTORY_TARGET_COUNT=${surface.nftAllowlistedDirectoryTargetCount}`,
   )
 
-  const prior88Mobile = surface.mobileRoutePaths.filter(
+  const beforeTrainingMobile = surface.mobileRoutePaths.filter(
+    (path) => path !== trainingWindowRoute,
+  )
+  const beforeTrainingAll = surface.routePaths.filter((path) => path !== trainingWindowRoute)
+  if (
+    beforeTrainingMobile.length !== 92 ||
+    sha256(beforeTrainingMobile.map((path) => `${path}\n`).join('')) !==
+      'e040081491bac0281bba6c8694893386c0d41958ed70767fea712d16212d5e54'
+  )
+    fail('PRE_TRAINING_MOBILE_CHANGED')
+  if (
+    beforeTrainingAll.length !== 93 ||
+    sha256(beforeTrainingAll.map((path) => `${path}\n`).join('')) !==
+      'e5d968718a4e2130b59bea56f3e9050d1cdbcc099b74bed5da94825c0308858e'
+  )
+    fail('PRE_TRAINING_ALL_CHANGED')
+  const prior88Mobile = beforeTrainingMobile.filter(
     (path) => path !== linkedOriginRoute && !intakeTransports.has(path),
   )
-  const prior89All = surface.routePaths.filter(
+  const prior89All = beforeTrainingAll.filter(
     (path) => path !== linkedOriginRoute && !intakeTransports.has(path),
   )
   for (const [label, paths, count, hash] of [

@@ -66,6 +66,30 @@ final class ConversationalNavigationUITests: XCTestCase {
         XCTAssertTrue(tabBar(app).buttons["tab.registrar"].isSelected)
     }
 
+    func testTrainingKeepsUnavailableRecordedFactsSeparateFromTheExistingPlan() {
+        let app = launch(candidate: true)
+        defer { app.terminate() }
+        XCTAssertTrue(tabBar(app).waitForExistence(timeout: 15))
+        tabBar(app).buttons["tab.registrar"].tap()
+        XCTAssertTrue(element("screen.treino", app).waitForExistence(timeout: 8))
+        // This local fixture has no official training-window provider. Missing
+        // authority must not be presented as an empty confirmed day.
+        XCTAssertTrue(app.buttons["training.retry"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Nenhuma atividade registrada")).firstMatch.exists)
+        let picker = app.segmentedControls["training.section"]
+        XCTAssertTrue(picker.exists)
+        picker.buttons["Plano"].tap()
+        XCTAssertTrue(element("plan.training", app).waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["training.retry"].exists)
+        picker.buttons["Realizado"].tap()
+        XCTAssertTrue(app.buttons["training.retry"].waitForExistence(timeout: 8))
+        XCTAssertTrue(tabBar(app).buttons["tab.registrar"].isSelected)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "training-recorded-authority-unavailable-plan-preserved"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testDefaultLaunchKeepsFiveLegacyTabs() {
         let app = launch(candidate: false)
         defer { app.terminate() }

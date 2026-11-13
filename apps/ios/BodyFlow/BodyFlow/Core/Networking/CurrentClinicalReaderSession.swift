@@ -11,10 +11,11 @@ struct CurrentClinicalReaderSession: Sendable {
     let me: any MeProviding
     let currentObjective: any CurrentObjectiveProviding
     let nutrition: (any NutritionWindowProviding)?
+    let training: (any TrainingWindowProviding)?
 
     init(userID: String, today: any TodayProviding, history: any HistoryProviding,
          plan: any PlanProviding, progress: any ProgressProviding, me: any MeProviding,
-         currentObjective: any CurrentObjectiveProviding, nutrition: (any NutritionWindowProviding)? = nil) {
+         currentObjective: any CurrentObjectiveProviding, nutrition: (any NutritionWindowProviding)? = nil, training: (any TrainingWindowProviding)? = nil) {
         self.userID = userID
         self.today = today
         self.history = history
@@ -23,6 +24,7 @@ struct CurrentClinicalReaderSession: Sendable {
         self.me = me
         self.currentObjective = currentObjective
         self.nutrition = nutrition
+        self.training = training
     }
 }
 
@@ -47,7 +49,8 @@ struct CurrentClinicalReaderSessionFactory: Sendable {
                 progress: reads, me: reads,
                 currentObjective: MobileCurrentObjectiveRepository(transport: scoped,
                     clinicalRepresentation: .currentV1),
-                nutrition: try await MobileNutritionWindowRepository.scoped(transport: scoped, lifecycle: lifecycle, lease: lease))
+                nutrition: try await MobileNutritionWindowRepository.scoped(transport: scoped, lifecycle: lifecycle, lease: lease),
+                training: try await MobileTrainingWindowRepository.scoped(transport: scoped, lifecycle: lifecycle, lease: lease))
             try await lifecycle.validate(lease)
             try Task.checkCancellation()
             return session

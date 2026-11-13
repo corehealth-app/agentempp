@@ -81,7 +81,11 @@ describe('default nonclinical photo worker wiring', () => {
     })
   })
   afterEach(() => vi.unstubAllEnvs())
-  it('uses the explicit neutral analyzer, not the generic/body fallback', async () => {
+  it.each([
+    'media-clinical-staging',
+    'media-conversation-staging',
+  ])('uses the explicit neutral analyzer, not the generic/body fallback (%s)', async (set) => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', set)
     expect(await run()).toEqual({ status: 'processed' })
     expect(ports.neutral).toHaveBeenCalledWith('data:image/jpeg;base64,/9j/4A==', {
       userMessage: 'o que aparece?',

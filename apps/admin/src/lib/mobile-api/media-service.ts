@@ -336,8 +336,16 @@ export async function createMediaAssetRecord(
     purpose(asset)
     assertSignupCreation(asset, userId, input, options)
     if (options.signupOrigin) assertSignupPhotoUploadOpen(asset)
-    const upload =
-      !replayed || asset.status === 'pending_upload' ? await signedUpload(deps, asset, now) : null
+    const shouldSign = !replayed || asset.status === 'pending_upload'
+    if (shouldSign && ['conversation_photo', 'audio_note'].includes(asset.kind)) {
+      const expires =
+        asset.retention_until === null ? Number.NaN : Date.parse(asset.retention_until)
+      if (!Number.isFinite(expires) || expires <= now.getTime())
+        throw new MobileApiError(410, 'media_expired', 'This media upload has expired')
+      if (asset.status !== 'pending_upload')
+        throw new MobileApiError(409, 'media_upload_not_pending', 'Media upload is not pending')
+    }
+    const upload = shouldSign ? await signedUpload(deps, asset, now) : null
     purpose(asset)
     if (input.kind === 'conversation_photo') {
       const latest = requireOwnedAsset(await deps.repository.findOwned(userId, asset.id))

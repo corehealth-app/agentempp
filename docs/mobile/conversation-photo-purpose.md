@@ -13,7 +13,8 @@ Creation is off unless all mobile predicates are true:
 - the exact staging Supabase origin (a trailing slash is also accepted).
 
 The worker independently requires the photos flag, the exact staging origin,
-and `INNGEST_FUNCTION_SET=media-clinical-staging`. Missing/changed configuration
+and an explicit `media-clinical-staging` or `media-conversation-staging` function
+set. Missing/changed configuration
 does not fall back to the legacy image purpose. The live purpose is checked
 after configuration/download waits and before each new paid model request.
 An in-flight request cannot be undone; later requests and result publication
@@ -47,3 +48,8 @@ ordinary-photo retention scheduler. The restricted staging function set does
 not itself prove that the ordinary 30-day cleanup runs. Do not promise automatic
 disposal from a retention date alone. The old public intake protocol continues
 to hold media, including already persisted selection/recovery paths.
+
+The new conversational staging set additionally prepares a scoped ordinary-photo
+and audio expiry handler. See [worker qualification](conversation-media-worker.md).
+Existing function sets and production membership remain unchanged; live scheduler
+and Storage disposal still need their own qualification.

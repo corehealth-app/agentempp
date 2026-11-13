@@ -80,6 +80,27 @@ function makeDeps(existing: MediaAssetRecord | null = null): MediaServiceDepende
 }
 
 describe('mobile media service', () => {
+  it('does not reissue an expired ordinary audio upload through the current API', async () => {
+    const deps = makeDeps(
+      asset({
+        kind: 'audio_note',
+        bucket_id: 'audio-notes',
+        mime_type: 'audio/mp4',
+        retention_until: '2026-11-12T12:00:00.000Z',
+      }),
+    )
+    await expect(
+      createMediaAsset(
+        deps,
+        USER_ID,
+        { kind: 'audio_note', mime_type: 'audio/mp4', size_bytes: 1200 },
+        'expired-audio',
+        new Date('2026-11-12T12:01:00.000Z'),
+      ),
+    ).rejects.toMatchObject({ status: 410, code: 'media_expired' })
+    expect(deps.storage.createSignedUpload).not.toHaveBeenCalled()
+  })
+
   it('does not expose a clinical or malformed legacy payload under the new photo purpose', async () => {
     const deps = makeDeps(
       asset({

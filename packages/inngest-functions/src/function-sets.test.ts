@@ -32,6 +32,31 @@ describe('functionsForSet', () => {
     }
   })
 
+  it('adds an explicit conversational staging roster without widening any previous set', () => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    expect(ids(functionsForSet('media-conversation-staging'))).toEqual([
+      'media-asset-processing',
+      'reevaluation-photo-disposition-cleanup',
+      'conversation-media-retention-cleanup',
+    ])
+    expect(ids(functionsForSet('media-staging'))).toEqual(['media-asset-processing'])
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-clinical-staging')
+    expect(ids(functionsForSet('media-clinical-staging'))).toEqual([
+      'media-asset-processing',
+      'reevaluation-photo-disposition-cleanup',
+    ])
+    expect(ids(allFunctions)).not.toContain('conversation-media-retention-cleanup')
+    expect(ids(allFunctions)).not.toContain('reevaluation-photo-disposition-cleanup')
+  })
+  it('refuses the new roster before registration when set or effective database is inconsistent', () => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xuxehkhdvjivitduarvb.supabase.co')
+    expect(() => functionsForSet('media-conversation-staging')).toThrow()
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-clinical-staging')
+    expect(() => functionsForSet('media-conversation-staging')).toThrow()
+  })
   it('an unknown set name is refused, never widened to all functions', () => {
     expect(() => functionsForSet('media')).toThrow(/unknown Inngest function set/)
     expect(() => functionsForSet('all')).toThrow(/unknown Inngest function set/)

@@ -16,7 +16,11 @@ export interface WorkerDeps {
 }
 
 export function createWorkerSupabase(): ServiceClient {
-  if (process.env.INNGEST_FUNCTION_SET === 'media-clinical-staging')
+  if (
+    ['media-clinical-staging', 'media-conversation-staging'].includes(
+      process.env.INNGEST_FUNCTION_SET ?? '',
+    )
+  )
     assertClinicalStagingWorkerTarget()
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY

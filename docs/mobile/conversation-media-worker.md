@@ -1,0 +1,74 @@
+# Conversational staging media worker
+
+The approved photo/audio chat uses the existing processing worker and private
+Storage. Local tests and a READY deployment do not establish connected delivery.
+Distributed build 17 remains text-only until a qualified successor is installed.
+
+## Explicit function sets
+
+| Set | Served functions |
+| --- | --- |
+| unset / production | Existing `allFunctions`, unchanged |
+| `media-staging` | Existing media processing only, unchanged |
+| `media-clinical-staging` | Existing processing and recurring-photo disposition, unchanged |
+| `media-conversation-staging` | Processing, recurring-photo disposition and scoped ordinary-media retention |
+
+The new set is guarded at registration and again in privileged client creation.
+Both restricted sets require the exact `xitugspwfxkcluxvrdeg` Supabase origin,
+including the existing explicit-empty URL refusal and URL precedence. A roster
+cannot register under another set's environment. The new retention callback
+independently requires `media-conversation-staging` before constructing a client,
+including direct or stale invocations. No WhatsApp, reminder or closer job is
+added by the new set. Ordinary-photo analysis retains its trusted opt-in and
+nonclinical purpose guard under both restricted sets.
+
+## Ordinary expiry
+
+The API already assigns conversation photos and audio notes a 30-day retention
+date. This change does not alter those dates or recurring-photo 24-hour policy.
+`conversation-media-retention-cleanup` runs hourly at minute 17 with a 100-row
+batch, one concurrent invocation and one retry. An additive private manifest
+admits only expired ordinary `conversation_photo`/`audio_note` rows, with no
+recurring origin. SQL atomically closes the catalogue and commits an owner/path
+cleanup obligation before giving the worker a leased Storage task. Missing
+schema fails before bytes. Body, gym, legacy meal photos and plan documents do
+not enter this schedule. The old generic factory keeps its original ordering.
+
+A successful Storage removal acknowledges a sweep, **not final disposal**.
+Already-issued uploads and old build-17/R95 signing requests may still recreate
+bytes. Their durable manifests remain eligible after catalogue deletion; leases
+and oldest-visit ordering yield to other assets, and uncertain/failed requests
+retain retry obligations. The manifest survives catalogue deletion and holds no
+caption or model output. Current API code also refuses new expired ordinary
+upload tickets; that guard does not govern old immutable issuers.
+
+**Issuance drain is not qualified.** This migration deliberately offers no RPC
+that guesses a settled state from elapsed time. Before activation/closeout,
+complete and verify tracked issuance plus the legacy-issuer drain protocol; a
+successful sweep is insufficient. The job reports `swept` and
+`issuanceDrain: not_qualified`, never a false final-deletion count. Continued
+manifest visits carry bounded per-run runtime cost until drain is proven.
+It does not alter food/workout facts, receipts, XP or domain totals. Local SQL
+checks historical typed projections; connected QA must still verify real domain
+history and numeric panels after actual Storage disposal.
+
+The RPC claim/ack and Storage request shape were checked against the installed
+SDK and official [filter](https://supabase.com/docs/reference/javascript/in)
+and [removal](https://supabase.com/docs/reference/javascript/storage-from-remove)
+references. Controlled SDK fetches are not live Storage deletion evidence.
+
+## Publication and acceptance
+
+Reuse worker project `prj_0SRds3zTc57EB0sExjYPygKGEgBx` and BFF project
+`prj_NTrnUNFXfmddMuci3VWjalfAoejW` under the established team. Bind exact
+source and archive hashes, set São Paulo explicitly and inspect the actual
+deployment region; the worker project's current default differs from its last
+deployed region. Preserve the canonical alias and build 17 runtime dependency.
+
+Before activation, prove the current Inngest `performe-staging` application and
+the exact three registered functions/schedules. Qualify synthetic upload,
+processing, factual chat feedback, replay, cold edit/Undo and cross-tab agreement.
+Verify actual expired disposable QA object removal and catalog state while
+preserving unrelated rows and historical numeric facts. Existing provider cap
+and expiry remain binding. This source alone does not prove scheduler activity,
+remote deletion, physical capture, release readiness or Roberto acceptance.

@@ -16,7 +16,9 @@ export function conversationPhotoWorkerEnabled(
 ): boolean {
   return (
     env.MOBILE_CONVERSATION_PHOTOS_ENABLED === 'true' &&
-    env.INNGEST_FUNCTION_SET === 'media-clinical-staging' &&
+    ['media-clinical-staging', 'media-conversation-staging'].includes(
+      env.INNGEST_FUNCTION_SET ?? '',
+    ) &&
     target(env.SUPABASE_URL ?? env.NEXT_PUBLIC_SUPABASE_URL)
   )
 }

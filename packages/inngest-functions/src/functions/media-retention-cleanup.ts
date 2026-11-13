@@ -1,5 +1,6 @@
 import type { ServiceClient } from '@mpp/db'
 import { inngest } from '../client.js'
+import { createConversationMediaExpiryDependencies } from '../lib/conversation-media-expiry-debt.js'
 import { createWorkerSupabase } from '../lib/env.js'
 
 const RETENTION_BATCH_SIZE = 100
@@ -38,11 +39,17 @@ export async function cleanupExpiredMedia(
   return { deleted }
 }
 
-export function createRetentionDependencies(supabase: ServiceClient): MediaRetentionDependencies {
+export function createRetentionDependencies(
+  supabase: ServiceClient,
+  options?: { scope: 'conversation' },
+): MediaRetentionDependencies {
+  if (options !== undefined && options?.scope !== 'conversation')
+    throw new Error('Media retention scope unavailable')
+  if (options?.scope === 'conversation') return createConversationMediaExpiryDependencies(supabase)
   return {
     repository: {
       async listExpired(now, limit) {
-        const { data, error } = await supabase
+        const query = supabase
           .from('media_assets')
           .select('id, user_id, bucket_id, object_path')
           .lte('retention_until', now)
@@ -50,6 +57,7 @@ export function createRetentionDependencies(supabase: ServiceClient): MediaReten
           .neq('status', 'deleted')
           .order('retention_until', { ascending: true })
           .limit(limit)
+        const { data, error } = await query
         if (error) throw new Error(error.message || 'expired media lookup failed')
         return (data ?? []).map((row) => ({
           id: row.id,
@@ -59,7 +67,7 @@ export function createRetentionDependencies(supabase: ServiceClient): MediaReten
         }))
       },
       async markDeleted(assetId, userId, deletedAt) {
-        const { error } = await supabase
+        const query = supabase
           .from('media_assets')
           .update({
             status: 'deleted',
@@ -72,6 +80,7 @@ export function createRetentionDependencies(supabase: ServiceClient): MediaReten
           .eq('user_id', userId)
           .is('reevaluation_origin_version', null)
           .neq('status', 'deleted')
+        const { error } = await query
         if (error) throw new Error(error.message || 'expired media state update failed')
       },
     },

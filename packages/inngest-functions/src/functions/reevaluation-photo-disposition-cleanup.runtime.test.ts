@@ -57,6 +57,12 @@ describe('recurring photo worker target at the actual handler boundary', () => {
     expect(ports.cleanup).not.toHaveBeenCalled()
   })
 
+  it('keeps recurring cleanup operational under the new explicit conversational staging set', async () => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    expect(await run()).toEqual({ incomplete: 0, newlyDeleted: 0, stopped: 'batch_end' })
+    expect(ports.createClient).toHaveBeenCalledTimes(1)
+    expect(ports.cleanup).toHaveBeenCalledTimes(1)
+  })
   it('uses the established cleanup exactly once for the explicit valid staging set', async () => {
     expect(await run()).toEqual({ incomplete: 0, newlyDeleted: 0, stopped: 'batch_end' })
     expect(ports.createClient).toHaveBeenCalledTimes(1)

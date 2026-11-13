@@ -51,6 +51,7 @@ function queryDatabase(schemaAvailable = true) {
   const rows: Row[] = [
     {
       id: 'legacy',
+      kind: 'body_checkin_photo',
       user_id: 'qa',
       bucket_id: 'body-checkin-photos',
       object_path: 'qa/legacy.jpg',
@@ -102,6 +103,10 @@ function queryDatabase(schemaAvailable = true) {
     }
     eq(column: string, value: unknown) {
       this.filters.push((row) => row[column] === value)
+      return this
+    }
+    in(column: string, values: readonly unknown[]) {
+      this.filters.push((row) => values.includes(row[column]))
       return this
     }
     neq(column: string, value: unknown) {
@@ -160,7 +165,7 @@ function queryDatabase(schemaAvailable = true) {
       }),
     },
   } as unknown as ServiceClient
-  return { rows, removed, deps: createRetentionDependencies(client) }
+  return { rows, removed, client, deps: createRetentionDependencies(client) }
 }
 
 describe('generic retention query boundary', () => {
@@ -187,6 +192,24 @@ describe('generic retention query boundary', () => {
       '42703',
     )
     expect(removed).toEqual([])
+    expect(rows).toEqual(before)
+  })
+})
+
+describe('scoped conversation retention factory', () => {
+  it('fails before Storage if the durable SQL contract is unavailable', async () => {
+    const { client, removed } = queryDatabase()
+    const deps = createRetentionDependencies(client, { scope: 'conversation' })
+    await expect(cleanupExpiredMedia(deps)).rejects.toThrow()
+    expect(removed).toEqual([])
+  })
+  it('refuses direct catalog acknowledgments without a claimed owner-bound task', async () => {
+    const { client, rows } = queryDatabase()
+    const before = structuredClone(rows)
+    const deps = createRetentionDependencies(client, { scope: 'conversation' })
+    await expect(
+      deps.repository.markDeleted('legacy', 'qa', '2026-10-24T12:00:00Z'),
+    ).rejects.toThrow('claim unavailable')
     expect(rows).toEqual(before)
   })
 })

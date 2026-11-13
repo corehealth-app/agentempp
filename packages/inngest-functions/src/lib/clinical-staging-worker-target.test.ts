@@ -10,6 +10,21 @@ describe('clinical staging privileged client target', () => {
     vi.unstubAllEnvs()
     vi.clearAllMocks()
   })
+  it('allows the exact conversational staging target before constructing its client', () => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'synthetic-server-only')
+    expect(() => assertClinicalStagingWorkerTarget()).not.toThrow()
+    expect(createWorkerSupabase()).toEqual({ synthetic: true })
+    expect(factory).toHaveBeenCalledTimes(1)
+  })
+  it('refuses a conversational client for a foreign database before constructing it', () => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xuxehkhdvjivitduarvb.supabase.co')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'synthetic-server-only')
+    expect(() => createWorkerSupabase()).toThrow('Clinical staging worker target unavailable')
+    expect(factory).not.toHaveBeenCalled()
+  })
   it('blocks a mismatch before constructing even a privileged client', () => {
     vi.stubEnv('INNGEST_FUNCTION_SET', 'media-clinical-staging')
     vi.stubEnv('SUPABASE_URL', 'https://legacy-synthetic.example.test')

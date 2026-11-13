@@ -4,7 +4,7 @@ import { createWorkerSupabase } from '../lib/env.js'
 import { cleanupReevaluationPhotos } from '../lib/reevaluation-photo-cleanup.js'
 import { createReevaluationPhotoCleanupDependencies } from '../lib/supabase-reevaluation-photo-cleanup.js'
 
-/** Served only by the explicit clinical staging set. Ordinary/all and the
+/** Served only by the explicit clinical/conversational staging sets. Production/all and the
  * existing media-staging endpoint are unchanged. No LLM, analysis or upload. */
 export const reevaluationPhotoDispositionCleanupFn = inngest.createFunction(
   { id: 'reevaluation-photo-disposition-cleanup', retries: 1, concurrency: { limit: 1 } },

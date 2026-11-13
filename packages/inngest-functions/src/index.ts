@@ -3,6 +3,7 @@ export { inngest } from './client.js'
 
 import { bufferListenerFn } from './functions/buffer-listener.js'
 import { coachContentPackActivationFn } from './functions/coach-content-pack-activation.js'
+import { conversationMediaRetentionCleanupFn } from './functions/conversation-media-retention-cleanup.js'
 import { dailyAuditFn } from './functions/daily-audit.js'
 import { dailyCloserFn } from './functions/daily-closer.js'
 import { dailyGapCheckerFn } from './functions/daily-gap-checker.js'
@@ -62,25 +63,36 @@ export const allFunctions = [
  * mobile app: only media processing (photos, audio, plan documents), with no
  * cron, no WhatsApp and no reminder function. An unknown name is refused so a
  * typo never widens the set. `media-clinical-staging` additionally opts into
- * recurring-photo disposition cleanup; it does not start legacy cron jobs.
+ * recurring-photo disposition cleanup. `media-conversation-staging` also serves
+ * scoped ordinary-photo/audio expiry; no previous set or production roster widens.
  */
 const FUNCTION_SETS = {
   'media-staging': [mediaAssetProcessingFn],
   'media-clinical-staging': [mediaAssetProcessingFn, reevaluationPhotoDispositionCleanupFn],
+  'media-conversation-staging': [
+    mediaAssetProcessingFn,
+    reevaluationPhotoDispositionCleanupFn,
+    conversationMediaRetentionCleanupFn,
+  ],
 } as const
 
-type ServedFunction = (typeof allFunctions)[number] | typeof reevaluationPhotoDispositionCleanupFn
+type ServedFunction =
+  | (typeof allFunctions)[number]
+  | typeof reevaluationPhotoDispositionCleanupFn
+  | typeof conversationMediaRetentionCleanupFn
 export function functionsForSet(name: string | undefined): readonly ServedFunction[] {
   if (name === undefined || name === '') return allFunctions
   const selected = (FUNCTION_SETS as Record<string, readonly ServedFunction[]>)[name]
   if (!selected) throw new Error(`unknown Inngest function set: ${name}`)
-  if (name === 'media-clinical-staging') assertClinicalStagingWorkerTarget()
+  if (name === 'media-clinical-staging' || name === 'media-conversation-staging')
+    assertClinicalStagingWorkerTarget(process.env, name)
   return selected
 }
 
 export {
   bufferListenerFn,
   coachContentPackActivationFn,
+  conversationMediaRetentionCleanupFn,
   dailyAuditFn,
   dailyCloserFn,
   dailyGapCheckerFn,

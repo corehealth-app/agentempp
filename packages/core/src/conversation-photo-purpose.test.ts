@@ -25,6 +25,26 @@ describe('explicit staging-only nonclinical photo purpose', () => {
       conversationPhotoMobileEnabled({ ...mobile, NEXT_PUBLIC_SUPABASE_URL: `${origin}/` }),
     ).toBe(true)
   })
+  it('supports the exact conversational staging worker with the same nonclinical opt-in and target guards', () => {
+    const value = { ...worker, INNGEST_FUNCTION_SET: 'media-conversation-staging' }
+    expect(conversationPhotoWorkerEnabled(value)).toBe(true)
+    expect(
+      conversationPhotoWorkerEnabled({ ...value, MOBILE_CONVERSATION_PHOTOS_ENABLED: 'false' }),
+    ).toBe(false)
+    expect(
+      conversationPhotoWorkerEnabled({
+        ...value,
+        SUPABASE_URL: '',
+        NEXT_PUBLIC_SUPABASE_URL: origin,
+      }),
+    ).toBe(false)
+    expect(
+      conversationPhotoWorkerEnabled({
+        ...value,
+        SUPABASE_URL: 'https://xuxehkhdvjivitduarvb.supabase.co',
+      }),
+    ).toBe(false)
+  })
   it('requires the existing isolated worker set and respects an empty explicit URL', () => {
     expect(conversationPhotoWorkerEnabled(worker)).toBe(true)
     for (const key of Object.keys(worker))

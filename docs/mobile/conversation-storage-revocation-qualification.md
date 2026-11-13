@@ -59,6 +59,43 @@ distinguish original-payload removal from final metadata/capability disposal.
 Do not silently introduce permanent marker retention or claim final deletion.
 R105/R106 manifests remain unactivated and legacy issuance remains unqualified.
 
+## R108 source continuation — not activated
+
+The scoped conversation cleanup now inspects a bound, unexpired private claim
+before touching Storage. Its additive RPC refuses public buckets, versioning,
+direct object-policy drift, unsupported marker MIME types and unknown object
+size/version metadata. It distinguishes absent, ordinary empty and payload
+objects; a provider delete marker is never accepted as an empty barrier.
+
+An existing ordinary empty object is preserved. An absent path receives a
+zero-byte non-upsert object. A payload is removed **only by its inspected object
+version**, then the path is sealed and read back before acknowledgment. A stale
+cleanup must not erase a newer barrier: plain-path deletion is unsafe even when
+the preceding inspection saw a payload. A lost write response leaves the claim
+unacknowledged; the next claim inspects first and preserves a successful barrier.
+The existing debt/`waiting_for_issuance_drain` state is retained. This does not
+establish a new indefinite-retention policy or final disposal.
+
+The installed Storage SDK serializes `prefixes` unchanged but its types accept
+only strings. The narrow versioned-delete bridge is covered using the actual
+SDK against a controlled fetch boundary. Its `{path, versionId}` body follows the
+[upstream delete route](https://github.com/supabase/storage/blob/master/src/http/routes/object/deleteObjects.ts).
+**Hosted support for that version-targeted deletion is still NOT VERIFIED**;
+do not substitute a plain-path fallback if the provider refuses it.
+
+The attempted connected concurrency characterization was inconclusive. The
+bounded exact-path transaction lock was released automatically before an
+observer could establish both queued PUTs. The only actual upload was an empty
+marker (HTTP 200); the second payload PUT was never started. Neither elapsed
+time nor upstream code proves hosted concurrent completion. The fixture was
+deleted, the own grant/session closed, and old QA hashes preserved. No model,
+credential, schema or deployment changes occurred remotely.
+
+Before activation, qualify version-targeted deletion and an already-authorized
+upload in flight, issuer capabilities and complete marker/account-deletion
+lifecycle. Local transaction tests and SDK tests are not that hosted proof.
+R105/R106 and the R108 inspection migration remain unapplied to staging.
+
 The authoritative local evidence is the R107 checkpoint/report linked from the
 active goal index; it includes the bound candidate, baseline/postflight hashes,
 provider responses, exact object readbacks and closeout. These artifacts are

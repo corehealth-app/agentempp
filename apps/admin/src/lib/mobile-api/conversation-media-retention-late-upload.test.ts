@@ -1,11 +1,14 @@
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it } from 'vitest'
 import {
+  cleanupExpiredMedia,
+  createRetentionDependencies,
+} from '../../../../../packages/inngest-functions/src/functions/media-retention-cleanup.js'
+import {
   createMediaAsset,
   type MediaAssetRecord,
   type MediaServiceDependencies,
-} from '../../../../apps/admin/src/lib/mobile-api/media-service.js'
-import { cleanupExpiredMedia, createRetentionDependencies } from './media-retention-cleanup.js'
+} from './media-service.js'
 
 const user = '11110000-0000-4000-8000-000000000001'
 const id = '11110000-0000-4000-8000-000000000002'
@@ -34,6 +37,7 @@ function arena() {
     updated_at: expiry,
   } as MediaAssetRecord
   const objects = new Set<string>()
+  let barrier = false
   let debt = false
   class Query {
     private write = false
@@ -113,12 +117,37 @@ function arena() {
           },
         }
       }
+      if (name === 'inspect_conversation_media_payload_revocation')
+        return {
+          error: null,
+          data: {
+            schema: 'conversation.media-revocation-state.v1',
+            asset_id: id,
+            user_id: user,
+            claim_token: claim,
+            bucket_id: 'audio-notes',
+            object_path: path,
+            bucket_private: true,
+            versioning: 'DISABLED',
+            mime_type: 'audio/mp4',
+            state: objects.has(path) ? 'payload' : barrier ? 'empty' : 'absent',
+            size_bytes: objects.has(path) ? 8 : barrier ? 0 : null,
+            object_version:
+              objects.has(path) || barrier ? '11110000-0000-4000-8000-000000000004' : null,
+          },
+        }
       throw Error('Unexpected synthetic RPC')
     },
     storage: {
       from: () => ({
         remove: async () => {
           objects.delete(path)
+          barrier = false
+          return { error: null }
+        },
+        upload: async () => {
+          if (objects.has(path) || barrier) return { error: new Error('Duplicate') }
+          barrier = true
           return { error: null }
         },
       }),
@@ -130,7 +159,7 @@ function arena() {
       createSignedUpload: async () => ({ signedUrl: 'https://synthetic.invalid/upload' }),
     },
   } as unknown as MediaServiceDependencies
-  return { row, client, media, objects, hasDebt: () => debt }
+  return { row, client, media, objects, hasDebt: () => debt, hasBarrier: () => barrier }
 }
 const authorize = (a: ReturnType<typeof arena>) =>
   createMediaAsset(
@@ -156,6 +185,7 @@ describe('ordinary expiry versus already authorized legacy uploads', () => {
     await sweep(a)
     expect(a.objects.size).toBe(0)
     expect(a.hasDebt()).toBe(true)
+    expect(a.hasBarrier()).toBe(true)
   })
   it('also recovers a legacy signing request that finishes after the first tombstone', async () => {
     const a = arena()
@@ -176,5 +206,6 @@ describe('ordinary expiry versus already authorized legacy uploads', () => {
     await sweep(a)
     expect(a.objects.size).toBe(0)
     expect(a.hasDebt()).toBe(true)
+    expect(a.hasBarrier()).toBe(true)
   })
 })

@@ -24,6 +24,12 @@ nonclinical purpose guard under both restricted sets.
 
 ## Ordinary expiry
 
+The R108 source continuation adds guarded, version-targeted payload removal and
+a zero-byte non-upsert barrier; it preserves a barrier on retries. This remains
+unactivated pending hosted conditional-delete/concurrency and lifecycle proof.
+See [Storage revocation qualification](conversation-storage-revocation-qualification.md)
+for the actual evidence and its limits; `swept` still does not mean final disposal.
+
 The API already assigns conversation photos and audio notes a 30-day retention
 date. This change does not alter those dates or recurring-photo 24-hour policy.
 `conversation-media-retention-cleanup` runs hourly at minute 17 with a 100-row

@@ -4,6 +4,12 @@ Observed on 2026-11-13, staging `xitugspwfxkcluxvrdeg` only. This is a connected
 Storage boundary test, not qualification of the complete conversational media
 flow or an activated retention implementation.
 
+**R111 deployment update:** the five supporting migrations are now installed
+and their exact function bodies/ACLs verified on staging. Earlier references
+below to unapplied migrations are historical. No worker, scheduler or feature
+activation followed this database-only application. See the
+[current worker deployment status](conversation-media-worker.md#database-deployment-status--r111).
+
 ## Target and isolation
 
 - Existing BFF `dpl_GLwhjwFeAjtnTn4LMbTXH2E58RUt`, project

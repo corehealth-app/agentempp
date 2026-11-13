@@ -4,6 +4,30 @@ The approved photo/audio chat uses the existing processing worker and private
 Storage. Local tests and a READY deployment do not establish connected delivery.
 Distributed build 17 remains text-only until a qualified successor is installed.
 
+## Database deployment status — R111
+
+On 2026-11-13 the five additive migrations from `20261113023500` through
+`20261113064121` were applied together to staging `xitugspwfxkcluxvrdeg`.
+The guarded operation matched source commit
+`5ae8696337f5300b4159b92ebcf637eb01c69c29`. Readback matched all eleven function
+bodies, owners, security-definer settings and execution permissions against the
+local rollback rehearsal. Both new private tables were empty with RLS and no
+direct client/service-role table access; the two media buckets remained private
+and non-versioned. The prior 262 migration-history entries were unchanged.
+
+The official migration tool also appended its own audit wrapper,
+`20261113075840_conversation_media_foundation_r111`, in addition to the five
+canonical source versions. This is an application audit, not a sixth schema
+change. Do not replay the wrapper or repair/reset migration history.
+
+Only the database foundation is installed. No processing deployment, Inngest
+registration, retention schedule, flag, app alias, provider key or TestFlight
+release changed. References below to source-only/unapplied migrations describe
+their earlier qualification stages; activation and complete issuance/barrier
+retirement remain separate gates. The existing app key is preserved; this does
+not prove that the worker uses the same secret. Audio currently uses the
+worker's existing Groq configuration; image analysis uses OpenRouter.
+
 ## Explicit function sets
 
 | Set | Served functions |

@@ -85,6 +85,161 @@ struct FlowNeutralIntakeVisibleModelTests {
     await reopened.close()
     #expect(!(await f.http.stub.requests).contains { $0.httpMethod == "DELETE" })
   }
+  @Test func refreshRestagingCannotReplaceAnIndependentDraftOrAttachment() async throws {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let server = NeutralCaptureUnitServer(sessions: f.server, kind: "audio_note", failCreate: true)
+    await f.http.stub.respond { request, _ in try await server.reply(request) }
+    let barrier = ConversationControllerBarrier()
+    let worker = NeutralOriginalBlockingFileWorker(barrier: barrier, blockRestage: true)
+    let current = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle,
+      store: f.disk.store, keyVault: f.vault,
+      media: .init(
+        uploader: ConversationMediaUploaderProbe(),
+        staging: staging, originalFileWorker: worker), neutralIntakeEnabled: true)
+    let other = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle,
+      store: f.disk.store, keyVault: f.vault,
+      media: .init(
+        uploader: ConversationMediaUploaderProbe(),
+        staging: staging), neutralIntakeEnabled: true)
+    let bytes = Data("synthetic-media".utf8)
+    let oldFile = try staging.stage(bytes, fileExtension: "mp3")
+    try other.attach(
+      .init(
+        fileURL: oldFile, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: bytes.count,
+        duration: 12, channel: .audioRecording), expectedContext: #require(other.captureContext))
+    let old = try #require(other.neutralIntake)
+    old.composer = "Legenda antiga"
+    await old.submit()
+    let oldID = try #require(old.preparedIntakeID)
+    let neutral = try #require(current.neutralIntake)
+    let freshFile = try staging.stage(bytes, fileExtension: "mp3")
+    try current.attach(
+      .init(
+        fileURL: freshFile, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: bytes.count,
+        duration: 12, channel: .audioRecording), expectedContext: #require(current.captureContext))
+    let freshID = try #require(current.attachment?.id)
+    let refreshing = Task {
+      await neutral.refresh()
+      await barrier.finish()
+    }
+    #expect(await barrier.waitEnteredOrFinished())
+    neutral.composer = "Legenda independente durante a recuperação"
+    neutral.mealTypeHint = .jantar
+    await barrier.release()
+    await refreshing.value
+    #expect(neutral.hasHeldOriginal && !neutral.isComposerLocked)
+    #expect(
+      neutral.composer == "Legenda independente durante a recuperação"
+        && neutral.mealTypeHint == .jantar)
+    #expect(current.attachment?.id == freshID)
+    await neutral.discardUnsent(intakeID: oldID)
+    #expect(!neutral.hasHeldOriginal && current.attachment?.id == freshID)
+    #expect(
+      neutral.composer == "Legenda independente durante a recuperação"
+        && neutral.mealTypeHint == .jantar)
+    #expect(FileManager.default.fileExists(atPath: freshFile.path))
+    await current.close()
+    await other.close()
+  }
+  @Test func bulkOriginalFileWorkSuspendsTheUIAndCannotPublishAfterInvalidation() async throws {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let server = NeutralCaptureUnitServer(sessions: f.server, kind: "audio_note", failCreate: true)
+    await f.http.stub.respond { request, _ in try await server.reply(request) }
+    let barrier = ConversationControllerBarrier()
+    let worker = NeutralOriginalBlockingFileWorker(barrier: barrier)
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle,
+      store: f.disk.store, keyVault: f.vault,
+      media: .init(
+        uploader: ConversationMediaUploaderProbe(),
+        staging: staging, originalFileWorker: worker), neutralIntakeEnabled: true)
+    let neutral = try #require(model.neutralIntake)
+    let bytes = Data("synthetic-media".utf8)
+    let file = try staging.stage(bytes, fileExtension: "mp3")
+    try model.attach(
+      .init(
+        fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: bytes.count,
+        duration: 12, channel: .audioRecording), expectedContext: #require(model.captureContext))
+    let task = Task {
+      await neutral.submit()
+      await barrier.finish()
+    }
+    let entered = await barrier.waitEnteredOrFinished()
+    #expect(entered)
+    if entered {
+      #expect(neutral.isWorking)
+      #expect(await worker.ranOnMain == false)
+      // This MainActor test continues while the real file-worker boundary waits.
+      model.invalidateSynchronously()
+      await barrier.release()
+    }
+    await task.value
+    #expect(
+      !(await f.http.stub.requests).contains {
+        $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/media"
+      })
+    #expect(model.savedEffectRevision == 0)
+    await model.close()
+  }
+  @Test(arguments: [false, true])
+  func anotherCurrentComposerCannotResurrectCancelledOriginal(_ reuseSlot: Bool) async throws {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.disk.directory)
+    let server = NeutralCaptureUnitServer(sessions: f.server, kind: "audio_note")
+    await f.http.stub.respond { request, _ in
+      if request.httpMethod == "POST", request.url?.path == "/api/mobile/v1/media" {
+        return .init(
+          status: 503,
+          body: Data("{\"error\":{\"code\":\"media_unavailable\",\"message\":\"synthetic\"}}".utf8))
+      }
+      return try await server.reply(request)
+    }
+    let media = FlowConversationMediaDependencies(
+      uploader: ConversationMediaUploaderProbe(), staging: staging)
+    let first = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle,
+      store: f.disk.store, keyVault: f.vault, media: media, neutralIntakeEnabled: true)
+    let a = try #require(first.neutralIntake)
+    let bytes = Data("synthetic-media".utf8)
+    let file = try staging.stage(bytes, fileExtension: "mp3")
+    try first.attach(
+      .init(
+        fileURL: file, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: bytes.count,
+        duration: 12, channel: .audioRecording), expectedContext: #require(first.captureContext))
+    await a.submit()
+    let id = try #require(a.preparedIntakeID)
+    let second = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle,
+      store: f.disk.store, keyVault: f.vault, media: media, neutralIntakeEnabled: true)
+    let b = try #require(second.neutralIntake)
+    #expect(b.preparedIntakeID == id)
+    await b.discardUnsent(intakeID: id)
+    if reuseSlot {
+      let next = try staging.stage(bytes, fileExtension: "mp3")
+      try second.attach(
+        .init(
+          fileURL: next, kind: .audioNote, mimeType: "audio/mpeg", sizeBytes: bytes.count,
+          duration: 12, channel: .audioRecording), expectedContext: #require(second.captureContext))
+      await b.submit()
+      await b.discardUnsent(intakeID: try #require(b.preparedIntakeID))
+    }
+    let before = await f.http.stub.requests.count
+    await a.submit()
+    #expect(await f.http.stub.requests.count == before)
+    let lease = try await f.http.lifecycle.leaseForRequest()
+    let owner = try ConversationOutboxOwner(lease: lease)
+    let key = try await f.vault.key(owner: owner, mayCreate: false)
+    #expect(try f.disk.store.loadOriginal(owner: owner, key: key) == nil)
+    await first.close()
+    await second.close()
+  }
   @Test(arguments: ["upload", "processing"])
   func foregroundRefreshDuringMediaRestoresOriginalControlsWithoutDuplicateDispatch(_ stage: String)
     async throws
@@ -797,5 +952,38 @@ actor NeutralCapturePausedUploader: StorageUploading {
   func upload(_ media: StagedMedia, with ticket: MediaUploadTicket) async throws {
     await barrier.enter()
     try Task.checkCancellation()
+  }
+}
+
+actor NeutralOriginalBlockingFileWorker: ConversationOriginalFileWorking {
+  let barrier: ConversationControllerBarrier
+  let blockRestage: Bool
+  private(set) var ranOnMain: Bool?
+  init(barrier: ConversationControllerBarrier, blockRestage: Bool = false) {
+    self.barrier = barrier
+    self.blockRestage = blockRestage
+  }
+  private func isMainThread() -> Bool { Thread.isMainThread }
+  func prepare(
+    staged: StagedMedia, staging: MediaStagingStore, captureID: UUID, intakeID: UUID,
+    identity: ConversationCommandContext.Identity, caption: String?,
+    hint: ConversationMealCommand.MealType?
+  ) async throws -> ConversationMediaOriginal {
+    ranOnMain = isMainThread()
+    if !blockRestage { await barrier.enter() }
+    return try .init(
+      staged: staged, staging: staging, captureID: captureID, intakeID: intakeID,
+      context: identity, caption: caption, mealTypeHint: hint)
+  }
+  func ensure(
+    _ original: ConversationMediaOriginal, staged: StagedMedia, staging: MediaStagingStore
+  ) throws {
+    try original.ensureStaged(staged, in: staging)
+  }
+  func restage(_ original: ConversationMediaOriginal, staging: MediaStagingStore) async throws
+    -> StagedMedia
+  {
+    if blockRestage { await barrier.enter() }
+    return try original.restage(in: staging)
   }
 }

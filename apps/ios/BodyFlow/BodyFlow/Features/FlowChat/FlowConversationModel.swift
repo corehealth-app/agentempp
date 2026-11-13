@@ -31,6 +31,13 @@ enum FlowConversationFailure: Equatable, Sendable {
 struct FlowConversationMediaDependencies: Sendable {
   let uploader: any StorageUploading
   let staging: MediaStagingStore
+  let originalFileWorker: any ConversationOriginalFileWorking
+  init(uploader: any StorageUploading, staging: MediaStagingStore,
+    originalFileWorker: any ConversationOriginalFileWorking = ConversationOriginalFileWorker()) {
+    self.uploader = uploader
+    self.staging = staging
+    self.originalFileWorker = originalFileWorker
+  }
 }
 struct FlowConversationAttachment: Identifiable, Sendable {
   let id: UUID
@@ -720,7 +727,7 @@ final class FlowConversationModel {
         guard let current = model.context else { throw ConversationOutboxError.invalidServerObservation }
         model.neutralIntake = try await FlowNeutralIntakeModel.open(transport: transport, lifecycle: lifecycle, store: store, keyVault: keyVault, expectedLease: lease, parentIdentity: current.identity,
           parentIsCurrent: { [weak model] identity in model?.hasCurrentScope == true && model?.context?.identity == identity },
-          mediaService: model.mediaService, mediaStaging: media?.staging,
+          mediaService: model.mediaService, mediaStaging: media?.staging, originalFileWorker: media?.originalFileWorker ?? ConversationOriginalFileWorker(),
           onWorkSettled: { [weak model] in
             guard let model, model.deferredConversationRefresh else { return }
             await model.refreshConversation()

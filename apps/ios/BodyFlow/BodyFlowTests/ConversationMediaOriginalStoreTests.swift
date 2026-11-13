@@ -84,6 +84,94 @@ struct ConversationMediaOriginalStoreTests {
     await session.invalidate()
   }
 
+  @Test func maximumSlashHeavyAudioRoundTripsWithinTheDocumentedEnvelopeBound() throws {
+    let f = try OutboxDiskFixture()
+    defer { f.remove() }
+    let staging = MediaStagingStore(temporaryDirectory: f.directory)
+    var wav = Data("RIFF".utf8)
+    func le<T: FixedWidthInteger>(_ value: T) -> Data {
+      var v = value.littleEndian
+      return withUnsafeBytes(of: &v) { Data($0) }
+    }
+    let size = MealMediaLimits.maximumAudioBytes
+    wav += le(UInt32(size - 8))
+    wav += Data("WAVEfmt ".utf8)
+    wav += le(UInt32(16))
+    wav += le(UInt16(1))
+    wav += le(UInt16(2))
+    wav += le(UInt32(88200))
+    wav += le(UInt32(176400))
+    wav += le(UInt16(2))
+    wav += le(UInt16(8))
+    wav += Data("data".utf8)
+    wav += le(UInt32(size - 44))
+    wav += Data(repeating: 255, count: size - 44)
+    let file = try staging.stage(wav, fileExtension: "wav")
+    let original = try ConversationMediaOriginal(
+      staged: .init(
+        fileURL: file, kind: .audioNote,
+        mimeType: "audio/wav", sizeBytes: wav.count, duration: Double(size - 44) / 176400,
+        channel: .audioImport), staging: staging, captureID: UUID(), intakeID: UUID(),
+      context: .init(
+        authUserID: UUID(uuidString: f.lease.userID)!, ownerID: f.server.ownerID,
+        sessionGeneration: f.lease.generation, epoch: f.epoch),
+      caption: String(repeating: "á", count: 1000), mealTypeHint: .cafe)
+    _ = try f.store.prepareOriginal(original, owner: f.owner, key: f.key)
+    #expect(try f.store.loadOriginal(owner: f.owner, key: f.key)?.bytes == wav)
+    #expect(
+      try Data(contentsOf: f.store.originalFileURL(owner: f.owner)).count
+        <= ConversationMediaOriginal.maximumEnvelopeBytes + 128)
+    let over = try staging.stage(wav + Data([255]), fileExtension: "wav")
+    #expect(throws: (any Error).self) {
+      try ConversationMediaOriginal(
+        staged: .init(
+          fileURL: over, kind: .audioNote,
+          mimeType: "audio/wav", sizeBytes: size + 1, duration: 149, channel: .audioImport),
+        staging: staging, captureID: UUID(), intakeID: UUID(),
+        context: .init(
+          authUserID: UUID(uuidString: f.lease.userID)!, ownerID: f.server.ownerID,
+          sessionGeneration: f.lease.generation, epoch: f.epoch), caption: nil, mealTypeHint: nil)
+    }
+  }
+  @Test(arguments: [false, true])
+  func originalWriteCrashReconcilesOnlyItsOwnedPendingCiphertext(_ hasCanonical: Bool) throws {
+    let f = try OutboxDiskFixture()
+    defer { f.remove() }
+    let original = try mediaOriginalUnit(f)
+    _ = try f.store.prepareOriginal(original, owner: f.owner, key: f.key)
+    let canonical = f.store.originalFileURL(owner: f.owner)
+    let ciphertext = try Data(contentsOf: canonical)
+    let pending = f.store.root.appendingPathComponent("." + f.owner.hash + ".original-pending")
+    try ciphertext.write(to: pending)
+    let unknown = f.store.root.appendingPathComponent(".unowned.sealed-tmp")
+    try Data("preserve unknown".utf8).write(to: unknown)
+    if !hasCanonical { try FileManager.default.removeItem(at: canonical) }
+    #expect(try f.store.containsCiphertext(owner: f.owner))
+    #expect(try f.store.loadOriginal(owner: f.owner, key: f.key) == original)
+    #expect(!FileManager.default.fileExists(atPath: pending.path))
+    #expect(try Data(contentsOf: unknown) == Data("preserve unknown".utf8))
+    try f.store.discardOriginal(intakeID: original.intakeID, owner: f.owner, key: f.key)
+    #expect(try f.store.loadOriginal(owner: f.owner, key: f.key) == nil)
+  }
+  @Test func pendingOnlyCrashCiphertextRefusesAReplacementKey() async throws {
+    let f = try OutboxDiskFixture()
+    defer { f.remove() }
+    let http = try ConversationHTTPFixture()
+    let lease = try await http.lifecycle.leaseForRequest()
+    let owner = try ConversationOutboxOwner(lease: lease)
+    _ = try f.store.prepareOriginal(mediaOriginalUnit(f), owner: owner, key: f.key)
+    let canonical = f.store.originalFileURL(owner: owner)
+    try FileManager.default.moveItem(
+      at: canonical, to: f.store.root.appendingPathComponent("." + owner.hash + ".original-pending")
+    )
+    let security = OutboxKeychainFake()
+    await #expect(throws: (any Error).self) {
+      try await ConversationNeutralIntakeOutboxSession.open(
+        lifecycle: http.lifecycle, store: f.store,
+        keyVault: .init(service: "pending-only-missing", security: security))
+    }
+    #expect(await security.addCount == 0)
+  }
   @Test func nonNeutralPurposeAndForeignOrSymlinkBytesAreNotAdmitted() throws {
     let f = try OutboxDiskFixture()
     defer { f.remove() }

@@ -66,6 +66,27 @@ lease. A changed patient/epoch or unavailable capture capability holds the
 original with its caption hidden, retry disabled and explicit unsent discard.
 Disabling capture does not silently hide an existing protected original.
 
+Concurrent current scenes use a frozen admission observation, compared under the
+same store lock to the durable original slot. A cancellation or later slot reuse
+invalidates the stale composer; retry cannot resurrect the discarded original.
+The original remains recoverable after an uncertain write of the same bytes.
+
+Original writes use one attributable per-account encrypted pending file. Opening
+with only that pending file still requires the existing key. Recovery authenticates
+both files: a valid canonical capsule wins over its uncommitted duplicate; without
+a canonical capsule, the valid pending original is recovered. Unknown/corrupt
+files are preserved and refused, never swept by a broad temporary-file cleanup.
+Private capsule JSON does not escape base64 slashes, so accepted audio remains
+within the explicit bounded envelope at the media size limit.
+
+Preparation, verification and restoration run on a serial file actor, with current
+authority and cancellation rechecked before any publication or upload. A held
+attachment has independent controls: new text remains usable, and discarding the
+old attachment preserves an unrelated draft, meal hint or selected attachment.
+Recovery also refuses to overwrite local composer changes made while file work
+was suspended. Actual physical performance and protected-device behavior still
+require qualification.
+
 Within the current capture, an upload retry keeps its original create key
 and caption. A queued media message can resume processing after reopening without
 the local uploaded file. Processing first reads the asset; an already processed

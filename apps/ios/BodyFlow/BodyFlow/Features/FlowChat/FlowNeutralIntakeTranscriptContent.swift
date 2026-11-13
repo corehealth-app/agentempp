@@ -11,18 +11,28 @@ struct FlowNeutralIntakeComposerContent: View {
   var body: some View {
     @Bindable var model = model
     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-      if let original = model.preparedIntakeID {
+      if let held = model.heldOriginalIntakeID {
+        Label(english ? "Attachment preserved" : "Anexo preservado", systemImage: "lock")
+        Text(
+          english
+            ? "This attachment is preserved and will not be sent now. You can continue by text or discard it."
+            : "Este anexo foi preservado e não será enviado agora. Você pode continuar por texto ou descartá-lo."
+        )
+        Button(
+          english ? "Discard preserved attachment" : "Descartar anexo preservado",
+          role: .destructive
+        ) {
+          Task { await model.discardUnsent(intakeID: held) }
+        }.disabled(model.isWorking)
+      }
+      if let original = model.activePreparedIntakeID {
         Label(
           english ? "Original message preserved" : "Mensagem original preservada",
           systemImage: "lock")
         Text(
-          model.hasHeldOriginal
-            ? (english
-              ? "Access to this attachment changed. It is preserved and will not be sent. You can discard it to continue."
-              : "O acesso deste anexo mudou. Ele foi preservado e não será enviado. Você pode descartá-lo para continuar.")
-            : (english
-              ? "This original message is locked until its local delivery is resolved."
-              : "Esta mensagem original fica travada até resolver sua entrega local."))
+          english
+            ? "This original message is locked until its local delivery is resolved."
+            : "Esta mensagem original fica travada até resolver sua entrega local.")
         HStack {
           if model.preparedInput != nil {
             Button(english ? "Check original" : "Consultar original") {

@@ -50,6 +50,7 @@ final class FlowNeutralIntakeModel {
   private var selectedAttachment: FlowConversationAttachment?
   private let mediaService: ConversationMealMediaService?
   private let mediaStaging: MediaStagingStore?
+  private let originalFileWorker: any ConversationOriginalFileWorking
   private let originalSession: ConversationNeutralIntakeOutboxSession?
   private var heldOriginal: ConversationMediaOriginal?
   private var durableOriginal: ConversationMediaOriginal?
@@ -79,6 +80,7 @@ final class FlowNeutralIntakeModel {
     parentIsCurrent: @escaping @MainActor (ConversationCommandContext.Identity) -> Bool,
     mediaService: ConversationMealMediaService?, mediaStaging: MediaStagingStore?,
     originalSession: ConversationNeutralIntakeOutboxSession?,
+    originalFileWorker: any ConversationOriginalFileWorking,
     onWorkSettled: @escaping @MainActor () async -> Void,
     onFactualEffect: @escaping @MainActor () -> Void
   ) {
@@ -88,6 +90,7 @@ final class FlowNeutralIntakeModel {
     self.mediaService = mediaService
     self.mediaStaging = mediaStaging
     self.originalSession = originalSession
+    self.originalFileWorker = originalFileWorker
     self.onFactualEffect = onFactualEffect
     self.onWorkSettled = onWorkSettled
   }
@@ -97,6 +100,7 @@ final class FlowNeutralIntakeModel {
     expectedLease: SessionLease, parentIdentity: ConversationCommandContext.Identity,
     parentIsCurrent: @escaping @MainActor (ConversationCommandContext.Identity) -> Bool,
     mediaService: ConversationMealMediaService? = nil, mediaStaging: MediaStagingStore? = nil,
+    originalFileWorker: any ConversationOriginalFileWorking = ConversationOriginalFileWorker(),
     onWorkSettled: @escaping @MainActor () async -> Void = {},
     onFactualEffect: @escaping @MainActor () -> Void
   ) async throws -> FlowNeutralIntakeModel {
@@ -129,6 +133,7 @@ final class FlowNeutralIntakeModel {
     let model = Self(
       controller: controller, parentIdentity: parentIdentity, parentIsCurrent: parentIsCurrent,
       mediaService: mediaService, mediaStaging: mediaStaging, originalSession: originals,
+      originalFileWorker: originalFileWorker,
       onWorkSettled: onWorkSettled,
       onFactualEffect: onFactualEffect)
     do {
@@ -147,15 +152,20 @@ final class FlowNeutralIntakeModel {
     else { return false }
     return (try? context.withCurrentAuthority { true }) == true
   }
-  var isComposerLocked: Bool { prepared != nil || preparedCapture != nil || heldOriginal != nil }
+  var isComposerLocked: Bool { prepared != nil || preparedCapture != nil }
   var preparedInput: FlowNeutralIntakeInput? { closed ? nil : prepared?.input }
+  var activePreparedIntakeID: UUID? {
+    closed ? nil : (prepared?.input.intakeID ?? preparedCapture?.attachment.commandID)
+  }
+  var heldOriginalIntakeID: UUID? { closed ? nil : heldOriginal?.intakeID }
   var preparedIntakeID: UUID? {
     closed
       ? nil
       : (prepared?.input.intakeID ?? preparedCapture?.attachment.commandID ?? heldOriginal?.intakeID)
   }
   var captureContext: ConversationCommandContext.Identity? {
-    isVisible && mediaService != nil && mediaStaging != nil ? context?.identity : nil
+    isVisible && heldOriginal == nil && mediaService != nil && mediaStaging != nil
+      ? context?.identity : nil
   }
   /// Local presentation ownership only; never a grant to attach, upload or send.
   var captureSelectionIdentity: ConversationCommandContext.Identity? {
@@ -201,7 +211,7 @@ final class FlowNeutralIntakeModel {
     }
   }
   var canSubmit: Bool {
-    guard !closed, !isWorking, heldOriginal == nil, lastIdentity == parentIdentity else {
+    guard !closed, !isWorking, lastIdentity == parentIdentity else {
       return false
     }
     if let prepared {
@@ -214,7 +224,7 @@ final class FlowNeutralIntakeModel {
       return isVisible && capture.attachment.identity == parentIdentity
     }
     if selectedAttachment != nil {
-      return isVisible
+      return heldOriginal == nil && isVisible
         && (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
           || neutralText(draft, limit: 1000))
     }
@@ -320,10 +330,15 @@ final class FlowNeutralIntakeModel {
         {
           candidate = stored
         } else {
-          candidate = try ConversationMediaOriginal(
+          candidate = try await self.originalFileWorker.prepare(
             staged: capture.attachment.staged, staging: staging,
             captureID: capture.attachment.id, intakeID: capture.attachment.commandID,
-            context: current.identity, caption: capture.caption, mealTypeHint: capture.hint)
+            identity: current.identity, caption: capture.caption, hint: capture.hint)
+          try Task.checkCancellation()
+          guard self.isVisible, self.context?.identity == current.identity else {
+            staging.remove(capture.attachment.staged.fileURL)
+            throw ConversationOutboxError.invalidServerObservation
+          }
         }
         guard candidate.caption == capture.caption, candidate.mealTypeHint == capture.hint else {
           throw ConversationOutboxError.invalidTransition
@@ -333,8 +348,12 @@ final class FlowNeutralIntakeModel {
           throw ConversationOutboxError.invalidServerObservation
         }
         self.durableOriginal = durable
-        try current.withCurrentAuthority {
-          try durable.ensureStaged(capture.attachment.staged, in: staging)
+        try current.withCurrentAuthority {}
+        try await self.originalFileWorker.ensure(
+          durable, staged: capture.attachment.staged, staging: staging)
+        guard !Task.isCancelled, self.isVisible, self.context?.identity == current.identity else {
+          staging.remove(capture.attachment.staged.fileURL)
+          throw ConversationOutboxError.invalidServerObservation
         }
         self.mediaPhase = .uploading
         let asset = try await media.uploadIntake(
@@ -429,8 +448,17 @@ final class FlowNeutralIntakeModel {
         {
           // No durable capture was admitted.
         }
+        if self.heldOriginal?.intakeID == intakeID,
+          self.preparedCapture?.attachment.commandID != intakeID,
+          self.prepared?.input.intakeID != intakeID
+        {
+          self.heldOriginal = nil
+          if self.durableOriginal?.intakeID == intakeID { self.durableOriginal = nil }
+          try await self.controller.publishSnapshot(publish)
+          return
+        }
         let capture = self.preparedCapture?.attachment
-        self.clearCapture()
+        self.clearCapture(preservingHeldOriginal: self.heldOriginal?.intakeID != intakeID)
         self.prepared = nil
         self.draft = ""
         self.hint = nil
@@ -452,7 +480,7 @@ final class FlowNeutralIntakeModel {
       }
       if self.preparedCapture?.attachment.commandID == intakeID {
         let capture = self.preparedCapture?.attachment
-        self.clearCapture()
+        self.clearCapture(preservingHeldOriginal: self.heldOriginal?.intakeID != intakeID)
         if let capture, let context = self.context, context.identity == capture.identity {
           try await self.mediaService?.discard(captureID: capture.id, context: context)
         }
@@ -481,18 +509,19 @@ final class FlowNeutralIntakeModel {
     await controller.close()
     await originalSession?.invalidate()
   }
-  private func clearCapture() {
+  private func clearCapture(preservingHeldOriginal: Bool = false) {
     if let selectedAttachment { mediaStaging?.remove(selectedAttachment.staged.fileURL) }
     selectedAttachment = nil
     preparedCapture = nil
     mediaPhase = nil
-    heldOriginal = nil
+    if !preservingHeldOriginal { heldOriginal = nil }
     durableOriginal = nil
   }
   private func restoreOriginal() async throws {
     guard prepared == nil, preparedCapture == nil, let originals = originalSession,
       let current = context, isVisible
     else { return }
+    let restorationRevision = revision
     let original = try await originals.loadOriginal(context: current)
     guard isVisible, context?.identity == current.identity else {
       throw ConversationOutboxError.invalidServerObservation
@@ -509,8 +538,19 @@ final class FlowNeutralIntakeModel {
       heldOriginal = original
       return
     }
+    try current.withCurrentAuthority {}
+    let staged = try await originalFileWorker.restage(original, staging: staging)
+    guard !Task.isCancelled, isVisible, context?.identity == current.identity else {
+      staging.remove(staged.fileURL)
+      throw ConversationOutboxError.invalidServerObservation
+    }
+    if revision != restorationRevision || selectedAttachment != nil || !draft.isEmpty || hint != nil
+    {
+      staging.remove(staged.fileURL)
+      heldOriginal = original
+      return
+    }
     try current.withCurrentAuthority {
-      let staged = try original.restage(in: staging)
       if let selectedAttachment { mediaStaging?.remove(selectedAttachment.staged.fileURL) }
       let attachment = FlowConversationAttachment(
         id: original.captureID, commandID: original.intakeID,

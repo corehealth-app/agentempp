@@ -56,7 +56,7 @@ import Testing
         neutralIntakeEnabled: true)
       let held = try #require(current.neutralIntake)
       #expect(
-        held.heldCount == 1 && held.isComposerLocked && !held.canSubmit && held.composer.isEmpty)
+        held.heldCount == 1 && !held.isComposerLocked && !held.canSubmit && held.composer.isEmpty)
       #expect(held.preparedIntakeID == intakeID && current.attachment == nil)
       let host = SignUpRenderingProbe.host(
         FlowNeutralIntakeComposerContent(
@@ -68,9 +68,25 @@ import Testing
       let nodes = host.nodes()
       #expect(nodes.contains { $0.label.contains("não será enviado") })
       #expect(!nodes.contains { $0.label.contains("PRIVATE OLD CAPTION") })
+      held.composer = "Uma mensagem nova"
+      held.mealTypeHint = .jantar
+      #expect(held.canSubmit)
+      await held.submit()
+      #expect(held.heldCount == 1 && held.hasHeldOriginal)
+      #expect(
+        await f.http.stub.requests.contains { request in
+          guard request.httpMethod == "POST",
+            request.url?.path == "/api/mobile/v1/conversation/intakes",
+            let data = request.httpBody, let input = try? FlowNeutralIntakeInput(wireBody: data)
+          else { return false }
+          if case .text(let text) = input.source { return text == "Uma mensagem nova" }
+          return false
+        })
+      held.composer = "Rascunho independente preservado"
+      held.mealTypeHint = .almoco
       await held.discardUnsent(intakeID: intakeID)
       #expect(held.heldCount == 0 && !held.isComposerLocked && held.preparedIntakeID == nil)
-      held.composer = "Uma mensagem nova"
+      #expect(held.composer == "Rascunho independente preservado" && held.mealTypeHint == .almoco)
       #expect(held.canSubmit)
       await current.close()
       #expect(!(await f.http.stub.requests).contains { $0.httpMethod == "DELETE" })

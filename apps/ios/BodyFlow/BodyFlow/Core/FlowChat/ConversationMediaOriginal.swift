@@ -212,3 +212,41 @@ private struct MediaOriginalStorageKey: CodingKey {
   init?(stringValue: String) { self.stringValue = stringValue }
   init?(intValue: Int) { return nil }
 }
+
+/// Serial file work is separate from the observable UI and from persisted identity.
+protocol ConversationOriginalFileWorking: Sendable {
+  func prepare(
+    staged: StagedMedia, staging: MediaStagingStore, captureID: UUID, intakeID: UUID,
+    identity: ConversationCommandContext.Identity, caption: String?,
+    hint: ConversationMealCommand.MealType?
+  ) async throws -> ConversationMediaOriginal
+  func ensure(
+    _ original: ConversationMediaOriginal, staged: StagedMedia, staging: MediaStagingStore)
+    async throws
+  func restage(_ original: ConversationMediaOriginal, staging: MediaStagingStore) async throws
+    -> StagedMedia
+}
+actor ConversationOriginalFileWorker: ConversationOriginalFileWorking {
+  func prepare(
+    staged: StagedMedia, staging: MediaStagingStore, captureID: UUID, intakeID: UUID,
+    identity: ConversationCommandContext.Identity, caption: String?,
+    hint: ConversationMealCommand.MealType?
+  ) throws -> ConversationMediaOriginal {
+    try Task.checkCancellation()
+    return try .init(
+      staged: staged, staging: staging, captureID: captureID, intakeID: intakeID,
+      context: identity, caption: caption, mealTypeHint: hint)
+  }
+  func ensure(
+    _ original: ConversationMediaOriginal, staged: StagedMedia, staging: MediaStagingStore
+  ) throws {
+    try Task.checkCancellation()
+    try original.ensureStaged(staged, in: staging)
+  }
+  func restage(_ original: ConversationMediaOriginal, staging: MediaStagingStore) throws
+    -> StagedMedia
+  {
+    try Task.checkCancellation()
+    return try original.restage(in: staging)
+  }
+}

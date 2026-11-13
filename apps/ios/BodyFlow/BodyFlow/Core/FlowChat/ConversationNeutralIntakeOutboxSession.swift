@@ -53,6 +53,8 @@ actor ConversationNeutralIntakeOutboxSession {
   private var key: SymmetricKey?
   private var workID: UUID?
   private var issued: [UUID: String] = [:]
+  private var originalRevision = "empty"
+  private var originalAdmission: (id: UUID, revision: String)?
   private init(
     lifecycle: any SessionLifecycleProviding, store: EncryptedConversationOutboxStore,
     owner: ConversationOutboxOwner, lease: SessionLease, key: SymmetricKey
@@ -82,7 +84,11 @@ actor ConversationNeutralIntakeOutboxSession {
     _ = try await lifecycle.performPatientStateOperation(lease: lease) {
       try store.loadIntakes(owner: owner, key: key)
     }
+    let originalObservation = try await lifecycle.performPatientStateOperation(lease: lease) {
+      try store.observeOriginal(owner: owner, key: key)
+    }
     let session = Self(lifecycle: lifecycle, store: store, owner: owner, lease: lease, key: key)
+    await session.installOriginalRevision(originalObservation.revision)
     let lifetime = session.lifetime
     do {
       let id = try await lifecycle.beginPatientWork(lease: lease) { [weak session] in
@@ -97,6 +103,7 @@ actor ConversationNeutralIntakeOutboxSession {
       throw error
     }
   }
+  private func installOriginalRevision(_ value: String) { originalRevision = value }
   private func install(_ id: UUID) async throws {
     do {
       try lifetime.check()
@@ -113,16 +120,24 @@ actor ConversationNeutralIntakeOutboxSession {
     guard original.ownerID == context.ownerID, original.epoch == context.epoch else {
       throw ConversationOutboxError.invalidServerObservation
     }
+    if originalAdmission?.id != original.intakeID {
+      originalAdmission = (original.intakeID, originalRevision)
+    }
+    guard let expected = originalAdmission?.revision else {
+      throw ConversationOutboxError.invalidTransition
+    }
     return try await transaction(context.observation) { store, owner, key in
-      try store.prepareOriginal(original, owner: owner, key: key)
+      try store.prepareOriginal(original, expectedRevision: expected, owner: owner, key: key)
     }
   }
   func loadOriginal(context: ConversationCommandContext) async throws -> ConversationMediaOriginal?
   {
     try check(context.observation)
-    return try await transaction(context.observation) { store, owner, key in
-      try store.loadOriginal(owner: owner, key: key)
+    let observed = try await transaction(context.observation) { store, owner, key in
+      try store.observeOriginal(owner: owner, key: key)
     }
+    originalRevision = observed.revision
+    return observed.original
   }
   func bindOriginalAsset(intakeID: UUID, assetID: UUID, context: ConversationCommandContext)
     async throws -> ConversationMediaOriginal

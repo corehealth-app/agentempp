@@ -222,21 +222,42 @@ struct EncryptedConversationOutboxStore: Sendable {
         try locked {
             let queue = try readCiphertext(owner: owner)
             let capture = try readCiphertext(at: originalFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes)
-            return queue != nil || capture != nil
+            let pending = try readCiphertext(at: originalPendingFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes)
+            return queue != nil || capture != nil || pending != nil
         }
     }
 
     func originalFileURL(owner: ConversationOutboxOwner) -> URL {
         root.appendingPathComponent(owner.hash + ".original-sealed", isDirectory: false)
     }
+    func originalPendingFileURL(owner: ConversationOutboxOwner) -> URL {
+        root.appendingPathComponent("." + owner.hash + ".original-pending", isDirectory: false)
+    }
     func containsOriginalCiphertext(owner: ConversationOutboxOwner) throws -> Bool {
-        try locked { try readCiphertext(at: originalFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes) != nil }
+        try locked {
+            let canonical = try readCiphertext(at: originalFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes)
+            let pending = try readCiphertext(at: originalPendingFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes)
+            return canonical != nil || pending != nil
+        }
+    }
+    struct OriginalObservation: Sendable {
+        let original: ConversationMediaOriginal?
+        let revision: String
+    }
+    private func originalRevision(_ envelope: OriginalEnvelope?) -> String {
+        if let original = envelope?.original { return "original:" + original.captureID.uuidString + ":" + original.intakeID.uuidString }
+        if let retired = envelope?.retired { return "retired:" + retired.intakeID.uuidString + ":" + String(retired.cancelled) }
+        return "empty"
     }
 
-    func prepareOriginal(_ candidate: ConversationMediaOriginal, owner: ConversationOutboxOwner, key: SymmetricKey) throws -> ConversationMediaOriginal {
+    func prepareOriginal(_ candidate: ConversationMediaOriginal, expectedRevision: String? = nil, owner: ConversationOutboxOwner, key: SymmetricKey) throws -> ConversationMediaOriginal {
         try locked {
             try candidate.validate()
             let previous = try readOriginalEnvelope(owner: owner, key: key)
+            if let expectedRevision, expectedRevision != originalRevision(previous), previous?.original?.matchesUnbound(candidate) != true {
+                throw ConversationOutboxError.reconciliationRequired
+            }
+            if previous?.retired?.intakeID == candidate.intakeID { throw ConversationOutboxError.reconciliationRequired }
             if let old = previous?.original {
                 guard old.matchesUnbound(candidate) else { throw ConversationOutboxError.invalidTransition }
                 try syncOriginalDirectory()
@@ -269,17 +290,20 @@ struct EncryptedConversationOutboxStore: Sendable {
     /// Reconcile a crash after enqueue but before retiring local capture bytes.
     /// This read never recreates an input or dispatches work.
     func loadOriginal(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> ConversationMediaOriginal? {
+        try observeOriginal(owner: owner, key: key).original
+    }
+    func observeOriginal(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> OriginalObservation {
         try locked {
-            guard let envelope = try readOriginalEnvelope(owner: owner, key: key) else { return nil }
+            guard let envelope = try readOriginalEnvelope(owner: owner, key: key) else { return .init(original: nil, revision: "empty") }
             var state = try readState(owner: owner, key: key)
             if let original = envelope.original {
                 if let row = state.intakes.first(where: { $0.input.intakeID == original.intakeID }) {
                     try verifyOriginal(original, row: row)
                     guard row.state == .queued else { throw ConversationOutboxError.reconciliationRequired }
                     try writeOriginalEnvelope(.init(owner: owner.hash, original: nil, retired: .init(original, cancelled: false)), owner: owner, key: key)
-                    return nil
+                    return .init(original: nil, revision: "retired:" + original.intakeID.uuidString + ":false")
                 }
-                return original
+                return .init(original: original, revision: originalRevision(envelope))
             }
             try syncOriginalDirectory()
             if let retired = envelope.retired, retired.cancelled,
@@ -290,7 +314,7 @@ struct EncryptedConversationOutboxStore: Sendable {
                 state.intakes.remove(at: index)
                 try write(state, owner: owner, key: key)
             }
-            return nil
+            return .init(original: nil, revision: originalRevision(envelope))
         }
     }
 
@@ -379,8 +403,7 @@ struct EncryptedConversationOutboxStore: Sendable {
     private func originalAAD(_ owner: ConversationOutboxOwner) -> Data {
         Data("performe.conversation.original\0version=1\0owner=\(owner.hash)".utf8)
     }
-    private func readOriginalEnvelope(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> OriginalEnvelope? {
-        guard let data = try readCiphertext(at: originalFileURL(owner: owner), maximum: ConversationMediaOriginal.maximumEnvelopeBytes) else { return nil }
+    private func decodeOriginalEnvelope(_ data: Data, owner: ConversationOutboxOwner, key: SymmetricKey) throws -> OriginalEnvelope {
         do {
             guard data.starts(with: Data("PCOMG001".utf8)) else { throw ConversationOutboxError.integrityFailure }
             let box = try AES.GCM.SealedBox(combined: data.dropFirst(8))
@@ -390,14 +413,33 @@ struct EncryptedConversationOutboxStore: Sendable {
             return value
         } catch { throw ConversationOutboxError.integrityFailure }
     }
+    private func readOriginalEnvelope(owner: ConversationOutboxOwner, key: SymmetricKey) throws -> OriginalEnvelope? {
+        let pendingURL = originalPendingFileURL(owner: owner)
+        let canonicalURL = originalFileURL(owner: owner)
+        let canonical = try readCiphertext(at: canonicalURL, maximum: ConversationMediaOriginal.maximumEnvelopeBytes)
+        if let pending = try readCiphertext(at: pendingURL, maximum: ConversationMediaOriginal.maximumEnvelopeBytes) {
+            // Only this exact authenticated, attributable uncommitted copy is ours.
+            // Unknown/corrupt ciphertext and unrelated temporary files are preserved.
+            _ = try decodeOriginalEnvelope(pending, owner: owner, key: key)
+            if let canonical {
+                _ = try decodeOriginalEnvelope(canonical, owner: owner, key: key)
+                guard unlink(pendingURL.path) == 0 else { throw ConversationOutboxError.storageUnavailable }
+            } else {
+                guard rename(pendingURL.path, canonicalURL.path) == 0 else { throw ConversationOutboxError.storageUnavailable }
+            }
+            try syncOriginalDirectory()
+        }
+        guard let data = try readCiphertext(at: canonicalURL, maximum: ConversationMediaOriginal.maximumEnvelopeBytes) else { return nil }
+        return try decodeOriginalEnvelope(data, owner: owner, key: key)
+    }
     private func writeOriginalEnvelope(_ envelope: OriginalEnvelope, owner: ConversationOutboxOwner, key: SymmetricKey) throws {
-        let plain = try JSONEncoder().encode(envelope)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let plain = try encoder.encode(envelope)
         guard plain.count <= ConversationMediaOriginal.maximumEnvelopeBytes else { throw ConversationOutboxError.queueFull }
         let box = try AES.GCM.seal(plain, using: key, authenticating: originalAAD(owner))
         guard let data = box.combined else { throw ConversationOutboxError.storageUnavailable }
-        try atomicReplace(Data("PCOMG001".utf8) + data, at: originalFileURL(owner: owner))
-        // A lost/failed sync is uncertain, never permission to replace an
-        // original with a fresh nonce. The next retry reads and syncs it again.
+        try atomicReplace(Data("PCOMG001".utf8) + data, at: originalFileURL(owner: owner), temporaryURL: originalPendingFileURL(owner: owner))
         try syncOriginalDirectory()
     }
     private func syncOriginalDirectory() throws {
@@ -816,8 +858,8 @@ struct EncryptedConversationOutboxStore: Sendable {
 
     /// Only ciphertext touches the temporary file. No throwing operation is
     /// performed after rename, so a reported failure preserves the old queue.
-    private func atomicReplace(_ ciphertext: Data, at destination: URL) throws {
-        let temporary = root.appendingPathComponent(".\(UUID().uuidString).sealed-tmp")
+    private func atomicReplace(_ ciphertext: Data, at destination: URL, temporaryURL: URL? = nil) throws {
+        let temporary = temporaryURL ?? root.appendingPathComponent(".\(UUID().uuidString).sealed-tmp")
         let descriptor = open(temporary.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else { throw ConversationOutboxError.storageUnavailable }
         defer { close(descriptor); unlink(temporary.path) }

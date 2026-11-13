@@ -3,6 +3,26 @@
 Estado: política aprovada expressamente pelo responsável em 13/11/2026.
 O aceite não comprova implementação, descarte conectado ou prontidão de release.
 
+## Limite de implantação aprovado em R124
+
+O responsável aprovou preservar as mídias antigas de staging e habilitar a
+limpeza automática somente para novas mídias do fluxo qualificado. O banco fixa
+um instante de corte e registra a identidade técnica do arquivo quando a nova
+autorização de upload é preparada. Arquivo e autorização precisam ser posteriores
+ao corte; repetir uma autorização de arquivo antigo não muda sua classificação.
+
+A seleção automática exige essa origem para inscrever ou revisitar uma dívida.
+Uma resposta atrasada de upload antigo registra a validade da autorização, sem
+apagar seu catálogo ou alterar sua dívida. A exclusão automática de uma conta
+com mídia antiga preservada permanece pendente, inclusive quando só resta a
+dívida independente. Contas com apenas mídias novas continuam pela verificação
+de descarte e barreiras existentes. Não ampliar essa proteção temporária de
+staging para uma política permanente de retenção de clientes sem nova decisão.
+
+Esse corte não ativa o agendador, não altera o descarte explícito solicitado
+pela pessoa e não comprova a drenagem dos emissores/removers antigos. As regras
+clínicas das reavaliações permanecem separadas.
+
 ## Conteúdo e finalidade
 
 Fotos e áudios reais continuam sujeitos ao descarte vigente. Ao concluir o

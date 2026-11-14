@@ -130,3 +130,40 @@ drenagem global de todos os emissores/removers antigos, nem a remoção física 
 resíduos internos do fornecedor. A composição com remoção antiga em andamento
 e reparação agendada continua separada; R105-REVIEW-1 e a liberação multimodal
 permanecem abertos. Não há alteração de política, bucket, chave ou regra clínica.
+
+## Caracterização conectada R133 — remoção antiga e reparação pelo worker
+
+Em 14/11/2026, um novo áudio fictício de oito bytes da QA recebeu uma autorização
+real do app. As funções de exclusão, leitura e atualização do catálogo e remoção
+Storage foram extraídas, sem alteração dos seus corpos, do commit antigo
+`71d1322e313356ed688775c36cf84f3fbb90cc5c`. Um adaptador diagnóstico local usou o
+SDK existente e o banco/Storage de staging, limitados à identidade e ao caminho
+desse único arquivo. A leitura antiga foi suspensa depois de observar
+`pending_upload`; a API atual então apagou o catálogo e instalou a barreira vazia.
+
+Ao retomar, a remoção antiga sem versão apagou a barreira. Sua atualização de
+catálogo recusou o registro já apagado, como previsto pelo filtro antigo. Mesmo
+assim, a autorização original de upload ainda permitiu recriar oito bytes no
+Storage. A obrigação independente de descarte permaneceu presente.
+
+Uma única invocação manual pela interface oficial da função registrada
+`conversation-media-retention-cleanup`, no ambiente `performe-staging`, concluiu
+às 17:00:37 UTC. O run `01M7DG1XEP09MRXG3ZKXRVC26A` retornou `swept: 8` e
+`issuanceDrain: not_qualified`. São oito obrigações visitadas, não oito arquivos
+com conteúdo apagados. A inspeção posterior encontrou o arquivo novo com zero
+bytes e nova versão, a dívida preservada e o catálogo apagado com resultado nulo.
+Repetir o mesmo upload original retornou `400 Duplicate` e preservou a barreira.
+
+As 69 mídias, oito autorizações e oito dívidas anteriores ao corte mantiveram os
+hashes de referência. O áudio antigo de origem incerta continuou com 84.644 bytes
+e a mesma versão. Perfil, refeições, treinos, intakes, permissões anteriores e a
+sessão original da QA permaneceram inalterados. A permissão e a sessão temporárias
+foram encerradas; a cópia local da chave existente e as capacidades locais de
+upload foram removidas. Não houve criação ou rotação de chave.
+
+Essa rodada comprova a composição reproduzida com corpos antigos e reparação
+pelo worker real registrado. A suspensão ocorreu no adaptador diagnóstico local,
+não dentro de uma Function antiga implantada. O acionamento foi manual; não é uma
+nova prova do disparo por horário. A drenagem global dos emissores/removers e o
+ciclo completo de exclusão de conta continuam abertos, assim como R105-REVIEW-1.
+Não houve nova implantação, alteração do agendamento ou liberação multimodal.

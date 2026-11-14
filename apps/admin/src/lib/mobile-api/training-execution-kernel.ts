@@ -328,6 +328,86 @@ function validSession(raw: unknown) {
     fail('training_execution_state_unavailable', 503)
   return v
 }
+export function parseTrainingExecutionCommand(raw: unknown) {
+  bounded(raw, 16384, 'training_execution_invalid_command', 422)
+  return parse(commandSchema, raw, 'training_execution_invalid_command', 422)
+}
+
+/** Validate trusted persistence replies without turning a stale captured clock
+ * into replay authority. The SQL writer owns the latest scope/CAS observation. */
+export function parseTrainingExecutionPersistence(
+  raw: unknown,
+  rawCommand: unknown,
+  original: { owner: string; auth: string },
+): PreparedTrainingExecutionMutation {
+  bounded(raw, 600000, 'training_execution_store_unavailable')
+  const result = parse(
+    z
+      .object({
+        status: z.enum(['created', 'updated', 'replayed']),
+        session: z.unknown(),
+        receipt: z.unknown(),
+        audit: z.unknown().nullable(),
+      })
+      .strict(),
+    raw,
+    'training_execution_store_unavailable',
+  )
+  const command = parseTrainingExecutionCommand(rawCommand)
+  const session = validSession(result.session)
+  const receipt = parse(receiptSchema, result.receipt, 'training_execution_store_unavailable')
+  const kind = command.schema === 'training.execution.start.v1' ? 'start' : command.action.kind
+  if (
+    session.owner_id !== original.owner ||
+    session.auth_user_id !== original.auth ||
+    session.id !== command.session_id ||
+    session.epoch !== command.expected_epoch ||
+    receipt.owner_id !== session.owner_id ||
+    receipt.epoch !== session.epoch ||
+    receipt.session_id !== session.id ||
+    receipt.operation_id !== command.operation_id ||
+    receipt.input_hash !== hashMobileRequest(command) ||
+    receipt.kind !== kind ||
+    receipt.after_revision > session.revision ||
+    conversationJournalInstant(receipt.at) < conversationJournalInstant(session.started_at) ||
+    conversationJournalInstant(receipt.at) > conversationJournalInstant(session.updated_at) ||
+    (command.schema === 'training.execution.start.v1'
+      ? receipt.before_revision !== null ||
+        receipt.after_revision !== 0 ||
+        command.operation_id !== session.id
+      : receipt.before_revision !== command.expected_revision ||
+        receipt.after_revision !== command.expected_revision + 1) ||
+    (result.status === 'replayed' && result.audit !== null)
+  )
+    fail('training_execution_store_unavailable', 503)
+  let audit: PreparedTrainingExecutionMutation['audit'] = null
+  if (result.audit !== null) {
+    const a = parse(
+      z
+        .object({
+          kind: z.enum(['start', 'save_set', 'remove_set', 'mark_exercise', 'abandon']),
+          exercise_index: z.number().int().min(0).max(19).optional(),
+          before: z.unknown(),
+          after: z.unknown(),
+        })
+        .strict(),
+      result.audit,
+      'training_execution_store_unavailable',
+    )
+    if (a.kind !== kind) fail('training_execution_store_unavailable', 503)
+    audit = { ...a, before: a.before, after: a.after }
+  }
+  if (
+    result.status !== 'replayed' &&
+    (audit === null ||
+      session.revision !== receipt.after_revision ||
+      result.status !== (kind === 'start' ? 'created' : 'updated'))
+  )
+    fail('training_execution_store_unavailable', 503)
+  // Fresh writes are additionally compared byte-for-byte with the prepared
+  // result by the adapter; replay never trusts an old audit as a new mutation.
+  return freeze({ status: result.status, session, receipt, audit })
+}
 /** Prepare a single CAS transition. prior_receipt is an ORIGINAL server read,
  * never an HTTP field. The adapter must atomically persist the expected revision,
  * next session and unique receipt/audit; otherwise this is not persistence. */
@@ -346,8 +426,7 @@ export function prepareTrainingExecutionMutation(raw: unknown): PreparedTraining
     'training_execution_invalid_command',
     422,
   )
-  bounded(input.command, 16384, 'training_execution_invalid_command', 422)
-  const command = parse(commandSchema, input.command, 'training_execution_invalid_command', 422),
+  const command = parseTrainingExecutionCommand(input.command),
     s = scope(input.scope),
     current = input.session == null ? null : validSession(input.session),
     inputHash = hashMobileRequest(command)

@@ -213,7 +213,7 @@ import SwiftUI
       if let receipt = result.receipt {
         Text(
           english
-            ? "Meal registered after a linked reply" : "Refeição registrada após resposta vinculada"
+            ? "Meal recorded" : "Refeição registrada"
         ).font(BodyFlowTypography.headline)
         Text(
           english

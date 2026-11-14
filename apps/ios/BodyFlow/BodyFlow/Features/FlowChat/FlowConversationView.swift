@@ -171,8 +171,8 @@ struct FlowConversationView: View {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
               Text(
                 english
-                  ? "Meal registered after a linked reply"
-                  : "Refeição registrada após resposta vinculada"
+                  ? "Meal recorded"
+                  : "Refeição registrada"
               )
               .font(BodyFlowTypography.headline)
               linkedCard(row)

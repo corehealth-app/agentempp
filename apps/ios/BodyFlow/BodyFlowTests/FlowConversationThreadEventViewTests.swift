@@ -19,7 +19,7 @@ struct FlowConversationThreadEventViewTests {
     }
     #expect(rows[4].title == "Relato original não registrado")
     #expect(rows[4].sourceText == "Comi leite")
-    #expect(rows[1].title == "Refeição registrada após resposta vinculada")
+    #expect(rows[1].title == "Refeição registrada")
     #expect(rows[1].linkedActionGate != nil)
     #expect(rows[3].lines.contains("200 mL"))
     #expect(

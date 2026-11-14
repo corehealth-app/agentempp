@@ -79,7 +79,7 @@ struct FlowConversationThreadEventPresentation {
     case .fulfillment(let result):
       title =
         english
-        ? "Meal registered after a linked reply" : "Refeição registrada após resposta vinculada"
+        ? "Meal recorded" : "Refeição registrada"
       sourceText = nil
       lines = [
         english

@@ -13,6 +13,7 @@ struct FlowConversationView: View {
   @State private var keyboardClearance: CGFloat = 0
   @State private var discardID: UUID?
   @State private var discardIsPrepared = false
+  @State private var transcriptPositioning = FlowTranscriptPositioning()
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
 
   var body: some View {
@@ -115,6 +116,20 @@ struct FlowConversationView: View {
   }
 
   private var transcript: some View {
+    ScrollViewReader { reader in
+      transcriptScrollView
+        .onScrollPhaseChange { _, phase in
+          if phase == .interacting { transcriptPositioning.userScrolled() }
+        }
+        .onChange(of: transcriptPositionObservation, initial: true) { _, observation in
+          if let anchor = transcriptPositioning.observe(observation) {
+            reader.scrollTo(anchor, anchor: .top)
+          }
+        }
+    }
+  }
+
+  private var transcriptScrollView: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
@@ -244,11 +259,13 @@ struct FlowConversationView: View {
           .disabled(model.isLoadingHistory || model.isLoadingUnifiedHistory)
         }
         ForEach(Array(model.unifiedRows.reversed()), id: \.eventID) { entry in
-          FlowConversationJournalV3Content(
-            entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english)
-          if let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID) {
-            FlowConversationMealControlsContent(model: model, commandID: commandID)
-          }
+          VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+            FlowConversationJournalV3Content(
+              entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english)
+            if let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID) {
+              FlowConversationMealControlsContent(model: model, commandID: commandID)
+            }
+          }.id(entry.eventID)
         }
         ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in journalEntry(entry) }
         ForEach(Array(model.threadRows.reversed()), id: \.eventID) { entry in
@@ -366,6 +383,15 @@ struct FlowConversationView: View {
       .padding(BodyFlowSpacing.md)
     }
     .refreshable { await model.refreshConversation() }
+  }
+
+  private var transcriptPositionObservation: FlowTranscriptPositioning.Observation {
+    .init(
+      owner: ObjectIdentifier(model),
+      historyIDs: model.unifiedRows.map(\.eventID),
+      historyLoading: model.isLoadingUnifiedHistory,
+      localResultIDs: (model.neutralIntake?.savedRows.map(\.id) ?? [])
+        + (model.neutralIntake?.terminalRows.map(\.id) ?? []))
   }
 
   private func linkedCard(_ row: FlowConversationLinkedMealRow) -> some View {

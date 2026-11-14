@@ -171,10 +171,12 @@ struct FlowNeutralIntakeTranscriptContent: View {
           !historicalMealIDs.contains($0.childID) && !historicalSavedIntakeIDs.contains($0.id)
         }
       ) { row in
-        FlowNeutralIntakeSavedContent(row: row, english: english)
-        if case .meal = row.acknowledgement, let conversation {
-          FlowConversationMealControlsContent(model: conversation, commandID: row.childID)
-        }
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+          FlowNeutralIntakeSavedContent(row: row, english: english)
+          if case .meal = row.acknowledgement, let conversation {
+            FlowConversationMealControlsContent(model: conversation, commandID: row.childID)
+          }
+        }.id(FlowTranscriptPositioning.intakeAnchor(row.id))
       }
       ForEach(
         model.terminalRows.filter {
@@ -202,6 +204,10 @@ struct FlowNeutralIntakeTranscriptContent: View {
             .accessibilityIdentifier("conversation.neutral.answer-meal")
           }
         }.padding(BodyFlowSpacing.md).accessibilityElement(children: .contain)
+          .id(
+            historicalTerminalIntakeIDs.contains(row.id)
+              ? "local-terminal/" + row.id.uuidString.lowercased()
+              : FlowTranscriptPositioning.intakeAnchor(row.id))
       }
       ForEach(model.pendingRows, id: \.input.intakeID) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {

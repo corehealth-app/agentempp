@@ -86,6 +86,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
     let unauthorizedReplay: MobileAPIUnauthorizedReplay
     let conversationMediaOwnerID: UUID?
     let feedbackPresentation: ConversationFeedbackPresentationSelection?
+    let trainingExecution: MobileTrainingExecutionRequestHeaders?
 
     init(
         method: HTTPMethod,
@@ -97,7 +98,8 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         conversation: MobileConversationRequestHeaders? = nil,
         unauthorizedReplay: MobileAPIUnauthorizedReplay = .standard,
         conversationMediaOwnerID: UUID? = nil,
-        feedbackPresentation: ConversationFeedbackPresentationSelection? = nil
+        feedbackPresentation: ConversationFeedbackPresentationSelection? = nil,
+        trainingExecution: MobileTrainingExecutionRequestHeaders? = nil
     ) throws {
         guard MobileAPIRequestPath.isValid(path) else {
             throw MobileAPIRequestError.invalidPath
@@ -106,6 +108,12 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
             throw MobileAPIRequestError.invalidQuery
         }
 
+        if let trainingExecution {
+            guard conversation == nil, conversationMediaOwnerID == nil, feedbackPresentation == nil else {
+                throw MobileAPIRequestError.invalidTrainingExecutionHeaders
+            }
+            try trainingExecution.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, replay: unauthorizedReplay)
+        }
         try conversation?.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, replay: unauthorizedReplay)
         if conversationMediaOwnerID != nil {
             try MobileConversationMediaOwner.validate(method: method, path: path, query: queryItems, body: body, key: idempotencyKey, conversation: conversation, replay: unauthorizedReplay)
@@ -127,6 +135,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         self.unauthorizedReplay = unauthorizedReplay
         self.conversationMediaOwnerID = conversationMediaOwnerID
         self.feedbackPresentation = feedbackPresentation
+        self.trainingExecution = trainingExecution
         if isMutation {
             self.idempotency = .required(
                 idempotencyKey ?? Self.makeIdempotencyKey()

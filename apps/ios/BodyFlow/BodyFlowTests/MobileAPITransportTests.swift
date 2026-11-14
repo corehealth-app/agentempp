@@ -5738,3 +5738,57 @@ private actor ControlledTransportTimeoutState {
         else { cancelled.insert(id) }
     }
 }
+
+extension MobileAPITransportTests {
+    @Test("training commands use their original immutable body, owner and epoch")
+    func trainingExecutionCommandHeaders() async throws {
+        let f = try TrainingExecutionFixture()
+        let home = try TrainingExecutionHomeSnapshot(data: f.data("home"))
+        let operation = try TrainingExecutionOperation(binding: .init(home.scope), wireBody: f.command("start"))
+        let harness = try await TransportHarness(tokens: ["training-original"])
+        let body = try JSONSerialization.data(withJSONObject: ["data": f.object("created"), "meta": ["api_version": "v1", "request_id": "training-137"]])
+        let captured = C11RequestBodyCapture()
+        await harness.stub.respond { request, _ in
+            try await captured.capture(request)
+            return .init(status: 200, headers: ["Content-Type": "application/json", "Cache-Control": "no-store", "X-Training-Execution": "1"], body: body)
+        }
+        let request = try MobileAPIRequest<TrainingExecutionMutationSnapshot>(method: .post, path: "/api/mobile/v1/training/execution/commands", body: operation.wireBody, idempotencyKey: IdempotencyKey(validating: operation.idempotencyKey), unauthorizedReplay: .never, trainingExecution: .mutation(operation))
+        let result = try await harness.transport.executeHTTP(request)
+        try result.data.validate(for: operation)
+        let sent = try #require(await harness.stub.requests().first)
+        #expect(await captured.bodies() == [operation.wireBody])
+        #expect(sent.value(forHTTPHeaderField: "X-Training-Owner") == home.scope.ownerID.uuidString.lowercased())
+        #expect(sent.value(forHTTPHeaderField: "X-Training-Epoch") == home.scope.epoch.uuidString.lowercased())
+        #expect(sent.value(forHTTPHeaderField: "Idempotency-Key") == operation.idempotencyKey)
+        #expect(sent.value(forHTTPHeaderField: "X-Conversation-Owner") == nil)
+    }
+
+    @Test("training original-login read never refreshes or follows a redirect")
+    func trainingExecutionNoUnauthorizedReplayOrRedirect() async throws {
+        let fixture = try TrainingExecutionFixture()
+        let home = try TrainingExecutionHomeSnapshot(data: fixture.data("home"))
+        let harness = try await LifecycleTransportHarness()
+        let error = ConversationHTTPReply.failure(401, "training_execution_auth_unavailable").body
+        await harness.stub.respond(with: .init(status: 401, headers: ["Content-Type": "application/json"], body: error))
+        let request = try MobileAPIRequest<TrainingExecutionHomeSnapshot>(method: .get, path: "/api/mobile/v1/training/execution", unauthorizedReplay: .never, trainingExecution: .home(ownerID: home.scope.ownerID, cursor: nil))
+        await #expect(throws: MobileAPITransportError.unauthorized(code: "training_execution_auth_unavailable", requestID: "conversation-error-0001")) { try await harness.transport.executeHTTP(request) }
+        #expect(await harness.lifecycle.refreshCount == 0)
+        #expect(await harness.stub.requests().count == 1)
+        await harness.stub.respond { req, _ in .redirect(from: req.url!, to: URL(string: "https://staging.example.test/api/mobile/v1/profile")!) }
+        await #expect(throws: MobileAPITransportError.redirectNotAllowed) { try await harness.transport.executeHTTP(request) }
+        #expect(await harness.stub.requests().count == 2)
+    }
+
+    @Test("training success requires its negotiated protocol and private response")
+    func trainingExecutionResponseNegotiation() async throws {
+        let fixture = try TrainingExecutionFixture()
+        let home = try TrainingExecutionHomeSnapshot(data: fixture.data("home"))
+        let harness = try await TransportHarness(tokens: ["training-original", "training-original"])
+        let bytes = try JSONSerialization.data(withJSONObject: ["data": fixture.object("home"), "meta": ["api_version": "v1", "request_id": "training-137"]])
+        let request = try MobileAPIRequest<TrainingExecutionHomeSnapshot>(method: .get, path: "/api/mobile/v1/training/execution", unauthorizedReplay: .never, trainingExecution: .home(ownerID: home.scope.ownerID, cursor: nil))
+        for headers in [["Content-Type": "application/json"], ["Content-Type": "application/json", "X-Training-Execution": "1"]] {
+            await harness.stub.respond(with: .init(status: 200, headers: headers, body: bytes))
+            await #expect(throws: MobileAPITransportError.invalidResponse) { try await harness.transport.executeHTTP(request) }
+        }
+    }
+}

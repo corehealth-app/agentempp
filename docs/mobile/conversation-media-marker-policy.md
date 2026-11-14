@@ -92,3 +92,41 @@ Para repetir esse diagnóstico, o SDK Storage instalado expõe o tamanho em
 `info().data.size` (`FileObjectV2`), não em `data.metadata.size`. O primeiro
 diagnóstico recusou a operação por essa diferença, sem remover o marcador; a
 correção tem regressão específica. Os dois Previews auxiliares foram removidos.
+
+## Caracterização conectada R132 — upload retomável
+
+Em 14/11/2026, dois novos arquivos sintéticos de oito bytes da QA de staging
+receberam autorizações reais do app, com `upsert: false`. Nenhum processamento
+por IA, alimento, treino ou intake foi solicitado nessa rodada.
+
+- Uma sessão TUS aberta antes do descarte retornou `409` ao tentar concluir o
+  envio depois da instalação da barreira. O objeto continuou com zero bytes e
+  a mesma versão.
+- Recriar uma sessão assinada com `x-upsert: true` também terminou em `409`:
+  o cabeçalho não permitiu sobrescrever a barreira com aquela autorização.
+- Um envio interrompido deixou quatro bytes confirmados pelo `HEAD` do TUS.
+  Depois do descarte, retomar a partir do offset quatro foi recusado em `409`.
+  A tentativa de manter a primeira conexão aberta sofreu `BrokenPipe`; essa
+  observação foi preservada, sem presumir em qual etapa interna o servidor estava.
+- A tentativa direta, apenas com o JWT da QA e sem assinatura de upload, foi
+  recusada pela política de linha em `403`. As três sessões assinadas admitidas
+  terminaram com `HEAD 404`; os dois catálogos ficaram apagados, resultados nulos,
+  dívidas preservadas e objetos comuns de zero bytes com suas versões intactas.
+
+A rota TUS assinada observada usa `/storage/v1/upload/resumable/sign`; adicionar
+`x-signature` à rota comum não a transforma na rota assinada. A primeira chamada
+à rota comum foi recusada antes de admitir uma sessão. Referências primárias:
+[uploads retomáveis](https://supabase.com/docs/guides/storage/uploads/resumable-uploads)
+e [seleção das rotas e assinatura](https://github.com/supabase/storage/blob/master/src/http/routes/tus/index.ts).
+O código público auxilia o diagnóstico; não identifica a revisão hospedada.
+
+Os hashes das 69 mídias anteriores ao corte e das oito autorizações e oito
+dívidas antigas preservadas permaneceram iguais aos de referência. A sessão Auth original foi preservada;
+apenas a nova sessão e a autorização temporária da QA foram encerradas. As
+capacidades locais de upload foram removidas dos artefatos após a conferência.
+
+Isso qualifica esses casos reais de retomada e preservação de barreira, não uma
+drenagem global de todos os emissores/removers antigos, nem a remoção física de
+resíduos internos do fornecedor. A composição com remoção antiga em andamento
+e reparação agendada continua separada; R105-REVIEW-1 e a liberação multimodal
+permanecem abertos. Não há alteração de política, bucket, chave ou regra clínica.

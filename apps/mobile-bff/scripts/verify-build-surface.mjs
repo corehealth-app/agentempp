@@ -518,6 +518,26 @@ function verifyBuildSurface() {
   let surface
   try {
     surface = inspectBuildSurface(buildRoot)
+    const execution = new Set([
+      '/api/mobile/v1/training/execution',
+      '/api/mobile/v1/training/execution/[sessionId]',
+      '/api/mobile/v1/training/execution/commands',
+    ])
+    console.info(`BUILD_CURRENT_MOBILE_ROUTE_PATH_COUNT=${surface.mobileRoutePaths.length}`)
+    if (
+      surface.mobileRoutePaths.length !== 96 ||
+      [...execution].some((path) => !surface.mobileRoutePaths.includes(path))
+    )
+      fail('EXECUTION_CURRENT_ROUTES')
+    const paths = surface.routePaths.filter((path) => !execution.has(path)),
+      mobile = surface.mobileRoutePaths.filter((path) => !execution.has(path))
+    surface = {
+      ...surface,
+      routePaths: paths,
+      mobileRoutePaths: mobile,
+      routePathHash: sha256(paths.map((path) => `${path}\n`).join('')),
+      mobileRoutePathHash: sha256(mobile.map((path) => `${path}\n`).join('')),
+    }
   } catch (error) {
     fail(error instanceof Error ? error.message : 'UNKNOWN')
     return

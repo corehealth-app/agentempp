@@ -39,6 +39,12 @@ const addedIntakeRoutes = new Map([
 ])
 const nutritionWindowRoute = 'nutrition/window/route.ts'
 const trainingWindowRoute = 'training/window/route.ts'
+const executionRouteFiles = new Set([
+  'training/execution/route.ts',
+  'training/execution/[sessionId]/route.ts',
+  'training/execution/commands/route.ts',
+])
+
 const mealQuestionRoute = 'conversation/commands/[commandId]/replies/route.ts'
 const originsRoute = 'conversation/intakes/route.ts'
 const linkedOriginRoute = 'conversation/meal-commands/[commandId]/origin/route.ts'
@@ -91,9 +97,14 @@ function sourceExports(source: string): string[] {
   ).sort()
 }
 
-function sourceRecords(): RouteRecord[] {
+function sourceRecords(includeExecution = false): RouteRecord[] {
   return walkFiles(sourceRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter(
+      (path) =>
+        includeExecution ||
+        !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')),
+    )
     .map((path) => ({
       path: relative(sourceRoot, path).split(sep).join('/'),
       exports: sourceExports(readFileSync(path, 'utf8')),
@@ -101,9 +112,14 @@ function sourceRecords(): RouteRecord[] {
     .sort((left, right) => left.path.localeCompare(right.path, 'en'))
 }
 
-function wrapperRecords(): RouteRecord[] {
+function wrapperRecords(includeExecution = false): RouteRecord[] {
   return walkFiles(wrapperRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter(
+      (path) =>
+        includeExecution ||
+        !executionRouteFiles.has(relative(wrapperRoot, path).split(sep).join('/')),
+    )
     .map((path) => {
       const relativePath = relative(wrapperRoot, path).split(sep).join('/')
       const wrapper = readFileSync(path, 'utf8')
@@ -269,6 +285,26 @@ function withNutritionMutation<T>(
 }
 
 describe('dedicated Mobile BFF wrapper mirror', () => {
+  test('adds exactly three execution transports to the complete current96 stream while retaining frozen93 checks', () => {
+    const sources = sourceRecords(true),
+      wrappers = wrapperRecords(true)
+    expect(sources).toHaveLength(96)
+    expect(wrappers).toHaveLength(96)
+    expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(sources)
+    expect(hashRecords(sources)).toBe(
+      '41164ab1c4d8cf5f04f7a7d4e12cb8ee8ceffd6f448121c1b6503c3fa465d195',
+    )
+    expect(hashRecords(wrappers)).toBe(
+      '41164ab1c4d8cf5f04f7a7d4e12cb8ee8ceffd6f448121c1b6503c3fa465d195',
+    )
+    for (const records of [sources, wrappers])
+      for (const path of executionRouteFiles)
+        expect(records.find((r) => r.path === path)?.exports).toEqual([
+          path.includes('/commands/') ? 'POST' : 'GET',
+          'dynamic',
+          'runtime',
+        ])
+  })
   test('adds precisely the readonly training GET and preserves the entire original92 stream', () => {
     for (const records of [sourceRecords(), wrapperRecords()]) {
       expect(records).toHaveLength(93)

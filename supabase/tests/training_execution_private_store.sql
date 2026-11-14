@@ -3,6 +3,9 @@ BEGIN;
 INSERT INTO auth.users(id,email) VALUES('13500000-0000-4000-8000-000000000001','training-r135@example.invalid');
 INSERT INTO public.users(id,auth_user_id,name,timezone) VALUES
  ('13500000-0000-4000-8000-000000000002','13500000-0000-4000-8000-000000000001','Synthetic training execution','America/Sao_Paulo');
+-- Official lifecycle authority exists before a training reader is invoked.
+INSERT INTO private.workout_strength_authority_epochs(user_id,epoch,changed_at)
+ VALUES('13500000-0000-4000-8000-000000000002','13500000-0000-4000-8000-000000000010',clock_timestamp());
 DO $test$
 DECLARE c jsonb;
 BEGIN

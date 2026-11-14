@@ -7,7 +7,21 @@ import { currentClinicalRouteAdditions } from './current-clinical-route-inventor
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../.next/server')
 function currentAppPaths(): Record<string, string> {
-  return JSON.parse(readFileSync(resolve(root, 'app-paths-manifest.json'), 'utf8'))
+  return Object.fromEntries(
+    Object.entries(
+      JSON.parse(readFileSync(resolve(root, 'app-paths-manifest.json'), 'utf8')) as Record<
+        string,
+        string
+      >,
+    ).filter(
+      ([path]) =>
+        ![
+          '/api/mobile/v1/training/execution/route',
+          '/api/mobile/v1/training/execution/[sessionId]/route',
+          '/api/mobile/v1/training/execution/commands/route',
+        ].includes(path),
+    ),
+  )
 }
 const cache = new Map<string, string>()
 const addition = 'workouts/[id]/strength-clarification/route.ts'
@@ -29,6 +43,14 @@ function routeFiles(root: string): string[] {
 }
 function exportStream(root: string, wrapper: boolean) {
   return routeFiles(root)
+    .filter(
+      (file) =>
+        ![
+          'training/execution/route.ts',
+          'training/execution/[sessionId]/route.ts',
+          'training/execution/commands/route.ts',
+        ].includes(relative(root, file).split('\\').join('/')),
+    )
     .map((file) => {
       const source = readFileSync(file, 'utf8')
       const imports = wrapper

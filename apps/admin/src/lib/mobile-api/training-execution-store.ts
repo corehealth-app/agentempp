@@ -49,11 +49,18 @@ export function createTrainingExecutionStore(
     let result: Awaited<ReturnType<TrainingExecutionPersistencePort['rpc']>>
     try {
       result = await port.rpc(name, args)
-    } catch {
+    } catch (error) {
+      if (error instanceof MobileApiError) throw error
       return unavailable()
     }
     if (result.error != null) {
       const code = z.object({ code: z.string() }).passthrough().safeParse(result.error)
+      if (code.success && code.data.code === '42501')
+        throw new MobileApiError(
+          401,
+          'training_execution_auth_unavailable',
+          'The original login session is no longer available.',
+        )
       if (code.success && code.data.code === '40001')
         throw new MobileApiError(
           409,

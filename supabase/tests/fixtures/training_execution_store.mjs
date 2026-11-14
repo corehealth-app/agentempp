@@ -7,11 +7,12 @@ import { pathToFileURL } from 'node:url'
 
 const [registryPath, kernelPath] = process.argv.slice(2)
 const arena = JSON.parse(readFileSync(registryPath, 'utf8'))
-assert.equal(arena.owner, '/root/R135')
+const revision = /^\/root\/R(135|136)$/.exec(arena.owner)?.[1]
+assert.ok(revision, 'only the explicitly owned training qualification arenas')
 assert.equal(arena.running, true)
 assert.equal(arena.paid, false)
-assert.equal(arena.test_database, 'performe_r135_training')
-assert.match(arena.socket, /^\/tmp\/performe-r135-/)
+assert.equal(arena.test_database, `performe_r${revision}_training`)
+assert.ok(arena.socket.startsWith(`/tmp/performe-r${revision}-`))
 const env = Object.fromEntries(['PATH', 'HOME', 'LANG', 'TMPDIR'].filter(k => process.env[k]).map(k => [k, process.env[k]]))
 const args = ['-p', arena.sandbox_profile, arena.psql, '-w', '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-h', arena.socket, '-p', String(arena.port), '-U', 'postgres', '-d', arena.test_database]
 const run = sql => execFileSync('/usr/bin/sandbox-exec', args, { input: sql, encoding: 'utf8', env, stdio: ['pipe', 'pipe', 'pipe'] }).trim()
@@ -25,6 +26,7 @@ const session = '13500000-0000-4000-8000-000000000003'
 const uuid = n => `13500000-0000-4000-8000-${String(n).padStart(12, '0')}`
 run(`insert into auth.users(id,email) values(${val(auth)},'training-r135@example.invalid');
  insert into public.users(id,auth_user_id,name,timezone) values(${val(owner)},${val(auth)},'Synthetic execution','America/Sao_Paulo');
+ insert into private.workout_strength_authority_epochs(user_id,epoch,changed_at) values(${val(owner)},${val(uuid(80))},clock_timestamp());
  insert into public.training_plans(id,user_id,plan_type,days_per_week,weekly_schedule,generated_at,active,version)
  values(${val(uuid(4))},${val(owner)},'full_body',2,
  '[{"day":"Sábado","focus":"Força","duration_min":30,"exercises":[{"name":"Supino","sets":3,"reps_range":"8–12"},{"name":"Supino","sets":2}]}]',clock_timestamp()-interval '1 hour',true,2);`)
@@ -124,7 +126,8 @@ assert.throws(() => commit(c0, start, first), /training_execution_scope_changed/
 run(`update public.users set timezone='America/Sao_Paulo' where id=${val(owner)};`)
 assert.throws(() => capture(session, session, owner, uuid(99)), /training_execution_owner_changed/)
 run(`insert into auth.users(id,email) values(${val(uuid(90))},'isolated-training-r135@example.invalid');
- insert into public.users(id,auth_user_id,name,timezone) values(${val(uuid(91))},${val(uuid(90))},'Other synthetic owner','America/Sao_Paulo');`)
+ insert into public.users(id,auth_user_id,name,timezone) values(${val(uuid(91))},${val(uuid(90))},'Other synthetic owner','America/Sao_Paulo');
+ insert into private.workout_strength_authority_epochs(user_id,epoch,changed_at) values(${val(uuid(91))},${val(uuid(92))},clock_timestamp());`)
 const isolated = capture(session, session, uuid(91), uuid(90))
 assert.equal(isolated.context.session, null)
 assert.equal(isolated.context.prior_receipt, null)

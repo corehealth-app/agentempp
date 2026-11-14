@@ -2,9 +2,9 @@
  * route/storage/registration/energy/XP writer. An atomic persistence port must
  * lock the original scope and persist state + minimal receipt/audit together. */
 import { z } from 'zod'
-import { conversationJournalInstant } from './conversation-meal-journal-store'
 import { MobileApiError } from './http'
 import { hashMobileRequest } from './idempotency'
+import { trainingExecutionInstant } from './training-execution-instant'
 
 const uuid = z
   .string()
@@ -237,7 +237,7 @@ function localDateInZone(instant: string, timeZone: string, code: string): strin
       day: '2-digit',
     }).formatToParts(new Date(instant))
     const part = (kind: string) => parts.find((p) => p.type === kind)?.value
-    conversationJournalInstant(instant)
+    trainingExecutionInstant(instant)
     return `${part('year')}-${part('month')}-${part('day')}`
   } catch {
     return fail(code, 503)
@@ -263,10 +263,10 @@ export function projectTrainingExecutionPlan(raw: unknown, rawScope: unknown) {
   if (
     !p.active ||
     (p.valid_until !== null &&
-      conversationJournalInstant(p.valid_until) <= conversationJournalInstant(s.observed_at))
+      trainingExecutionInstant(p.valid_until) <= trainingExecutionInstant(s.observed_at))
   )
     fail('training_execution_plan_unavailable')
-  if (conversationJournalInstant(p.generated_at) > conversationJournalInstant(s.observed_at))
+  if (trainingExecutionInstant(p.generated_at) > trainingExecutionInstant(s.observed_at))
     fail('training_execution_plan_unavailable', 503)
   const fingerprint = hashMobileRequest(p)
   return freeze({
@@ -323,7 +323,7 @@ function validSession(raw: unknown) {
         new Set(e.sets.map((s) => s.index)).size !== e.sets.length,
     ) ||
     new Set(sets.map((s) => s.id)).size !== sets.length ||
-    conversationJournalInstant(v.updated_at) < conversationJournalInstant(v.started_at)
+    trainingExecutionInstant(v.updated_at) < trainingExecutionInstant(v.started_at)
   )
     fail('training_execution_state_unavailable', 503)
   return v
@@ -331,6 +331,24 @@ function validSession(raw: unknown) {
 export function parseTrainingExecutionCommand(raw: unknown) {
   bounded(raw, 16384, 'training_execution_invalid_command', 422)
   return parse(commandSchema, raw, 'training_execution_invalid_command', 422)
+}
+/** Read-only decoding of a DB observation; it creates no session or receipt. */
+export function readTrainingExecutionScope(raw: unknown) {
+  return scope(raw)
+}
+export function readTrainingExecutionSession(raw: unknown, rawScope: unknown) {
+  const s = scope(rawScope),
+    value = validSession(raw)
+  if (
+    value.owner_id !== s.owner_id ||
+    value.auth_user_id !== s.auth_user_id ||
+    value.epoch !== s.epoch ||
+    value.time_zone !== s.time_zone ||
+    value.local_date > s.current_local_date ||
+    trainingExecutionInstant(value.updated_at) > trainingExecutionInstant(s.observed_at)
+  )
+    fail('training_execution_scope_changed')
+  return freeze(value)
 }
 
 /** Validate trusted persistence replies without turning a stale captured clock
@@ -369,8 +387,8 @@ export function parseTrainingExecutionPersistence(
     receipt.input_hash !== hashMobileRequest(command) ||
     receipt.kind !== kind ||
     receipt.after_revision > session.revision ||
-    conversationJournalInstant(receipt.at) < conversationJournalInstant(session.started_at) ||
-    conversationJournalInstant(receipt.at) > conversationJournalInstant(session.updated_at) ||
+    trainingExecutionInstant(receipt.at) < trainingExecutionInstant(session.started_at) ||
+    trainingExecutionInstant(receipt.at) > trainingExecutionInstant(session.updated_at) ||
     (command.schema === 'training.execution.start.v1'
       ? receipt.before_revision !== null ||
         receipt.after_revision !== 0 ||
@@ -443,7 +461,7 @@ export function prepareTrainingExecutionMutation(raw: unknown): PreparedTraining
     current &&
     (current.time_zone !== s.time_zone ||
       current.local_date > s.current_local_date ||
-      conversationJournalInstant(current.updated_at) > conversationJournalInstant(s.observed_at))
+      trainingExecutionInstant(current.updated_at) > trainingExecutionInstant(s.observed_at))
   )
     fail('training_execution_scope_changed')
   if (input.prior_receipt != null) {
@@ -458,8 +476,8 @@ export function prepareTrainingExecutionMutation(raw: unknown): PreparedTraining
       r.operation_id !== command.operation_id ||
       r.kind !== kind ||
       r.after_revision > current.revision ||
-      conversationJournalInstant(r.at) < conversationJournalInstant(current.started_at) ||
-      conversationJournalInstant(r.at) > conversationJournalInstant(current.updated_at) ||
+      trainingExecutionInstant(r.at) < trainingExecutionInstant(current.started_at) ||
+      trainingExecutionInstant(r.at) > trainingExecutionInstant(current.updated_at) ||
       (kind === 'start'
         ? r.before_revision !== null ||
           r.after_revision !== 0 ||

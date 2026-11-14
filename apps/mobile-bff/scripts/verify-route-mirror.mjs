@@ -161,8 +161,38 @@ function hashRecords(records) {
   return createHash('sha256').update(canonicalStream).digest('hex')
 }
 
-const sources = sourceRecords()
-const wrappers = wrapperRecords()
+// Preserve the exact historical93 stream AND independently require all three
+// approved training execution transports. Unknown additions still fail below.
+const executionTransports = new Map([
+  ['training/execution/route.ts', ['GET', 'dynamic', 'runtime']],
+  ['training/execution/[sessionId]/route.ts', ['GET', 'dynamic', 'runtime']],
+  ['training/execution/commands/route.ts', ['POST', 'dynamic', 'runtime']],
+])
+const currentSources = sourceRecords(),
+  currentWrappers = wrapperRecords()
+for (const [label, records] of [
+  ['SOURCE', currentSources],
+  ['WRAPPER', currentWrappers],
+]) {
+  console.info(`${label}_CURRENT_ROUTE_EXPORT_COUNT=${records.length}`)
+  if (
+    records.length !== 96 ||
+    hashRecords(records) !== '41164ab1c4d8cf5f04f7a7d4e12cb8ee8ceffd6f448121c1b6503c3fa465d195'
+  )
+    fail(`${label}_EXECUTION_CURRENT_STREAM`)
+  for (const [path, methods] of executionTransports) {
+    const value = records.find((r) => r.path === path)
+    if (JSON.stringify(value?.exports) !== JSON.stringify(methods))
+      fail(`${label}_EXECUTION_EXPORTS:${path}`)
+    if (
+      label === 'WRAPPER' &&
+      value?.sourcePath !== `@/app/api/mobile/v1/${path.replace(/\.ts$/, '')}`
+    )
+      fail(`${label}_EXECUTION_SOURCE:${path}`)
+  }
+}
+const sources = currentSources.filter((r) => !executionTransports.has(r.path))
+const wrappers = currentWrappers.filter((r) => !executionTransports.has(r.path))
 const sourceHash = hashRecords(sources)
 const wrapperHash = hashRecords(wrappers)
 const invalidSourceExports = sources.flatMap((record) =>

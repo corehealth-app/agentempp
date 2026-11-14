@@ -6,6 +6,7 @@ struct TrainingWindowRootView: View {
   let plan: PlanViewModel
   let revision: Int
   let isSelected: Bool
+  var execution: TrainingExecutionShellCoordinator? = nil
   @State private var section: Section = .recorded
   @Environment(\.locale) private var locale
   @Environment(\.scenePhase) private var scenePhase
@@ -25,7 +26,8 @@ struct TrainingWindowRootView: View {
         Text(text("Plano", "Plan")).tag(Section.plan)
       }.pickerStyle(.segmented).padding().accessibilityIdentifier("training.section")
       if section == .plan {
-        PlanReadContent(model: plan, scope: .training)
+        if let execution { TrainingExecutionRootView(coordinator: execution, plan: plan) }
+        else { PlanReadContent(model: plan, scope: .training) }
       } else {
         ScrollView { TrainingWindowContentView(model: model, revision: revision) }
       }
@@ -37,15 +39,23 @@ struct TrainingWindowRootView: View {
     .accessibilityIdentifier("screen.treino")
     .task(id: LoadKey(revision: revision, selected: isSelected, section: section)) {
       guard isSelected else { return }
-      if section == .recorded { await model.load(revision: revision) } else { await plan.load() }
+      if section == .recorded { await model.load(revision: revision) }
+      else if let execution { await execution.load() }
+      else { await plan.load() }
     }
     .refreshable {
       guard isSelected else { return }
-      if section == .recorded { await model.load(revision: revision) } else { await plan.retry() }
+      if section == .recorded { await model.load(revision: revision) }
+      else if let execution {
+        await execution.load(); await execution.model?.load()
+      } else { await plan.retry() }
     }
     .onChange(of: scenePhase) { _, phase in
-      guard phase == .active, isSelected, section == .recorded else { return }
-      Task { await model.load(revision: revision) }
+      guard phase == .active, isSelected else { return }
+      Task {
+        if section == .recorded { await model.load(revision: revision) }
+        else if let execution { await execution.load(); await execution.model?.load() }
+      }
     }
   }
 }

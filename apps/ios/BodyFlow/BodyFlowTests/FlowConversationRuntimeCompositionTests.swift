@@ -108,6 +108,7 @@ struct FlowConversationRuntimeCompositionTests {
         flowConversationRuntime: variant == "default-off"
           ? .legacy : (variant == "unknown" ? .unavailable : .mealCommandV1))
       #expect((dependencies.flowConversationSessions != nil) == (variant == "qualified"))
+      #expect((dependencies.trainingExecutionSessions != nil) == (variant == "qualified"))
       if variant == "qualified" {
         #expect(
           dependencies.presentsRealAccountIdentity
@@ -121,6 +122,7 @@ struct FlowConversationRuntimeCompositionTests {
         #expect(
           shell.navigationLayout == (variant == "qualified" ? .conversationalPreview : .legacy))
         #expect((owner.flowConversation != nil) == (variant == "qualified"))
+        #expect((owner.trainingExecution != nil) == (variant == "qualified"))
         owner.invalidateSynchronously()
         #expect(owner.flowConversation?.phase == (variant == "qualified" ? .closed : nil))
         await owner.endSession()

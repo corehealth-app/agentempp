@@ -52,6 +52,20 @@ actor TrainingExecutionPendingStore {
     guard status == errSecSuccess || status == errSecItemNotFound else { throw TrainingExecutionError.storageUnavailable }
   }
 
+  /// A sealed original-session pre-write rejection is not a receipt and never
+  /// credits a workout. It resolves only this exact proven-unaccepted command.
+  func retireRejected(_ proof: TrainingExecutionRejectedResolution) async throws {
+    try enter(); defer { busy = false }
+    let operation = proof.operation, auth = operation.binding.authUserID
+    guard operation.binding.matches(proof.home.scope), try await read(auth) == operation else {
+      throw TrainingExecutionError.pendingOperation
+    }
+    let status = await security.delete(descriptor(auth))
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw TrainingExecutionError.storageUnavailable
+    }
+  }
+
   private func enter() throws {
     guard !busy else { throw TrainingExecutionError.pendingOperation }
     busy = true

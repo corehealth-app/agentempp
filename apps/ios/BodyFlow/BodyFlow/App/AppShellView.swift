@@ -677,7 +677,8 @@ struct AppShellView: View {
                 revision: invalidationCenter.revision(for: .today), isSelected: selectedTab == .plan)
         case .register:
             TrainingWindowRootView(model: trainingViewModel, plan: planViewModel,
-                revision: invalidationCenter.revision(for: .today), isSelected: selectedTab == .register)
+                revision: invalidationCenter.revision(for: .today), isSelected: selectedTab == .register,
+                execution: sessionOwner.trainingExecution)
         case .progress:
             ProgressRootView(model: progressViewModel, selectedTab: tabSelection, clinicalFull: clinicalFullModel,
                 navigationTitle: navigationLayout.title(for: .progress, language: presentationLanguage))

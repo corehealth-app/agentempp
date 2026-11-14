@@ -69,6 +69,8 @@ struct AppDependencies: Sendable {
     /// Explicit bundled candidate only; absence preserves the release shell.
     /// This inert source performs its own actual Auth/session bind on open.
     var flowConversationSessions: FlowConversationSessionSource? = nil
+    /// Separate writer capability; current-clinical readers remain read only.
+    var trainingExecutionSessions: TrainingExecutionSessionSource? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current
@@ -756,6 +758,7 @@ struct AppDependencies: Sendable {
             } else { nil }
 
         let flowConversationSessions: FlowConversationSessionSource?
+        let trainingExecutionSessions: TrainingExecutionSessionSource?
         if (flowConversationRuntime == .mealCommandV1 || flowConversationRuntime == .neutralIntakeV1), configuration.mode != .demo,
            authentication is SupabaseAuthenticationService, currentClinicalRuntime != nil,
            case .candidate = currentClinicalQABinding,
@@ -765,11 +768,12 @@ struct AppDependencies: Sendable {
             // The complete clinical family already matched both exact origins.
             // Provenance is build selection, not Auth or clinical authority.
             let staging = MediaStagingStore()
+            trainingExecutionSessions = TrainingExecutionSessionSource(transport: transport, lifecycle: releaseLifecycle)
             flowConversationSessions = FlowConversationSessionSource(
                 transport: transport, lifecycle: releaseLifecycle,
                 media: .init(uploader: StorageUploadTransport(storageOrigin: storageOrigin), staging: staging),
                 neutralIntakeEnabled: flowConversationRuntime == .neutralIntakeV1)
-        } else { flowConversationSessions = nil }
+        } else { flowConversationSessions = nil; trainingExecutionSessions = nil }
 
         return AppDependencies(
             apiClient: apiClient,
@@ -809,7 +813,8 @@ struct AppDependencies: Sendable {
             mealRecordBindingSource: mealRecordBindingSource,
             workoutRegistrationSessionSource: workoutRegistrationSessionSource,
             billingSessionSource: billingSessionSource,
-            flowConversationSessions: flowConversationSessions
+            flowConversationSessions: flowConversationSessions,
+            trainingExecutionSessions: trainingExecutionSessions
         )
     }
 

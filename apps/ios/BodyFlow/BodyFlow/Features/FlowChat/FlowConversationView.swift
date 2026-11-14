@@ -168,22 +168,37 @@ struct FlowConversationView: View {
           }
           FlowConversationMealReplyHeldActions(model: replies, english: english)
           if let row = model.unpublishedLinkedMeal {
-            Text(
-              english
-                ? "Meal registered after a linked reply"
-                : "Refeição registrada após resposta vinculada"
-            )
-            .font(BodyFlowTypography.headline)
-            linkedCard(row)
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+              Text(
+                english
+                  ? "Meal registered after a linked reply"
+                  : "Refeição registrada após resposta vinculada"
+              )
+              .font(BodyFlowTypography.headline)
+              linkedCard(row)
+            }.id(
+              FlowTranscriptPositioning.localAnchor(
+                .reply(
+                  parent: row.reference.parentBinding.commandID, reply: row.reference.commandID)))
           }
-          if let question = replies.nextQuestion, model.terminalQuestion == nil {
-            Text(
-              verbatim: FlowConversationThreadEventPresentation.question(question, english: english)
-            )
-            Button(english ? "Answer Flow" : "Responder ao Flow") {
-              try? replies.beginNextQuestion()
+          if let question = replies.nextQuestion, let delivered = replies.lastDelivered,
+            model.terminalQuestion == nil
+          {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+              Text(
+                verbatim: FlowConversationThreadEventPresentation.question(
+                  question, english: english)
+              )
+              Button(english ? "Answer Flow" : "Responder ao Flow") {
+                try? replies.beginNextQuestion()
+              }
+              .disabled(!replies.canBegin).accessibilityIdentifier(
+                "conversation.reply.next-question")
             }
-            .disabled(!replies.canBegin).accessibilityIdentifier("conversation.reply.next-question")
+            .id(
+              FlowTranscriptPositioning.localAnchor(
+                .reply(
+                  parent: delivered.parentCommandID, reply: delivered.replyID)))
           }
         }
         if let editor = model.mealEditor {
@@ -267,32 +282,36 @@ struct FlowConversationView: View {
             }
           }.id(entry.eventID)
         }
-        ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in journalEntry(entry) }
+        ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in
+          journalEntry(entry).id(entry.eventID)
+        }
         ForEach(Array(model.threadRows.reversed()), id: \.eventID) { entry in
-          if let row = model.threadOriginalSavedRow(eventID: entry.eventID) {
-            savedCard(row)
-            if model.hasLocalUnresolved(commandID: row.id) {
-              Button(english ? "Sync confirmation" : "Sincronizar confirmação") {
-                Task { await model.reconcile(commandID: row.id) }
-              }.disabled(model.isWorking)
-            }
-          } else if let parent = model.threadDescriptor(entry.threadID) {
-            FlowConversationThreadEventView(
-              entry: entry, parent: parent,
-              observedQuestion: model.observedThreadQuestion(eventID: entry.eventID),
-              feedback: model.linkedMealRow(eventID: entry.eventID) == nil
-                ? model.threadFeedback(eventID: entry.eventID) : nil, english: english,
-              linkedRepliesAvailable: model.mealReplies != nil, linkedMealsAvailable: true)
-            if let row = model.linkedMealRow(eventID: entry.eventID) { linkedCard(row) }
-            if model.observedThreadQuestion(eventID: entry.eventID) != nil,
-              model.canAnswerLinkedQuestion(parentID: entry.threadID)
-            {
-              Button(english ? "Answer Flow" : "Responder ao Flow") {
-                model.beginLinkedReply(parentID: entry.threadID)
+          VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+            if let row = model.threadOriginalSavedRow(eventID: entry.eventID) {
+              savedCard(row)
+              if model.hasLocalUnresolved(commandID: row.id) {
+                Button(english ? "Sync confirmation" : "Sincronizar confirmação") {
+                  Task { await model.reconcile(commandID: row.id) }
+                }.disabled(model.isWorking)
               }
-              .accessibilityIdentifier("conversation.reply.history-question")
+            } else if let parent = model.threadDescriptor(entry.threadID) {
+              FlowConversationThreadEventView(
+                entry: entry, parent: parent,
+                observedQuestion: model.observedThreadQuestion(eventID: entry.eventID),
+                feedback: model.linkedMealRow(eventID: entry.eventID) == nil
+                  ? model.threadFeedback(eventID: entry.eventID) : nil, english: english,
+                linkedRepliesAvailable: model.mealReplies != nil, linkedMealsAvailable: true)
+              if let row = model.linkedMealRow(eventID: entry.eventID) { linkedCard(row) }
+              if model.observedThreadQuestion(eventID: entry.eventID) != nil,
+                model.canAnswerLinkedQuestion(parentID: entry.threadID)
+              {
+                Button(english ? "Answer Flow" : "Responder ao Flow") {
+                  model.beginLinkedReply(parentID: entry.threadID)
+                }
+                .accessibilityIdentifier("conversation.reply.history-question")
+              }
             }
-          }
+          }.id(entry.eventID)
         }
         if model.isLoadingHistory || model.isLoadingUnifiedHistory {
           ProgressView(english ? "Loading history…" : "Carregando histórico…")
@@ -301,7 +320,9 @@ struct FlowConversationView: View {
         if model.mealQuestionOrigins != nil {
           FlowConversationMealQuestionOriginsContent(model: model)
         }
-        ForEach(model.savedRows) { row in savedCard(row) }
+        ForEach(model.savedRows) { row in
+          savedCard(row).id(FlowTranscriptPositioning.localAnchor(.command(row.id)))
+        }
         if let neutral = model.neutralIntake {
           FlowNeutralIntakeTranscriptContent(
             model: neutral, conversation: model,
@@ -386,12 +407,28 @@ struct FlowConversationView: View {
   }
 
   private var transcriptPositionObservation: FlowTranscriptPositioning.Observation {
-    .init(
+    let history = FlowTranscriptPositioning.historicalAnchors(
+      unified: model.unifiedRows, journal: model.journalRows, threads: model.threadRows)
+    var results =
+      ((model.neutralIntake?.savedRows.map(\.id) ?? [])
+      + (model.neutralIntake?.terminalRows.map(\.id) ?? []))
+      .map(FlowTranscriptPositioning.ResultID.intake)
+    results += model.acknowledgedMealCommandIDs.map(FlowTranscriptPositioning.ResultID.command)
+    if let delivered = model.mealReplies?.lastDelivered {
+      let id = FlowTranscriptPositioning.ResultID.reply(
+        parent: delivered.parentCommandID, reply: delivered.replyID)
+      if history[id] != nil || model.unpublishedLinkedMeal != nil
+        || (model.mealReplies?.nextQuestion != nil && model.terminalQuestion == nil)
+      {
+        results.append(id)
+      }
+    }
+    return .init(
       owner: ObjectIdentifier(model),
-      historyIDs: model.unifiedRows.map(\.eventID),
-      historyLoading: model.isLoadingUnifiedHistory,
-      localResultIDs: (model.neutralIntake?.savedRows.map(\.id) ?? [])
-        + (model.neutralIntake?.terminalRows.map(\.id) ?? []))
+      historyIDs: model.unifiedRows.map(\.eventID) + model.journalRows.map(\.eventID)
+        + model.threadRows.map(\.eventID),
+      historyLoading: model.isLoadingUnifiedHistory || model.isLoadingHistory,
+      localResultIDs: results, historicalAnchors: history)
   }
 
   private func linkedCard(_ row: FlowConversationLinkedMealRow) -> some View {

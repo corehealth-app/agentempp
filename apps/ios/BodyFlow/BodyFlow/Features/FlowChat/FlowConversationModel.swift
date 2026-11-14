@@ -492,6 +492,9 @@ final class FlowConversationModel {
   var pendingRows: [FlowConversationPendingRow] {
     hasCurrentScope ? pending.filter { !isInJournal($0.command) } : []
   }
+  /// Current-controller publications for view positioning, including cards
+  /// already replaced by history. A history read never populates this list.
+  var acknowledgedMealCommandIDs: [UUID] { hasCurrentScope ? saved.map(\.id) : [] }
   var savedRows: [FlowConversationSavedRow] {
     hasCurrentScope ? saved.filter { !isInJournal($0.command) && !isInUnifiedHistory($0) } : []
   }

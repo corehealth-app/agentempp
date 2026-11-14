@@ -422,6 +422,7 @@ struct FlowConversationModelTests {
       Issue.record("Text source must remain text")
     }
     #expect(m.savedRows[0].command.commandID == command.commandID)
+    #expect(m.acknowledgedMealCommandIDs == [command.commandID])
     #expect(try f.disk.store.load(owner: f.owner, key: f.disk.key).isEmpty)
     await m.close()
   }

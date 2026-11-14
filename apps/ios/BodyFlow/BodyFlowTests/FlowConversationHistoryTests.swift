@@ -14,6 +14,7 @@ struct FlowConversationHistoryTests {
     #expect(model.pendingRows.count == 1)
     await model.loadHistory()
     #expect(model.journalRows.count == 4 && model.pendingRows.isEmpty && model.savedRows.isEmpty)
+    #expect(model.acknowledgedMealCommandIDs.isEmpty)
     #expect(model.terminalQuestion?.reason == "nutrition_unresolved")
     #expect(try f.disk.store.load(owner: f.owner, key: f.disk.key).isEmpty)
     #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })

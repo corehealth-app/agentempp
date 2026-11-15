@@ -2838,7 +2838,9 @@ describe('authoritative Mobile API source surface', () => {
     certifyExactSharedTable(executionChunk, [
       // R140 compiler extraction of the same five source-pinned modules.
       ['19521', 'c46d66b4179746bd8802a67e6c5ce569b51de781c352325bfe880f57417689e9'],
-      ['70091', 'b52dec32b8708effa9ae429fe80bb0aacfd6cac8edf543e9cab887e19b430022'],
+      // R146: complete new-server HTTP adapter wire and PT409 classifier;
+      // original SQL and the three neighbouring execution modules stay pinned.
+      ['70091', 'f62e14e3ea1167771f07f43c5db03d7e32773b0b2c48a1f3d075a3bfb34b9547'],
       ['88551', 'b559f2b47031c5be3cbcd27819010f548026f104945bac04a2df3bbb40f0a3b4'],
       ['93288', 'c592e7ebe24caf41c29cd98ad49e0c401416db555ca98261c64e7b53561d9588'],
     ])
@@ -2846,11 +2848,11 @@ describe('authoritative Mobile API source surface', () => {
       'training-execution-routes.ts':
         '69f1ad82de3147f9997daf2d7286936f71854dcbbd7ac9efb8b34d6d018fefea',
       'training-execution-runtime.ts':
-        '934d7cbf54ee5c8c569330017eda2af5bcf8a607ca6faadd4396f3cba79b03fe',
+        '50cf5e7771fb0cc8d765591071978e25c9cddf145e848d329e7abe0631e3ae40',
       'training-execution-kernel.ts':
         '71258be869c607366b756cf5ce4bf65318e59e41297a455dc28b60ca33919ce2',
       'training-execution-store.ts':
-        '0af141150adfa08cae88166d9073e849c4357724003ac8fd3285ed32f35c3244',
+        'fc120c17e51b88bd5a2a6cf1589acb38ebf4d3fbadf4b0598653b708655cc905',
       'training-execution-instant.ts':
         '28046c38ed63533de67172c74b75c9f002801d52b217c9f4bf563960b061de82',
     }

@@ -25,8 +25,8 @@ function setup(failFeedback = false) {
     async (
       name: string,
       _args: Record<string, unknown>,
-    ): Promise<{ data: unknown; error: null }> => {
-      if (name === 'submit_training_execution_completion_authenticated') {
+    ): Promise<{ data: unknown; error: { code: string } | null }> => {
+      if (name === 'submit_training_execution_completion_authenticated_http') {
         if (!completed) writes++
         completed = true
         return {
@@ -40,18 +40,18 @@ function setup(failFeedback = false) {
           error: null,
         }
       }
-      if (name === 'begin_training_execution_completion_authenticated')
+      if (name === 'begin_training_execution_completion_authenticated_http')
         return { data: completed ? { ...g.completed, action: 'replay' } : g.begin, error: null }
-      if (name === 'read_training_execution_completion_authenticated')
+      if (name === 'read_training_execution_completion_authenticated_http')
         return { data: completed ? g.completed : { ...g.begin, action: 'available' }, error: null }
-      if (name === 'read_training_execution_state_v2_authenticated')
+      if (name === 'read_training_execution_state_v2_authenticated_http')
         return {
           data: completed
             ? { action: 'completion', context: g.completed }
             : { action: 'progress', scope: g.begin.scope, session: g.begin.session },
           error: null,
         }
-      if (name === 'read_training_execution_home_v2_authenticated') {
+      if (name === 'read_training_execution_home_v2_authenticated_http') {
         const s = completed ? g.completed.session : g.begin.session
         return {
           data: {
@@ -92,7 +92,7 @@ function setup(failFeedback = false) {
         }
       if (name === 'read_conversation_workout_effect')
         return { data: completed ? g.effect : { action: 'absent' }, error: null }
-      if (name === 'commit_training_execution_completion_authenticated') {
+      if (name === 'commit_training_execution_completion_authenticated_http') {
         completed = true
         writes++
         return { data: { action: 'committed', receipt: g.effect.receipt }, error: null }
@@ -190,7 +190,7 @@ function installProgressObservation(h: ReturnType<typeof setup>, exists = true, 
   const actual = h.rpc.getMockImplementation()
   if (!actual) throw new Error('Missing original RPC fixture')
   h.rpc.mockImplementation(async (name, args) =>
-    name === 'reconcile_training_execution_progress_authenticated'
+    name === 'reconcile_training_execution_progress_authenticated_http'
       ? {
           data: {
             action: exists ? 'available' : 'absent',
@@ -218,7 +218,9 @@ describe('original-auth public completion runtime over real backend and public w
     })
     expect(h.writes()).toBe(0)
     expect(
-      h.rpc.mock.calls.every(([n]) => n === 'reconcile_training_execution_progress_authenticated'),
+      h.rpc.mock.calls.every(
+        ([n]) => n === 'reconcile_training_execution_progress_authenticated_http',
+      ),
     ).toBe(true)
   })
   it('retires only proven-unapplied old CAS work behind a permanent completed state, without inventing a receipt', async () => {
@@ -236,7 +238,9 @@ describe('original-auth public completion runtime over real backend and public w
     })
     expect(h.writes()).toBe(0)
     expect(
-      h.rpc.mock.calls.every(([n]) => n === 'reconcile_training_execution_progress_authenticated'),
+      h.rpc.mock.calls.every(
+        ([n]) => n === 'reconcile_training_execution_progress_authenticated_http',
+      ),
     ).toBe(true)
   })
   it('a cancellable finish reservation keeps unresolved progress pending and never masquerades as a permanent rejection', async () => {
@@ -252,7 +256,9 @@ describe('original-auth public completion runtime over real backend and public w
     })
     expect(h.writes()).toBe(0)
     expect(
-      h.rpc.mock.calls.every(([n]) => n === 'reconcile_training_execution_progress_authenticated'),
+      h.rpc.mock.calls.every(
+        ([n]) => n === 'reconcile_training_execution_progress_authenticated_http',
+      ),
     ).toBe(true)
   })
   it('recovers an owned completed session after a cold start without requiring a source text or admitting a command', async () => {
@@ -340,7 +346,7 @@ describe('original-auth public completion runtime over real backend and public w
     expect(
       h.rpc.mock.calls.every(([n]) =>
         [
-          'read_training_execution_completion_authenticated',
+          'read_training_execution_completion_authenticated_http',
           'reconcile_conversation_workout',
         ].includes(n),
       ),
@@ -386,7 +392,7 @@ describe('original-auth public completion runtime over real backend and public w
     const value = await h.service.submit(`tfinish1:${h.g.command.operation_id}`, h.g.command)
     expect(value.status).toBe('completed')
     expect(h.rpc.mock.calls.map(([n]) => n)).toEqual([
-      'submit_training_execution_completion_authenticated',
+      'submit_training_execution_completion_authenticated_http',
     ])
     expect(h.readHistorical).toHaveBeenCalledTimes(1)
     expect(h.readHistorical.mock.calls[0]?.[0]).toMatchObject({
@@ -401,7 +407,7 @@ describe('original-auth public completion runtime over real backend and public w
     if (!original) throw Error('Missing boundary fixture')
     h.rpc.mockImplementation(async (name, args) => {
       const v = await original(name, args)
-      if (name === 'submit_training_execution_completion_authenticated')
+      if (name === 'submit_training_execution_completion_authenticated_http')
         throw Error('Lost after commit')
       return v
     })
@@ -410,8 +416,24 @@ describe('original-auth public completion runtime over real backend and public w
     ).toMatchObject({ status: 'completed' })
     expect(h.writes()).toBe(1)
     expect(
-      h.rpc.mock.calls.filter(([n]) => n === 'submit_training_execution_completion_authenticated'),
+      h.rpc.mock.calls.filter(
+        ([n]) => n === 'submit_training_execution_completion_authenticated_http',
+      ),
     ).toHaveLength(1)
+  })
+  it.each([
+    ['PT409', 409],
+    ['42501', 401],
+  ])('returns definitive SQL %s once without attempting uncertain-outcome recovery', async (code, status) => {
+    const h = setup()
+    h.rpc.mockImplementation(async () => ({ data: null, error: { code: String(code) } }))
+    await expect(
+      h.service.submit(`tfinish1:${h.g.command.operation_id}`, h.g.command),
+    ).rejects.toMatchObject({ status })
+    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'submit_training_execution_completion_authenticated_http',
+    ])
+    expect(h.writes()).toBe(0)
   })
   it.each([
     'home',
@@ -424,9 +446,9 @@ describe('original-auth public completion runtime over real backend and public w
     if (!actual) throw new Error('Missing original RPC fixture')
     h.rpc.mockImplementation(async (name, args) => {
       if (
-        (kind === 'home' && name === 'read_training_execution_home_v2_authenticated') ||
-        (kind === 'state' && name === 'read_training_execution_state_v2_authenticated') ||
-        (kind === 'read' && name === 'read_training_execution_completion_authenticated')
+        (kind === 'home' && name === 'read_training_execution_home_v2_authenticated_http') ||
+        (kind === 'state' && name === 'read_training_execution_state_v2_authenticated_http') ||
+        (kind === 'read' && name === 'read_training_execution_completion_authenticated_http')
       )
         return { data: { action: 'unexpected', private_data: 'never expose' }, error: null }
       return actual(name, args)
@@ -488,8 +510,8 @@ describe('original finish resolution keeps observation and explicit withdrawal s
     const original = h.rpc.getMockImplementation()
     if (!original) throw Error('Missing actual fixture')
     h.rpc.mockImplementation(async (name, args) =>
-      name === 'observe_training_execution_finish_authenticated' ||
-      name === 'withdraw_training_execution_finish_authenticated'
+      name === 'observe_training_execution_finish_authenticated_http' ||
+      name === 'withdraw_training_execution_finish_authenticated_http'
         ? { data: raw, error: null }
         : original(name, args),
     )
@@ -513,7 +535,7 @@ describe('original finish resolution keeps observation and explicit withdrawal s
       completion: null,
     })
     const call = h.rpc.mock.calls.find(
-      ([n]) => n === 'observe_training_execution_finish_authenticated',
+      ([n]) => n === 'observe_training_execution_finish_authenticated_http',
     )
     expect(call?.[1]).toEqual({
       p_user_id: h.g.begin.scope.owner_id,
@@ -564,7 +586,7 @@ describe('original finish resolution keeps observation and explicit withdrawal s
     if (!original) throw Error('Missing fixture')
     h.rpc.mockImplementation(async (name, args) => {
       const result = await original(name, args)
-      if (name === 'observe_training_execution_finish_authenticated')
+      if (name === 'observe_training_execution_finish_authenticated_http')
         h.authPort.verifyAccessToken.mockRejectedValue(Error('Expired original login'))
       return result
     })

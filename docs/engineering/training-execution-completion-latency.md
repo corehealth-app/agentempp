@@ -53,3 +53,22 @@ both concurrent submit/withdraw lock orders. Verify the actual route/service/
 SQL path and lost-response read recovery. Measure connected response latency
 against the unchanged native deadline before enabling the new native path or
 claiming that the TestFlight candidate is ready. Local timing is not hosted QA.
+
+## Nonretryable HTTP conflicts
+
+The connected withdrawn-command test exposed a second cause: a custom
+`40001` conflict can make PostgREST repeat the transaction. Supabase documents
+this behavior and recommends an HTTP-mapped error such as `PT409` in its
+[RPC retry guidance](https://supabase.com/kb/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b).
+
+The new server selects thirteen closed, service-only `_authenticated_http`
+adapters. Each invokes its byte-pinned original function and translates only
+`serialization_failure` into `PT409`. The originals, including their errors,
+stay intact for older servers. There is no new domain writer or table grant.
+Cursor defaults and argument order are preserved. Apply the additive adapters
+before selecting them in the server; older servers remain compatible on rollback.
+
+The runtime maps `PT409` to the existing conflict response and returns definite
+Auth or conflict refusals without extra recovery SQL. Unknown transport outcomes
+still use the exact read-only recovery path. A conflict is not a workout ACK and
+does not authorize clearing an uncertain native pending command.

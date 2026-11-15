@@ -17,6 +17,26 @@ const command = {
 }
 
 describe('original-Auth training execution persistence boundary', () => {
+  it.each([
+    '40001',
+    'PT409',
+  ])('returns a SQL %s conflict without a second capture or mutation', async (code) => {
+    let calls = 0
+    const store = createTrainingExecutionStore(
+      {
+        rpc: async () => {
+          calls++
+          return { data: null, error: { code, message: 'private conflict diagnostic' } }
+        },
+      },
+      { owner, auth },
+    )
+    await expect(store.mutate(command)).rejects.toMatchObject({
+      status: 409,
+      code: 'training_execution_context_changed',
+    })
+    expect(calls).toBe(1)
+  })
   it('rejects client ownership/energy fields before invoking the database', async () => {
     let calls = 0
     const store = createTrainingExecutionStore(

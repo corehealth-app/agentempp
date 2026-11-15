@@ -49,6 +49,27 @@ const homeCaptureSchema = z
     next_cursor: trainingExecutionCursorSchema.nullable(),
   })
   .strict()
+const httpTrainingRPCs = new Set([
+  'capture_training_execution_context_authenticated',
+  'commit_training_execution_mutation_authenticated',
+  'read_training_execution_home_authenticated',
+  'begin_training_execution_completion_authenticated',
+  'read_training_execution_completion_authenticated',
+  'cancel_training_execution_completion_authenticated',
+  'commit_training_execution_completion_authenticated',
+  'read_training_execution_state_v2_authenticated',
+  'read_training_execution_home_v2_authenticated',
+  'reconcile_training_execution_progress_authenticated',
+  'observe_training_execution_finish_authenticated',
+  'withdraw_training_execution_finish_authenticated',
+  'submit_training_execution_completion_authenticated',
+])
+/** Only the new server selects these service-only nonretryable HTTP adapters.
+ * Their underlying protected primitives and older-server RPCs are untouched. */
+export function trainingExecutionHTTPRPC(name: string): string {
+  if (!httpTrainingRPCs.has(name)) throw Error('Unqualified training HTTP RPC')
+  return `${name}_http`
+}
 /** Only called after the runtime's real Supabase getUser verification. Decode
  * the signed token's login reference, never ownership/roles from JWT metadata. */
 export function trainingExecutionVerifiedLogin(auth: MobileAuthContext) {
@@ -101,7 +122,7 @@ export function createTrainingExecutionService(
   }
   const call = async (name: string, args: Record<string, unknown>) => {
     await authorize()
-    return raw.rpc(name, { ...args, p_auth_session_id: login })
+    return raw.rpc(trainingExecutionHTTPRPC(name), { ...args, p_auth_session_id: login })
   }
   const port: TrainingExecutionPersistencePort = {
     rpc(name, args) {
@@ -130,7 +151,7 @@ export function createTrainingExecutionService(
             'training_execution_auth_unavailable',
             'The original login session is no longer available.',
           )
-        if (e.success && e.data.code === '40001')
+        if (e.success && (e.data.code === '40001' || e.data.code === 'PT409'))
           throw new MobileApiError(
             409,
             'training_execution_scope_changed',

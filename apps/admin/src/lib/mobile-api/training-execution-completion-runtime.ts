@@ -54,6 +54,7 @@ import { projectTrainingExecutionProgressReconciliation } from './training-execu
 import {
   createTrainingExecutionService,
   trainingExecutionCursorSchema,
+  trainingExecutionHTTPRPC,
   trainingExecutionVerifiedLogin,
 } from './training-execution-runtime'
 
@@ -148,7 +149,10 @@ export function createTrainingExecutionCompletionService(
   const auth = workoutSnapshot(original),
     owner = authenticatedReevaluationOwner(auth),
     login = trainingExecutionVerifiedLogin(auth)
-  const rpc = db.rpc.bind(db) as unknown as TrainingExecutionCompletionRPC['rpc']
+  const rpc = db.rpc.bind(db) as unknown as (
+    name: string,
+    args: Readonly<Record<string, unknown>>,
+  ) => PromiseLike<unknown>
   const workout = createConversationWorkoutCommandService(db, dependencies)
   const feedbackComposition =
     dependencies.feedbackV3?.bind(dependencies) ??
@@ -181,7 +185,7 @@ export function createTrainingExecutionCompletionService(
     // provider observations around it. Direct public reads use the fenced port.
     const transport: TrainingExecutionCompletionRPC = {
       async rpc(name, args) {
-        const result = workoutSnapshot(await rpc(name, args))
+        const result = workoutSnapshot(await rpc(trainingExecutionHTTPRPC(name), args))
         const envelope = trusted(() =>
           z.object({ data: z.unknown(), error: z.unknown() }).passthrough().parse(result),
         )
@@ -193,7 +197,7 @@ export function createTrainingExecutionCompletionService(
               'training_execution_auth_unavailable',
               'The original login is no longer available.',
             )
-          if (e.success && e.data.code === '40001') return changed()
+          if (e.success && (e.data.code === '40001' || e.data.code === 'PT409')) return changed()
           return unavailable()
         }
         return envelope
@@ -629,6 +633,10 @@ export function createTrainingExecutionCompletionService(
       try {
         result = await l.backend.submitAtomic(bound)
       } catch (error) {
+        // A definite refusal is not an unknown commit outcome. In particular,
+        // a withdrawn command must return its conflict without more SQL work.
+        if (error instanceof MobileApiError && [401, 403, 409, 422].includes(error.status))
+          throw error
         // One transaction may have committed before its response was lost.
         // Recover only through the exact original read; never retry a writer.
         await l.current()

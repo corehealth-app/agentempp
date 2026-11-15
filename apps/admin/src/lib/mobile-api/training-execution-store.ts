@@ -61,7 +61,7 @@ export function createTrainingExecutionStore(
           'training_execution_auth_unavailable',
           'The original login session is no longer available.',
         )
-      if (code.success && code.data.code === '40001')
+      if (code.success && (code.data.code === '40001' || code.data.code === 'PT409'))
         throw new MobileApiError(
           409,
           'training_execution_context_changed',

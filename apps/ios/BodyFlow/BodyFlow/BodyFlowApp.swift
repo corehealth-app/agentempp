@@ -62,7 +62,8 @@ struct BodyFlowApp: App {
                 currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
                 currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent,
                 todayEnergyRepresentation: runtime?.todayEnergyRepresentation ?? .legacy,
-                flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy
+                flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy,
+                trainingExecutionRuntime: runtime?.trainingExecutionRuntime ?? .progressV1
             )
         }
         #else
@@ -81,7 +82,8 @@ struct BodyFlowApp: App {
             currentClinicalRuntimeMode: runtime?.currentClinicalRuntimeMode ?? .legacy,
             currentClinicalQABinding: runtime?.currentClinicalQABinding ?? .absent,
             todayEnergyRepresentation: runtime?.todayEnergyRepresentation ?? .legacy,
-            flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy
+            flowConversationRuntime: runtime?.flowConversationRuntime ?? .legacy,
+            trainingExecutionRuntime: runtime?.trainingExecutionRuntime ?? .progressV1
         )
         #endif
         let mealRecordLifetime: MealRecordAuthenticationLifetime? =

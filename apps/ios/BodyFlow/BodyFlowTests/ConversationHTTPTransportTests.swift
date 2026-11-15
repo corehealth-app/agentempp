@@ -149,11 +149,15 @@ struct ConversationHTTPFixture: Sendable {
     }
     static func makeTransport(lifecycle: any SessionLifecycleProviding, timeout: Duration = .seconds(2)) throws -> (stub: ConversationHTTPStub, transport: MobileAPITransport) {
         let host = "\(UUID().uuidString.lowercased()).conversation.invalid", stub = ConversationHTTPStub()
-        ConversationHTTPURLProtocol.install(stub, host: host)
-        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ConversationHTTPURLProtocol.self]
         let transport = MobileAPITransport(configuration: try MobileAPIConfiguration(originString: "https://\(host)"), sessionLifecycle: lifecycle,
-            session: URLSession(configuration: config), clock: ContinuousClock(), timeout: timeout)
+            session: makeSession(host: host, stub: stub), clock: ContinuousClock(), timeout: timeout)
         return (stub, transport)
+    }
+    static func makeSession(host: String, stub: ConversationHTTPStub) -> URLSession {
+        ConversationHTTPURLProtocol.install(stub, host: host)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ConversationHTTPURLProtocol.self]
+        return URLSession(configuration: config)
     }
 }
 struct ConversationHTTPReply: Sendable {

@@ -1,5 +1,20 @@
 import Foundation
 
+/// Bundled protocol selection. This is never a login, permission or launch-argument grant.
+enum TrainingExecutionRuntimeSelection: Equatable, Sendable {
+  case progressV1, completionV1, unavailable
+  static let infoKey = "PERFORME_TRAINING_EXECUTION_RUNTIME"
+  static func load(_ raw: Any?) -> Self {
+    guard let raw else { return .progressV1 }
+    guard let value = raw as? String else { return .unavailable }
+    switch value {
+    case "progress_v1": return .progressV1
+    case "completion_v1": return .completionV1
+    default: return .unavailable
+    }
+  }
+}
+
 /// Only the existing qualified real conversational family installs this inert
 /// source. Construction does not read Keychain, authenticate or create a workout.
 struct TrainingExecutionSessionSource: Sendable {

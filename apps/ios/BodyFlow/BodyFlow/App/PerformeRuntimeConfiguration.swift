@@ -12,6 +12,7 @@ struct PerformeRuntimeConfiguration: Equatable, Sendable {
     var currentClinicalQABinding: CurrentClinicalQABinding = .absent
     var todayEnergyRepresentation: TodayEnergyRepresentation = .legacy
     var flowConversationRuntime: FlowConversationRuntimeSelection = .legacy
+    var trainingExecutionRuntime: TrainingExecutionRuntimeSelection = .progressV1
 
     static func load(from values: [String: Any]?) -> PerformeRuntimeConfiguration? {
         guard let values,
@@ -47,13 +48,23 @@ struct PerformeRuntimeConfiguration: Equatable, Sendable {
             todayEnergy = .legacy
             clinicalMode = .unavailable
         }
+        let flow = FlowConversationRuntimeSelection.load(values[FlowConversationRuntimeSelection.infoKey])
+        var training = TrainingExecutionRuntimeSelection.load(values[TrainingExecutionRuntimeSelection.infoKey])
+        if training == .completionV1 {
+            if clinicalMode != .currentV1 || (flow != .mealCommandV1 && flow != .neutralIntakeV1) {
+                training = .unavailable
+            } else if case .candidate = qaBinding {
+                // The clinical family above already matched both exact origins.
+            } else { training = .unavailable }
+        }
         return PerformeRuntimeConfiguration(
             supabase: supabase,
             mobileAPI: mobileAPI,
             currentClinicalRuntimeMode: clinicalMode,
             currentClinicalQABinding: qaBinding,
             todayEnergyRepresentation: todayEnergy,
-            flowConversationRuntime: .load(values[FlowConversationRuntimeSelection.infoKey])
+            flowConversationRuntime: flow,
+            trainingExecutionRuntime: training
         )
     }
 

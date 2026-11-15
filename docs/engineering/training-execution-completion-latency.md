@@ -72,3 +72,21 @@ The runtime maps `PT409` to the existing conflict response and returns definite
 Auth or conflict refusals without extra recovery SQL. Unknown transport outcomes
 still use the exact read-only recovery path. A conflict is not a workout ACK and
 does not authorize clearing an uncertain native pending command.
+
+## Native selection
+
+The iOS bundle may select `PERFORME_TRAINING_EXECUTION_RUNTIME=completion_v1`
+only alongside a qualified exact candidate binding, current clinical runtime
+and a supported conversational runtime. This selects the existing v2 completion
+repository in the real app factory in both Debug and Release. An absent setting
+preserves progress v1; malformed or incompatible explicit selections make the
+training capability unavailable without silently falling back to v1. Flow and
+clinical capabilities keep their independent availability rules.
+
+Keep this key out of the generic Info.plist: unresolved build placeholders must
+not disable older/default builds. The QA/release producer adds it to the private
+candidate plist only after checking the hosted qualification receipt and its
+source, origin and deployment identity. Bundle provenance does not authenticate
+the user or grant server permissions. Opening still captures and validates the
+original authenticated lease. Qualifying the factory or decoding a packet does
+not replace a connected native workflow or installed-release verification.

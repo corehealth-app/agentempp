@@ -122,7 +122,8 @@ struct AppDependencies: Sendable {
         currentClinicalRuntimeMode: CurrentClinicalRuntimeMode = .legacy,
         currentClinicalQABinding: CurrentClinicalQABinding = .absent,
         todayEnergyRepresentation: TodayEnergyRepresentation = .legacy,
-        flowConversationRuntime: FlowConversationRuntimeSelection = .legacy
+        flowConversationRuntime: FlowConversationRuntimeSelection = .legacy,
+        trainingExecutionRuntime: TrainingExecutionRuntimeSelection = .progressV1
     ) -> AppDependencies {
         let secureStore: any SecureStoring = switch configuration.demoStorageBoundary {
         case .memory:
@@ -768,7 +769,9 @@ struct AppDependencies: Sendable {
             // The complete clinical family already matched both exact origins.
             // Provenance is build selection, not Auth or clinical authority.
             let staging = MediaStagingStore()
-            trainingExecutionSessions = TrainingExecutionSessionSource(transport: transport, lifecycle: releaseLifecycle)
+            trainingExecutionSessions = trainingExecutionRuntime == .unavailable ? nil
+                : TrainingExecutionSessionSource(transport: transport, lifecycle: releaseLifecycle,
+                    completionEnabled: trainingExecutionRuntime == .completionV1)
             flowConversationSessions = FlowConversationSessionSource(
                 transport: transport, lifecycle: releaseLifecycle,
                 media: .init(uploader: StorageUploadTransport(storageOrigin: storageOrigin), staging: staging),

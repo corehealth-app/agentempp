@@ -5,6 +5,43 @@ import Testing
 
 @Suite("Performe Runtime Configuration")
 struct PerformeRuntimeConfigurationTests {
+    @Test("Training completion is explicitly bundled; missing selection preserves progress v1")
+    func trainingSelectionIsClosed() {
+        #expect(TrainingExecutionRuntimeSelection.load(nil) == .progressV1)
+        #expect(TrainingExecutionRuntimeSelection.load("progress_v1") == .progressV1)
+        #expect(TrainingExecutionRuntimeSelection.load("completion_v1") == .completionV1)
+        for value: Any in ["", " completion_v1", "completion_v2", "$(TRAINING)", true, 1,
+                           ["mode": "completion_v1"]] {
+            #expect(TrainingExecutionRuntimeSelection.load(value) == .unavailable)
+        }
+    }
+
+    @Test("Completion requires the qualified conversation and clinical family", arguments: 0...6)
+    func trainingCompletionRequiresExactCandidate(_ defect: Int) throws {
+        var values = Self.previewValues()
+        values[FlowConversationRuntimeSelection.infoKey] = "neutral_intake_v1"
+        values[TrainingExecutionRuntimeSelection.infoKey] = "completion_v1"
+        switch defect {
+        case 1: values.removeValue(forKey: CurrentClinicalQABinding.infoKey)
+        case 2: values[PerformeRuntimeConfiguration.mobileAPIOriginKey] = "https://other.vercel.app"
+        case 3: values.removeValue(forKey: PerformeRuntimeConfiguration.currentClinicalRuntimeKey)
+        case 4: values[FlowConversationRuntimeSelection.infoKey] = "legacy"
+        case 5: values[TrainingExecutionRuntimeSelection.infoKey] = true
+        case 6: values[PerformeRuntimeConfiguration.supabaseURLKey] = "https://other.supabase.co"
+        default: break
+        }
+        let runtime = try #require(PerformeRuntimeConfiguration.load(from: values))
+        #expect(runtime.trainingExecutionRuntime == (defect == 0 ? .completionV1 : .unavailable))
+        if defect == 4 || defect == 5 {
+            #expect(runtime.currentClinicalRuntimeMode == .currentV1)
+        }
+    }
+
+    @Test("Old bundles retain progress without selecting completion")
+    func absentTrainingSelectionPreservesOldCandidate() throws {
+        let runtime = try #require(PerformeRuntimeConfiguration.load(from: Self.previewValues()))
+        #expect(runtime.trainingExecutionRuntime == .progressV1)
+    }
     @Test("complete public runtime values install Supabase auth and Mobile API origins")
     func loadsCompleteConfiguration() throws {
         let configuration = try #require(PerformeRuntimeConfiguration.load(from: [

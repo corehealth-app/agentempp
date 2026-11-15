@@ -153,3 +153,37 @@ those relocations; historical media/workout import pins are restored only after
 that complete certificate. No global worker/admin scan is excluded. Old uncertain
 media remain preserved, and automatic disposal remains restricted to the qualified
 new cohort.
+
+### R141: independent progress reconciliation and prepared native transport
+
+`POST execution-v2/:sessionId` accepts the original closed progress start/update
+command and unchanged `texecution1:<operation_id>` identity. It returns
+`training.execution-mutation.v2`: original operation ID/hash, immutable original
+progress receipt (when it exists), and independently proved **current** v2 state.
+A later completed session never masquerades as its obsolete v1 progress snapshot.
+An uncertain writer reply triggers a readonly reconciliation, never a second write.
+
+`reconcile_training_execution_progress_authenticated` is an additive service-only
+readonly RPC guarded by the same original live Auth session, owner/epoch lane and
+stored input equality. Missing receipt is not an acknowledgement. A cancellable
+reservation returns `pending`; only a permanent terminal/revision/date fence can
+prove `not_applied` for that exact command. The original v1 routes, kernel, writer
+and wire decoders remain closed and unchanged.
+
+Native completion DTOs validate the actual linked workout, completed session,
+receipt/revision/identity and optional canonical feedback separately. A malformed
+educational presentation cannot invalidate an official workout receipt. Progress
+and finish share the existing protected Keychain actor/slot; a stale or reserved
+response cannot erase a newer/uncertain command. The explicit v2 repository pins
+method/path/body/key/owner/epoch and response protocol/status to the original
+login, forbids refresh/redirect, and has no v1 fallback writer.
+
+R141 local qualification: actual HTTP handlers/service/SQL/canonical feedback
+produce exactly one workout/receipt/feedback/journal after lost reply/replay,
+preserve the original progress ACK alongside completed current state, and permit
+pre-effect cancellation without a workout. A public synthetic oracle from that
+actual local round feeds native boundary tests. The native transport and pending
+suites run on Simulator; external HTTP/Auth/entitlement providers remain synthetic.
+The new repository is **not composed into the visible model/UI yet**. Staging
+migrations/flags, native finish/history/share UI and hosted/distributed qualification
+remain required. No completion activation or TestFlight delivery is claimed here.

@@ -44,6 +44,7 @@ function setup(enabled = true, replace = false) {
     createRequestId: () => 'r140-route',
   }
   const methods = {
+    progress: vi.fn(async () => ({ schema: 'training.execution-mutation.v2', status: 'replayed' })),
     home: vi.fn(async () => ({ schema: 'safe-home' })),
     state: vi.fn(async () => ({ schema: 'safe-state' })),
     submit: vi.fn(async () => ({ schema: 'safe-finish', status: 'completed' })),
@@ -80,6 +81,36 @@ function setup(enabled = true, replace = false) {
   return { routes, methods, request, params, headers }
 }
 describe('closed completion route family preserves old progress endpoints', () => {
+  it('binds v2 progress recovery to the selected session, original epoch and old immutable progress key', async () => {
+    const h = setup(),
+      s = golden.begin.session,
+      command = {
+        schema: 'training.execution.update.v1',
+        session_id: s.id,
+        operation_id: '14100000-0000-4000-8000-000000000088',
+        expected_epoch: s.epoch,
+        expected_revision: 0,
+        action: { kind: 'mark_exercise', exercise_index: 0, completed: true },
+      }
+    const r = await h.routes.PROGRESS(
+      h.request(`/${s.id}`, command, { 'Idempotency-Key': `texecution1:${command.operation_id}` }),
+      h.params,
+    )
+    expect(r.status).toBe(200)
+    expect(h.methods.progress).toHaveBeenCalledTimes(1)
+    expect(h.methods.progress).toHaveBeenCalledWith(`texecution1:${command.operation_id}`, command)
+    expect(h.methods.submit).not.toHaveBeenCalled()
+    const wrong = await h.routes.PROGRESS(
+      h.request(
+        `/${s.id}`,
+        { ...command, session_id: s.auth_user_id },
+        { 'Idempotency-Key': `texecution1:${command.operation_id}` },
+      ),
+      h.params,
+    )
+    expect(wrong.status).toBe(409)
+    expect(h.methods.progress).toHaveBeenCalledTimes(1)
+  })
   it('disabled completion cannot dispatch a new state read or write', async () => {
     const h = setup(false)
     expect((await h.routes.POST(h.request())).status).toBe(503)

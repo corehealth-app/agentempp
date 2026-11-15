@@ -446,6 +446,28 @@ function restoreWorkoutFacadeLinkR140(body: string): string {
 }
 function certifyStructuredIntakeRouterR128(body: string): string {
   body = restoreWorkoutFacadeLinkR140(body)
+  // R141's organized additive imports change only Webpack's allocation of
+  // the already-certified byte-identical image parser. Certify the complete
+  // raw router AND every complete moved parser body before restoring exactly
+  // one loader edge; never bless an arbitrary changed body or skip a scan.
+  if (body.includes('n=c(63867)')) {
+    expect(createHash('sha256').update(body).digest('hex')).toBe(
+      '4d88e8a1503d7960ffc7ce0cdda285739c07b0a9540ff77b524f44661518abf0',
+    )
+    const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
+      (file) => file.endsWith('.js') && /(?:^|[,;{])63867:/.test(readFileSync(file, 'utf8')),
+    )
+    expect(copies.length).toBeGreaterThan(0)
+    for (const file of copies)
+      certifyPhysicalModule(file, '63867', [
+        'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673',
+        // The fourth physical copy owns its strict directive; the other three
+        // inherit it from their chunk. Both COMPLETE raw bodies are pinned.
+        '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916',
+      ])
+    expect(body.split('n=c(63867)')).toHaveLength(2)
+    body = body.replace('n=c(63867)', 'n=c(86248)')
+  }
   expect(createHash('sha256').update(body).digest('hex')).toBe(
     '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3',
   )
@@ -1171,6 +1193,7 @@ describe('authoritative Mobile API source surface', () => {
       body.replace('media_temporarily_unavailable', 'media_projection_required'),
       body.replace('label_product_required', 'routing_unavailable'),
       body.replace('image_description_required', 'routing_unavailable'),
+      body.replace(/n=c\((?:63867|86248)\)/, 'n=c(86249)'),
     ])
       expect(() => certifyIntakeMediaBridgeR102(changed)).toThrow()
   })

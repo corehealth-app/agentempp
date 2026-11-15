@@ -133,7 +133,7 @@ struct TrainingExecutionExercise: Sendable, Equatable, Identifiable {
 }
 
 struct TrainingExecutionSession: Sendable, Equatable, Identifiable {
-  enum Phase: String, Sendable { case inProgress = "in_progress", abandoned }
+  enum Phase: String, Sendable { case inProgress = "in_progress", abandoned, completed }
   let id: UUID, ownerID: UUID, authUserID: UUID, epoch: UUID, timezone: String, localDate: String
   let startedAt: String, updatedAt: String, phase: Phase, revision: Int
   let definition: TrainingExecutionDefinition, exercises: [TrainingExecutionExercise]
@@ -144,7 +144,7 @@ struct TrainingExecutionSession: Sendable, Equatable, Identifiable {
     authUserID = try o.field("auth_user_id").uuid(); epoch = try o.field("epoch").uuid()
     timezone = try o.field("time_zone").text(max: 100); localDate = try o.field("local_date").date()
     startedAt = try o.field("started_at").clock(); updatedAt = try o.field("updated_at").clock()
-    guard let p = Phase(rawValue: try o.field("phase").text(max: 20)) else { throw TrainingExecutionError.invalidResponse }
+    guard let p = Phase(rawValue: try o.field("phase").text(max: 20)), p != .completed else { throw TrainingExecutionError.invalidResponse }
     phase = p; revision = try o.field("revision").integer(max: Int32.max.int)
     definition = try .init(o.field("definition"))
     exercises = try o.field("exercises").array(max: 20, min: 1).map(TrainingExecutionExercise.init)

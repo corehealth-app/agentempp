@@ -1,7 +1,7 @@
 // Additive family only; the entire existing96/frozen93 stream stays pinned.
 export const completionTransports = new Map([
   ['training/execution-v2/route.ts', ['GET', 'dynamic', 'runtime']],
-  ['training/execution-v2/[sessionId]/route.ts', ['GET', 'dynamic', 'runtime']],
+  ['training/execution-v2/[sessionId]/route.ts', ['GET', 'POST', 'dynamic', 'runtime']],
   ['training/execution-v2/completions/route.ts', ['POST', 'dynamic', 'runtime']],
   [
     'training/execution-v2/[sessionId]/completions/[completionId]/route.ts',

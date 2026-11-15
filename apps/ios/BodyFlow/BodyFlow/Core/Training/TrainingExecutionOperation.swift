@@ -7,7 +7,7 @@ struct TrainingExecutionOperation: Codable, Sendable, Equatable {
   let wireBody: Data
   let sessionID: UUID, operationID: UUID, expectedRevision: Int?, kind: String
   let inputHash: String
-  var idempotencyKey: String { "texecution1:\(operationID.uuidString.lowercased())" }
+  var idempotencyKey: String { "\(kind == "finish" ? "tfinish1" : "texecution1"):\(operationID.uuidString.lowercased())" }
 
   init(binding: TrainingExecutionBinding, wireBody: Data) throws {
     let raw = try TrainingExecutionJSON(data: wireBody, limit: 16_384)
@@ -41,7 +41,23 @@ struct TrainingExecutionOperation: Codable, Sendable, Equatable {
       case "abandon": _ = try o.field("action").object(["kind"])
       default: throw TrainingExecutionError.invalidResponse
       }
-    } else { throw TrainingExecutionError.invalidResponse }
+    } else if schema == "training.execution.finish.v1" {
+      o = try raw.object([
+        "schema", "session_id", "operation_id", "expected_epoch", "expected_revision", "source",
+      ])
+      expectedRevision = try o.field("expected_revision").integer(max: 2_147_483_646)
+      let source = try o.field("source").object(["channel", "text"])
+      try trainingRequire(source.field("channel").text(max: 10) == "text")
+      let report = try source.field("text").text(max: 2_000)
+      try trainingRequire(!report.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      try trainingRequire(
+        !report.unicodeScalars.contains {
+          ($0.value < 32 && ![9, 10, 13].contains($0.value)) || $0.value == 127
+        })
+      kind = "finish"
+    } else {
+      throw TrainingExecutionError.invalidResponse
+    }
     sessionID = try o.field("session_id").uuid(); operationID = try o.field("operation_id").uuid()
     try trainingRequire(o.field("expected_epoch").uuid() == binding.epoch)
     try trainingRequire(TimeZone(identifier: binding.timezone) != nil)
@@ -73,6 +89,26 @@ struct TrainingExecutionOperation: Codable, Sendable, Equatable {
         "schema": .string("training.execution.update.v1"), "session_id": .string(session.id.uuidString.lowercased()),
         "operation_id": .string(id.uuidString.lowercased()), "expected_epoch": .string(session.epoch.uuidString.lowercased()),
         "expected_revision": .number(Double(session.revision)), "action": action.json
+      ]).data())
+  }
+
+  static func finish(session: TrainingExecutionSession, report: String, id: UUID = UUID()) throws
+    -> Self
+  {
+    guard session.phase == .inProgress, session.revision <= 2_147_483_646 else {
+      throw TrainingExecutionError.unavailable
+    }
+    return try .init(
+      binding: .init(
+        ownerID: session.ownerID, authUserID: session.authUserID, epoch: session.epoch,
+        timezone: session.timezone),
+      wireBody: TrainingExecutionJSON.object([
+        "schema": .string("training.execution.finish.v1"),
+        "session_id": .string(session.id.uuidString.lowercased()),
+        "operation_id": .string(id.uuidString.lowercased()),
+        "expected_epoch": .string(session.epoch.uuidString.lowercased()),
+        "expected_revision": .number(Double(session.revision)),
+        "source": .object(["channel": .string("text"), "text": .string(report)]),
       ]).data())
   }
 

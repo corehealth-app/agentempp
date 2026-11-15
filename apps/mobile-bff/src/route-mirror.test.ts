@@ -310,7 +310,7 @@ describe('dedicated Mobile BFF wrapper mirror', () => {
     expect(source).toHaveLength(101)
     expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(source)
     expect(hashRecords(source)).toBe(
-      'f82e91383b9737c9cc81d31bd12241702f2edd81ed28810350a92f3f96efcdb2',
+      'f8c426ceead69e48c7adf898363126003b7f30d6542198b2e2d9f820cf0a4aae',
     )
     for (const records of [source, wrappers])
       for (const [path, exports] of completionTransports)

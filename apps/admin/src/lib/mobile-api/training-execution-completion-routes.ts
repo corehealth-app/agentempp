@@ -18,6 +18,7 @@ import {
   createTrainingExecutionCompletionService,
   type TrainingExecutionCompletionIdentity,
 } from './training-execution-completion-runtime'
+import { parseTrainingExecutionCommand } from './training-execution-kernel'
 import { trainingExecutionEnabled } from './training-execution-routes'
 import {
   trainingExecutionCursorSchema,
@@ -25,6 +26,7 @@ import {
 } from './training-execution-runtime'
 
 interface Service {
+  progress(key: string | null, body: unknown): Promise<unknown>
   home(cursor?: unknown): Promise<unknown>
   state(session: string, epoch: string): Promise<unknown>
   submit(key: string | null, body: unknown): Promise<unknown>
@@ -154,6 +156,27 @@ export function createTrainingExecutionCompletionRoutes(
         cursor = query(c.request, true)
       await b.authorize()
       const value = await b.service().home(cursor)
+      await b.authorize()
+      return response(value, c.requestId)
+    }, fixed),
+    PROGRESS: createMobileRouteWithContext<Path>(async (c, p) => {
+      const b = binding(c)
+      query(c.request)
+      const command = parseTrainingExecutionCommand(await readJsonBody(c.request, 16384)),
+        path = await p.params,
+        key = c.request.headers.get('Idempotency-Key')
+      if (
+        command.session_id !== workoutUUID.parse(path.sessionId) ||
+        command.expected_epoch !== epoch(c.request)
+      )
+        throw new MobileApiError(
+          409,
+          'training_execution_scope_changed',
+          'The original progress session has changed.',
+        )
+      z.literal(`texecution1:${command.operation_id}`).parse(key)
+      await b.authorize()
+      const value = await b.service().progress(key, command)
       await b.authorize()
       return response(value, c.requestId)
     }, fixed),

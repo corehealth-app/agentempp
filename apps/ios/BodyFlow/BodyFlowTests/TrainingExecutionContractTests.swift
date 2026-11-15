@@ -17,7 +17,9 @@ struct TrainingExecutionContractTests {
     #expect(reopened.session.revision == 1)
     #expect(reopened.session.exercises[0].sets.first?.loadKg == 15.5)
     #expect(reopened.session.exercises[1].sets.isEmpty)
-    #expect(reopened.session.definition.exercises[0].fingerprint != reopened.session.definition.exercises[1].fingerprint)
+    #expect(
+      reopened.session.definition.exercises[0].fingerprint
+        != reopened.session.definition.exercises[1].fingerprint)
   }
 
   @Test func zeroLoadAndUnknownRepetitionsRemainDifferentFacts() throws {
@@ -36,7 +38,10 @@ struct TrainingExecutionContractTests {
     #expect(value.session.exercises[0].sets[0].repetitions == nil)
   }
 
-  @Test(arguments: ["foreign-owner", "epoch", "zone", "future-clock", "ordinal", "duplicate-set", "negative-load", "missing-null", "unknown-calories"])
+  @Test(arguments: [
+    "foreign-owner", "epoch", "zone", "future-clock", "ordinal", "duplicate-set", "negative-load",
+    "missing-null", "unknown-calories",
+  ])
   func malformedOrMixedExecutionCannotBePresented(_ kind: String) throws {
     let f = try TrainingExecutionFixture()
     var root = try f.object("read")
@@ -70,7 +75,8 @@ struct TrainingExecutionContractTests {
       let bytes = try JSONSerialization.data(withJSONObject: #require(value["command"]))
       let operation = try TrainingExecutionOperation(binding: .init(h.scope), wireBody: bytes)
       #expect(operation.inputHash == value["hash"] as? String)
-      #expect(operation.idempotencyKey == "texecution1:\(operation.operationID.uuidString.lowercased())")
+      #expect(
+        operation.idempotencyKey == "texecution1:\(operation.operationID.uuidString.lowercased())")
       #expect(operation.binding.ownerID == h.scope.ownerID)
       #expect(operation.binding.authUserID == h.scope.authUserID)
     }
@@ -79,7 +85,8 @@ struct TrainingExecutionContractTests {
   @Test func replayReceiptDoesNotRestoreTheStateBeforeAbandonment() throws {
     let f = try TrainingExecutionFixture()
     let home = try TrainingExecutionHomeSnapshot(data: f.data("home"))
-    let command = try TrainingExecutionOperation(binding: .init(home.scope), wireBody: f.command("save"))
+    let command = try TrainingExecutionOperation(
+      binding: .init(home.scope), wireBody: f.command("save"))
     let replay = try TrainingExecutionMutationSnapshot(data: f.data("replay"))
     try replay.validate(for: command)
     #expect(replay.status == .replayed)
@@ -90,7 +97,8 @@ struct TrainingExecutionContractTests {
     receipt["operation_id"] = "13700000-0000-4000-8000-000000000099"
     bad["receipt"] = receipt
     #expect(throws: (any Error).self) {
-      try TrainingExecutionMutationSnapshot(data: JSONSerialization.data(withJSONObject: bad)).validate(for: command)
+      try TrainingExecutionMutationSnapshot(data: JSONSerialization.data(withJSONObject: bad))
+        .validate(for: command)
     }
   }
 }
@@ -98,7 +106,8 @@ struct TrainingExecutionContractTests {
 struct TrainingExecutionFixture {
   let root: [String: Any]
   init() throws {
-    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/TrainingExecutionControlledFixture.json")
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+      "Fixtures/TrainingExecutionControlledFixture.json")
     root = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
   }
   func data(_ name: String) throws -> Data {
@@ -118,12 +127,16 @@ extension TrainingExecutionContractTests {
   func trainingHeadersCannotBeReusedForOtherRoutesOrBodies(_ attack: String) throws {
     let f = try TrainingExecutionFixture()
     let home = try TrainingExecutionHomeSnapshot(data: f.data("home"))
-    let operation = try TrainingExecutionOperation(binding: .init(home.scope), wireBody: f.command("save"))
-    let path = attack == "path" ? "/api/mobile/v1/workouts" : "/api/mobile/v1/training/execution/commands"
+    let operation = try TrainingExecutionOperation(
+      binding: .init(home.scope), wireBody: f.command("save"))
+    let path =
+      attack == "path" ? "/api/mobile/v1/workouts" : "/api/mobile/v1/training/execution/commands"
     let bytes = try (attack == "body" ? f.command("start") : operation.wireBody)
-    let key = try IdempotencyKey(validating: attack == "key" ? "wrong-operation-0001" : operation.idempotencyKey)
+    let key = try IdempotencyKey(
+      validating: attack == "key" ? "wrong-operation-0001" : operation.idempotencyKey)
     #expect(throws: MobileAPIRequestError.invalidTrainingExecutionHeaders) {
-      try MobileAPIRequest<TrainingExecutionMutationSnapshot>(method: .post, path: path,
+      try MobileAPIRequest<TrainingExecutionMutationSnapshot>(
+        method: .post, path: path,
         queryItems: attack == "query" ? [.init(name: "owner", value: "other")] : [],
         body: bytes, idempotencyKey: key,
         conversation: attack == "conversation" ? .session : nil,
@@ -134,21 +147,25 @@ extension TrainingExecutionContractTests {
   }
 
   @Test func unresolvedTrainingCommandCannotInventOwnerCaloriesOrCompletion() throws {
-    let f = try TrainingExecutionFixture(), home = try TrainingExecutionHomeSnapshot(data: f.data("home"))
+    let f = try TrainingExecutionFixture()
+    let home = try TrainingExecutionHomeSnapshot(data: f.data("home"))
     let base = try #require(JSONSerialization.jsonObject(with: f.command("save")) as? [String: Any])
     for key in ["owner_id", "calories", "xp", "prepared_state"] {
-      var command = base; command[key] = "client-value"
+      var command = base
+      command[key] = "client-value"
       #expect(throws: (any Error).self) {
-        try TrainingExecutionOperation(binding: .init(home.scope), wireBody: JSONSerialization.data(withJSONObject: command))
+        try TrainingExecutionOperation(
+          binding: .init(home.scope), wireBody: JSONSerialization.data(withJSONObject: command))
       }
     }
-    var command = base; command["action"] = ["kind": "finish"]
+    var command = base
+    command["action"] = ["kind": "finish"]
     #expect(throws: (any Error).self) {
-      try TrainingExecutionOperation(binding: .init(home.scope), wireBody: JSONSerialization.data(withJSONObject: command))
+      try TrainingExecutionOperation(
+        binding: .init(home.scope), wireBody: JSONSerialization.data(withJSONObject: command))
     }
   }
 }
-
 
 extension TrainingExecutionContractTests {
   @Test func corruptAuditCannotTurnAnOldReceiptIntoANewWrite() throws {
@@ -159,6 +176,60 @@ extension TrainingExecutionContractTests {
       #expect(throws: (any Error).self) {
         try TrainingExecutionMutationSnapshot(data: JSONSerialization.data(withJSONObject: value))
       }
+    }
+  }
+}
+
+extension TrainingExecutionContractTests {
+  @Test func finishKeepsTheExplicitReportAndCannotUseTheOldProgressTransport() throws {
+    let f = try TrainingExecutionFixture()
+    let session = try TrainingExecutionMutationSnapshot(data: f.data("created")).session
+    let id = UUID(uuidString: "14100000-0000-4000-8000-000000000050")!
+    let wire: [String: Any] = [
+      "schema": "training.execution.finish.v1", "session_id": session.id.uuidString.lowercased(),
+      "operation_id": id.uuidString.lowercased(),
+      "expected_epoch": session.epoch.uuidString.lowercased(),
+      "expected_revision": session.revision,
+      "source": ["channel": "text", "text": "Fiz full body por 30 min com intensidade moderada."],
+    ]
+    let binding = TrainingExecutionBinding(
+      ownerID: session.ownerID, authUserID: session.authUserID, epoch: session.epoch,
+      timezone: session.timezone)
+    let operation = try TrainingExecutionOperation(
+      binding: binding, wireBody: JSONSerialization.data(withJSONObject: wire))
+    #expect(operation.kind == "finish")
+    #expect(operation.idempotencyKey == "tfinish1:14100000-0000-4000-8000-000000000050")
+    #expect(operation.expectedRevision == 0)
+    #expect(
+      try JSONDecoder().decode(
+        TrainingExecutionOperation.self, from: JSONEncoder().encode(operation)) == operation)
+    #expect(throws: MobileAPIRequestError.invalidTrainingExecutionHeaders) {
+      try MobileTrainingExecutionRequestHeaders.mutation(operation).validate(
+        method: .post,
+        path: "/api/mobile/v1/training/execution/commands", query: [], body: operation.wireBody,
+        key: IdempotencyKey(validating: operation.idempotencyKey), replay: .never)
+    }
+  }
+}
+
+extension TrainingExecutionContractTests {
+  @Test(arguments: ["blank", "control", "calories", "prepared", "revision"])
+  func finishNeverAcceptsManualAuthorityOrAnUnboundedReport(_ kind: String) throws {
+    let f = try TrainingCompletionFixture()
+    var command = try #require(f.object("commands")["finish"] as? [String: Any])
+    switch kind {
+    case "blank": command["source"] = ["channel": "text", "text": " \n\t"]
+    case "control":
+      command["source"] = ["channel": "text", "text": "Fiz full body por 30 min\u{007f}"]
+    case "calories": command["calories"] = 900
+    case "prepared":
+      command["source"] = ["channel": "text", "text": "Fiz full body por 30 min", "prepared": true]
+    default: command["expected_revision"] = 2_147_483_647
+    }
+    let binding = try f.finish().binding
+    #expect(throws: (any Error).self) {
+      try TrainingExecutionOperation(
+        binding: binding, wireBody: JSONSerialization.data(withJSONObject: command))
     }
   }
 }

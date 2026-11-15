@@ -1,6 +1,7 @@
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import { replyFixture } from './__fixtures__/conversation-meal-reply'
+import { hashMobileRequest } from './idempotency'
 import golden from './testing/training-completion-pg-golden.json'
 import { createTrainingExecutionCompletionService } from './training-execution-completion-runtime'
 
@@ -136,7 +137,108 @@ function setup(failFeedback = false) {
     },
   }
 }
+function installProgressObservation(h: ReturnType<typeof setup>, exists = true, reserved = false) {
+  const s = h.g.begin.session
+  const command = exists
+    ? {
+        schema: 'training.execution.start.v1',
+        session_id: s.id,
+        operation_id: s.id,
+        expected_epoch: s.epoch,
+        expected_local_date: s.local_date,
+        plan_id: s.definition.plan_id,
+        plan_hash: s.definition.plan_hash,
+        day_index: s.definition.day_index,
+      }
+    : {
+        schema: 'training.execution.update.v1',
+        session_id: s.id,
+        operation_id: '14100000-0000-4000-8000-000000000077',
+        expected_epoch: s.epoch,
+        expected_revision: 0,
+        action: { kind: 'mark_exercise', exercise_index: 0, completed: true },
+      }
+  const receipt = {
+    schema: 'training.execution.receipt.v1',
+    owner_id: s.owner_id,
+    epoch: s.epoch,
+    session_id: s.id,
+    operation_id: s.id,
+    input_hash: hashMobileRequest(command),
+    before_revision: null,
+    after_revision: 0,
+    kind: 'start',
+    at: s.started_at,
+  }
+  const context = reserved ? { ...h.g.begin, action: 'available' } : h.g.completed
+  const actual = h.rpc.getMockImplementation()
+  if (!actual) throw new Error('Missing original RPC fixture')
+  h.rpc.mockImplementation(async (name, args) =>
+    name === 'reconcile_training_execution_progress_authenticated'
+      ? {
+          data: {
+            action: exists ? 'available' : 'absent',
+            scope: context.scope,
+            state: { action: 'completion', context },
+            ...(exists ? { command, receipt } : {}),
+          },
+          error: null,
+        }
+      : actual(name, args),
+  )
+  return { command, receipt, key: `texecution1:${command.operation_id}` }
+}
 describe('original-auth public completion runtime over real backend and public workout service', () => {
+  it('recovers an original progress ACK after another device completed without another progress or workout writer', async () => {
+    const h = setup()
+    h.complete()
+    const op = installProgressObservation(h),
+      v = await h.service.progress(op.key, op.command)
+    expect(v).toMatchObject({
+      schema: 'training.execution-mutation.v2',
+      status: 'replayed',
+      receipt: op.receipt,
+      current: { session: { phase: 'completed', revision: 1 } },
+    })
+    expect(h.writes()).toBe(0)
+    expect(
+      h.rpc.mock.calls.every(([n]) => n === 'reconcile_training_execution_progress_authenticated'),
+    ).toBe(true)
+  })
+  it('retires only proven-unapplied old CAS work behind a permanent completed state, without inventing a receipt', async () => {
+    const h = setup()
+    h.complete()
+    const op = installProgressObservation(h, false),
+      v = await h.service.progress(op.key, op.command)
+    expect(v).toMatchObject({
+      schema: 'training.execution-mutation.v2',
+      status: 'not_applied',
+      receipt: null,
+      operation_id: op.command.operation_id,
+      input_hash: hashMobileRequest(op.command),
+      current: { session: { phase: 'completed' } },
+    })
+    expect(h.writes()).toBe(0)
+    expect(
+      h.rpc.mock.calls.every(([n]) => n === 'reconcile_training_execution_progress_authenticated'),
+    ).toBe(true)
+  })
+  it('a cancellable finish reservation keeps unresolved progress pending and never masquerades as a permanent rejection', async () => {
+    const h = setup(),
+      op = installProgressObservation(h, false, true),
+      v = await h.service.progress(op.key, op.command)
+    expect(v).toMatchObject({
+      schema: 'training.execution-mutation.v2',
+      status: 'pending',
+      receipt: null,
+      operation_id: op.command.operation_id,
+      current: { session: { phase: 'in_progress' }, completion: { status: 'reserved' } },
+    })
+    expect(h.writes()).toBe(0)
+    expect(
+      h.rpc.mock.calls.every(([n]) => n === 'reconcile_training_execution_progress_authenticated'),
+    ).toBe(true)
+  })
   it('recovers an owned completed session after a cold start without requiring a source text or admitting a command', async () => {
     const h = setup()
     h.complete()
@@ -270,7 +372,8 @@ describe('original-auth public completion runtime over real backend and public w
   ] as const)('treats malformed trusted %s observations as unavailable, not invalid user input', async (kind) => {
     const h = setup()
     h.complete()
-    const actual = h.rpc.getMockImplementation()!
+    const actual = h.rpc.getMockImplementation()
+    if (!actual) throw new Error('Missing original RPC fixture')
     h.rpc.mockImplementation(async (name, args) => {
       if (
         (kind === 'home' && name === 'read_training_execution_home_v2_authenticated') ||

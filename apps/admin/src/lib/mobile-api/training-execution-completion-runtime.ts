@@ -1,6 +1,7 @@
 /** Original-Auth public finish/read/cancel service. Every HTTP caller must use
  * the normal authenticated patient/entitlement runtime. Private SQL proofs are
  * projected explicitly; the existing workout service owns optional feedback. */
+import { isDeepStrictEqual } from 'node:util'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
@@ -20,6 +21,7 @@ import {
 } from './conversation-workout-contracts'
 import type { ConversationWorkoutEffect } from './conversation-workout-writer'
 import { MobileApiError } from './http'
+import { hashMobileRequest } from './idempotency'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 import {
   createTrainingExecutionCompletionBackend,
@@ -36,11 +38,14 @@ import {
 } from './training-execution-completion-public'
 import { trainingExecutionInstant } from './training-execution-instant'
 import {
+  parseTrainingExecutionCommand,
   projectTrainingExecutionPlan,
   readTrainingExecutionScope,
   readTrainingExecutionSession,
 } from './training-execution-kernel'
+import { projectTrainingExecutionProgressReconciliation } from './training-execution-progress-reconciliation'
 import {
+  createTrainingExecutionService,
   trainingExecutionCursorSchema,
   trainingExecutionVerifiedLogin,
 } from './training-execution-runtime'
@@ -278,6 +283,81 @@ export function createTrainingExecutionCompletionService(
     return workoutSnapshot({ ...value, feedback, decision })
   }
   return Object.freeze({
+    async progress(key: string | null, raw: unknown) {
+      const command = parseTrainingExecutionCommand(workoutSnapshot(raw))
+      if (key !== `texecution1:${command.operation_id}`)
+        throw new MobileApiError(
+          422,
+          'training_execution_invalid_key',
+          'The original progress key is required.',
+        )
+      const l = lane(command.expected_epoch)
+      async function observe() {
+        const response = await l.port.rpc('reconcile_training_execution_progress_authenticated', {
+          p_user_id: owner,
+          p_auth_user_id: auth.authUserId,
+          p_auth_session_id: login,
+          p_command: command,
+        })
+        const data = trusted(
+          () => z.object({ data: z.unknown() }).passthrough().parse(response).data,
+        )
+        return trusted(() =>
+          projectTrainingExecutionProgressReconciliation(data, command, {
+            owner,
+            auth: auth.authUserId,
+          }),
+        )
+      }
+      async function response(
+        proof: Awaited<ReturnType<typeof observe>>,
+        status: 'created' | 'updated' | 'replayed' | 'pending' | 'not_applied',
+      ) {
+        await l.current()
+        return workoutSnapshot({
+          schema: 'training.execution-mutation.v2' as const,
+          status,
+          scope: proof.action === 'available' ? proof.current.scope : proof.scope,
+          operation_id: command.operation_id,
+          input_hash: hashMobileRequest(command),
+          receipt: proof.action === 'available' ? proof.receipt : null,
+          current: proof.current,
+        })
+      }
+      const before = await observe()
+      if (before.action === 'available') return response(before, 'replayed')
+      const current = before.current
+      if (
+        current &&
+        (current.session.phase !== 'in_progress' ||
+          (command.schema === 'training.execution.update.v1' &&
+            command.expected_revision < current.session.revision))
+      )
+        return response(before, 'not_applied')
+      if (
+        command.schema === 'training.execution.start.v1' &&
+        command.expected_local_date < before.scope.current_local_date
+      )
+        return response(before, 'not_applied')
+      if (current?.completion?.status === 'reserved') return response(before, 'pending')
+      // A start state without its atomic original receipt is not a generic
+      // rejection capability. Do not normalize unknown store history.
+      if (current && command.schema === 'training.execution.start.v1') return unavailable()
+      let written: Awaited<ReturnType<ReturnType<typeof createTrainingExecutionService>['mutate']>>
+      try {
+        written = await createTrainingExecutionService(db, auth, l.current).mutate(command)
+      } catch (error) {
+        // The original writer may have committed before a lost reply. This
+        // is observation only: never submit a second mutation automatically.
+        const recovered = await observe()
+        if (recovered.action === 'available') return response(recovered, 'replayed')
+        throw error
+      }
+      const after = await observe()
+      if (after.action !== 'available' || !isDeepStrictEqual(after.receipt, written.receipt))
+        return unavailable()
+      return response(after, written.status)
+    },
     async home(rawCursor?: unknown) {
       const cursor =
         rawCursor === undefined

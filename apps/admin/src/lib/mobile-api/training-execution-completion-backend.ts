@@ -24,6 +24,7 @@ import {
 } from './training-execution-kernel'
 
 type CompletionName =
+  | 'reconcile_training_execution_progress_authenticated'
   | 'read_training_execution_state_v2_authenticated'
   | 'read_training_execution_home_v2_authenticated'
   | 'begin_training_execution_completion_authenticated'

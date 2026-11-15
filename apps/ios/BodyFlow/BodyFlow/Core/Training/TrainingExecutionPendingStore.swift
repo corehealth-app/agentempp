@@ -16,16 +16,20 @@ actor TrainingExecutionPendingStore {
   }
   init(origin: URL, security: any KeychainSecurityClient) throws {
     let configuration = try MobileAPIConfiguration(originString: origin.absoluteString)
-    service = "com.performeai.training-execution.pending.v1." + Self.hash(configuration.origin.absoluteString)
+    service =
+      "com.performeai.training-execution.pending.v1."
+      + Self.hash(configuration.origin.absoluteString)
     self.security = security
   }
 
   func load(authUserID: UUID) async throws -> TrainingExecutionOperation? {
-    try enter(); defer { busy = false }
+    try enter()
+    defer { busy = false }
     return try await read(authUserID)
   }
   func claim(_ operation: TrainingExecutionOperation) async throws {
-    try enter(); defer { busy = false }
+    try enter()
+    defer { busy = false }
     let auth = operation.binding.authUserID
     if let previous = try await read(auth) {
       guard previous == operation else { throw TrainingExecutionError.pendingOperation }
@@ -43,20 +47,49 @@ actor TrainingExecutionPendingStore {
 
   /// This is deliberately not a generic delete or reset. A validated original
   /// receipt may retire only the exact slot that produced that receipt.
-  func acknowledge(_ operation: TrainingExecutionOperation, result: TrainingExecutionMutationSnapshot) async throws {
+  func acknowledge(
+    _ operation: TrainingExecutionOperation, result: TrainingExecutionMutationSnapshot
+  ) async throws {
     try result.validate(for: operation)
-    try enter(); defer { busy = false }
+    try await retireExact(operation)
+  }
+
+  func acknowledgeProgress(
+    _ operation: TrainingExecutionOperation, result: TrainingExecutionProgressV2Snapshot
+  ) async throws {
+    try result.validate(for: operation)
+    guard result.status != .pending else { throw TrainingExecutionError.pendingOperation }
+    try await retireExact(operation)
+  }
+
+  func acknowledgeCompletion(
+    _ operation: TrainingExecutionOperation, result: TrainingExecutionCompletionSnapshot
+  ) async throws {
+    try result.validate(for: operation)
+    guard result.status != .reserved, result.receipt != nil else {
+      throw TrainingExecutionError.pendingOperation
+    }
+    try await retireExact(operation)
+  }
+
+  private func retireExact(_ operation: TrainingExecutionOperation) async throws {
+    try enter()
+    defer { busy = false }
     let auth = operation.binding.authUserID
     guard try await read(auth) == operation else { throw TrainingExecutionError.pendingOperation }
     let status = await security.delete(descriptor(auth))
-    guard status == errSecSuccess || status == errSecItemNotFound else { throw TrainingExecutionError.storageUnavailable }
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw TrainingExecutionError.storageUnavailable
+    }
   }
 
   /// A sealed original-session pre-write rejection is not a receipt and never
   /// credits a workout. It resolves only this exact proven-unaccepted command.
   func retireRejected(_ proof: TrainingExecutionRejectedResolution) async throws {
-    try enter(); defer { busy = false }
-    let operation = proof.operation, auth = operation.binding.authUserID
+    try enter()
+    defer { busy = false }
+    let operation = proof.operation
+    let auth = operation.binding.authUserID
     guard operation.binding.matches(proof.home.scope), try await read(auth) == operation else {
       throw TrainingExecutionError.pendingOperation
     }
@@ -83,7 +116,9 @@ actor TrainingExecutionPendingStore {
     }
   }
   private func descriptor(_ auth: UUID) -> KeychainItemDescriptor {
-    .init(itemClass: .genericPassword, service: service, account: Self.hash(auth.uuidString.lowercased()),
+    .init(
+      itemClass: .genericPassword, service: service,
+      account: Self.hash(auth.uuidString.lowercased()),
       accessibility: .whenUnlockedThisDeviceOnly, synchronizable: false, accessGroup: nil)
   }
   private static func hash(_ value: String) -> String {
@@ -96,7 +131,8 @@ private actor TrainingExecutionPendingStoreRegistry {
   func store(origin: URL) throws -> TrainingExecutionPendingStore {
     let normalized = try MobileAPIConfiguration(originString: origin.absoluteString).origin
     if let previous = stores[normalized] { return previous }
-    let store = try TrainingExecutionPendingStore(origin: normalized, security: SystemKeychainSecurityClient())
+    let store = try TrainingExecutionPendingStore(
+      origin: normalized, security: SystemKeychainSecurityClient())
     stores[normalized] = store
     return store
   }

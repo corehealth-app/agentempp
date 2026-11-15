@@ -178,7 +178,7 @@ for (const [label, records] of [
   console.info(`${label}_COMPLETION_CURRENT_ROUTE_EXPORT_COUNT=${records.length}`)
   if (
     records.length !== 101 ||
-    hashRecords(records) !== 'f82e91383b9737c9cc81d31bd12241702f2edd81ed28810350a92f3f96efcdb2'
+    hashRecords(records) !== 'f8c426ceead69e48c7adf898363126003b7f30d6542198b2e2d9f820cf0a4aae'
   )
     fail(`${label}_COMPLETION_CURRENT_STREAM`)
   for (const [path, methods] of completionTransports) {

@@ -36,6 +36,10 @@ import {
   projectTrainingExecutionCompletion,
   type TrainingExecutionCompletionDecision,
 } from './training-execution-completion-public'
+import {
+  parseTrainingExecutionFinishResolutionRequest,
+  projectTrainingExecutionFinishResolution,
+} from './training-execution-finish-resolution'
 import { trainingExecutionInstant } from './training-execution-instant'
 import {
   parseTrainingExecutionCommand,
@@ -283,6 +287,88 @@ export function createTrainingExecutionCompletionService(
     return workoutSnapshot({ ...value, feedback, decision })
   }
   return Object.freeze({
+    async resolveFinish(key: string | null, raw: unknown) {
+      const body = parseTrainingExecutionFinishResolutionRequest(raw)
+      if (key !== `tresolve1:${body.mode}:${body.command.operation_id}`)
+        throw new MobileApiError(
+          422,
+          'training_execution_invalid_key',
+          'The original resolution key is required.',
+        )
+      const bound = bindTrainingExecutionCompletion(
+        owner,
+        `tfinish1:${body.command.operation_id}`,
+        body.command,
+      )
+      // Resolving an old command is not authority to write under its old
+      // clinical epoch. Bind the original live login to the current profile;
+      // the immutable nested command remains independently bound by SQL.
+      await authorize()
+      const discovery = await workout.session(auth),
+        l = lane(discovery.epoch)
+      const envelope = await l.port.rpc(
+        body.mode === 'observe'
+          ? 'observe_training_execution_finish_authenticated'
+          : 'withdraw_training_execution_finish_authenticated',
+        {
+          p_user_id: owner,
+          p_auth_user_id: auth.authUserId,
+          p_auth_session_id: login,
+          p_command: bound.command,
+        },
+      )
+      const data = trusted(() => z.object({ data: z.unknown() }).passthrough().parse(envelope).data)
+      const value = trusted(() =>
+        projectTrainingExecutionFinishResolution(data, bound, auth.authUserId, body.mode),
+      )
+      if (value.scope.epoch !== discovery.epoch) return changed()
+      if (
+        body.mode === 'withdraw' &&
+        value.status !== 'withdrawn' &&
+        !(value.status === 'available' && value.completion?.status !== 'reserved')
+      )
+        return unavailable()
+      let current = value.current,
+        completion = value.completion
+      // Enrich only a proven current completion through the existing readonly
+      // workout reader. No resolver, education writer or second registration.
+      if (value.current?.completion?.status === 'completed') {
+        const context = trusted(
+          () =>
+            z
+              .object({
+                state: z
+                  .object({
+                    action: z.literal('completion'),
+                    context: z.unknown(),
+                  })
+                  .strict(),
+              })
+              .passthrough()
+              .parse(data).state.context,
+        )
+        const command = trusted(
+          () =>
+            z
+              .object({ completion: z.object({ command: z.unknown() }).passthrough() })
+              .passthrough()
+              .parse(context).completion.command,
+        )
+        const currentBound = trusted(() =>
+          bindTrainingExecutionCompletion(
+            owner,
+            `tfinish1:${value.current?.completion?.completion_id}`,
+            command,
+          ),
+        )
+        const enriched = await present(context, currentBound, l.current, null)
+        current = { ...value.current, completion: enriched }
+        if (value.completion?.completion_id === enriched.completion_id)
+          completion = { ...value.completion, feedback: enriched.feedback }
+      }
+      await l.current()
+      return workoutSnapshot({ ...value, current, completion })
+    },
     async progress(key: string | null, raw: unknown) {
       const command = parseTrainingExecutionCommand(workoutSnapshot(raw))
       if (key !== `texecution1:${command.operation_id}`)

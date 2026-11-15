@@ -3,7 +3,7 @@ import Observation
 
 @MainActor @Observable
 final class TrainingExecutionModel {
-  enum Failure: Equatable { case changed, pending, unavailable }
+  enum Failure: Equatable { case changed, pending, unavailable, finishFenced, finishWithdrawn }
   private var provider: (any TrainingExecutionProviding)?
   private let store: TrainingExecutionPendingStore
   private let makeCompletionID: @Sendable () -> UUID
@@ -158,6 +158,13 @@ final class TrainingExecutionModel {
     guard let held = pending else { return false }
     return await run { model, provider in
       let fresh = try await provider.home(cursor: nil)
+      if held.kind == "finish", let modern = provider as? any TrainingExecutionCompletionProviding {
+        guard fresh.scope.ownerID == held.binding.ownerID,
+          fresh.scope.authUserID == held.binding.authUserID
+        else { throw TrainingExecutionError.scopeChanged }
+        try await model.publishIfCurrent { try model.accept(fresh) }
+        return try await model.resolvePendingFinish(held, provider: modern, mode: .observe)
+      }
       guard held.binding.matches(fresh.scope) else {
         try await model.publishIfCurrent {
           try model.accept(fresh)
@@ -293,10 +300,12 @@ final class TrainingExecutionModel {
     return await run { model, provider in
       guard let modern = provider as? any TrainingExecutionCompletionProviding else { return false }
       let fresh = try await modern.home(cursor: nil)
-      guard held.binding.matches(fresh.scope) else { throw TrainingExecutionError.scopeChanged }
-      let value = try await modern.cancel(.init(operation: held))
-      _ = try await model.acceptCompletion(value, operation: held, provider: modern)
-      return true
+      guard fresh.scope.ownerID == held.binding.ownerID,
+        fresh.scope.authUserID == held.binding.authUserID
+      else { throw TrainingExecutionError.scopeChanged }
+      try await model.publishIfCurrent { try model.accept(fresh) }
+      _ = try await model.resolvePendingFinish(held, provider: modern, mode: .withdraw)
+      return model.pending == nil
     }
   }
   private func sendV2(
@@ -304,22 +313,10 @@ final class TrainingExecutionModel {
     recovering: Bool
   ) async throws -> Bool {
     if operation.kind == "finish" {
-      let value: TrainingExecutionCompletionSnapshot
       if recovering {
-        let known: TrainingExecutionCompletionSnapshot?
-        do {
-          known = try await provider.completion(.init(operation: operation))
-        } catch MobileAPITransportError.http(status: 404, code: _, requestID: _) { known = nil }
-        // Only the readonly lookup can permit this one identical POST. A POST
-        // failure is never caught as a reason to send another physical write.
-        if let known, known.status != .reserved {
-          value = known
-        } else {
-          value = try await provider.finish(operation)
-        }
-      } else {
-        value = try await provider.finish(operation)
+        return try await resolvePendingFinish(operation, provider: provider, mode: .observe)
       }
+      let value = try await provider.finish(operation)
       return try await acceptCompletion(value, operation: operation, provider: provider)
     }
     let value = try await provider.progress(operation)
@@ -336,6 +333,60 @@ final class TrainingExecutionModel {
       }
     }
     return value.status != .pending && value.status != .notApplied
+  }
+  private func resolvePendingFinish(
+    _ operation: TrainingExecutionOperation, provider: any TrainingExecutionCompletionProviding,
+    mode: TrainingExecutionFinishResolutionMode
+  ) async throws -> Bool {
+    let resolution = try await provider.resolveFinish(operation, mode: mode)
+    try resolution.validate(for: operation, mode: mode)
+    try await provider.validate()
+    if mode == .observe
+      && (resolution.status == .ready || resolution.completion?.status == .reserved)
+    {
+      // One explicit retry of the identical command, only after its dedicated
+      // observation. A failed POST never triggers another automatic write.
+      let value = try await provider.finish(operation)
+      return try await acceptCompletion(value, operation: operation, provider: provider)
+    }
+    if resolution.status == .pending {
+      try await publishIfCurrent {
+        self.session = resolution.current?.session
+        self.completion = resolution.current?.completion
+        self.failure = .pending
+      }
+      return false
+    }
+    let fresh = try await provider.home(cursor: nil)
+    guard fresh.scope.ownerID == operation.binding.ownerID,
+      fresh.scope.authUserID == operation.binding.authUserID
+    else { throw TrainingExecutionError.scopeChanged }
+    try await provider.validate()
+    if resolution.status == .available, let own = resolution.completion {
+      try await store.acknowledgeCompletion(operation, result: own)
+    } else {
+      try await store.retireFinish(operation, resolution: resolution)
+    }
+    try await publishIfCurrent {
+      try self.accept(fresh)
+      // Keep a later/current completion independent of the cancelled original
+      // receipt. Never relabel an old execution under a newly observed epoch.
+      if TrainingExecutionBinding(resolution.scope).matches(fresh.scope) {
+        self.session = resolution.current?.session
+        self.completion = resolution.current?.completion ?? resolution.completion
+      } else {
+        self.session = nil
+        self.completion = nil
+      }
+      self.pending = nil
+      self.failure =
+        resolution.status == .withdrawn
+        ? .finishWithdrawn
+        : resolution.status == .fenced
+          ? .finishFenced
+          : resolution.completion?.status == .completed ? nil : .changed
+    }
+    return resolution.completion?.status == .completed
   }
   private func acceptCompletion(
     _ value: TrainingExecutionCompletionSnapshot, operation: TrainingExecutionOperation,
@@ -360,7 +411,7 @@ final class TrainingExecutionModel {
     try await provider.validate()
     try await store.acknowledgeCompletion(operation, result: value)
     try await publishIfCurrent {
-      self.completion = value
+      self.completion = current?.completion ?? value
       self.session = current?.session ?? value.session
       self.pending = nil
       self.failure = value.status == .cancelled ? .changed : nil

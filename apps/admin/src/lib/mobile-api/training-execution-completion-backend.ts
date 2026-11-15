@@ -24,6 +24,8 @@ import {
 } from './training-execution-kernel'
 
 type CompletionName =
+  | 'observe_training_execution_finish_authenticated'
+  | 'withdraw_training_execution_finish_authenticated'
   | 'reconcile_training_execution_progress_authenticated'
   | 'read_training_execution_state_v2_authenticated'
   | 'read_training_execution_home_v2_authenticated'

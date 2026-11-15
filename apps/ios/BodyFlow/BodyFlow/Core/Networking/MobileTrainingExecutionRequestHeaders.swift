@@ -10,6 +10,7 @@ enum MobileTrainingExecutionRequestHeaders: Sendable {
   case state(TrainingExecutionBinding, sessionID: UUID)
   case progressV2(TrainingExecutionOperation)
   case finish(TrainingExecutionOperation)
+  case finishResolution(TrainingExecutionOperation, TrainingExecutionFinishResolutionMode)
   case completionRead(TrainingExecutionCompletionIdentity)
   case completionCancel(TrainingExecutionCompletionIdentity)
 
@@ -59,6 +60,12 @@ enum MobileTrainingExecutionRequestHeaders: Sendable {
       try require(
         (operation.kind == "finish") == finishing && method == .post && path == expected
           && query.isEmpty && body == operation.wireBody && key?.value == operation.idempotencyKey)
+    case .finishResolution(let operation, let mode):
+      try require(
+        operation.kind == "finish" && method == .post
+          && path == base + "/" + operation.sessionID.uuidString.lowercased()
+          && query.isEmpty && body == operation.finishResolutionBody(mode)
+          && key?.value == operation.finishResolutionKey(mode))
     case .completionRead(let identity), .completionCancel(let identity):
       let root =
         base + "/" + identity.sessionID.uuidString.lowercased() + "/completions/"
@@ -83,7 +90,8 @@ enum MobileTrainingExecutionRequestHeaders: Sendable {
     case .state(let value, _):
       owner = value.ownerID
       binding = value
-    case .mutation(let operation), .progressV2(let operation), .finish(let operation):
+    case .mutation(let operation), .progressV2(let operation), .finish(let operation),
+      .finishResolution(let operation, _):
       owner = operation.binding.ownerID
       binding = operation.binding
     case .completionRead(let identity), .completionCancel(let identity):

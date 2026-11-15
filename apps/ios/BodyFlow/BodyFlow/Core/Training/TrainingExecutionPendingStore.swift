@@ -72,6 +72,17 @@ actor TrainingExecutionPendingStore {
     try await retireExact(operation)
   }
 
+  /// Retires only an exact future-denial proof, never a borrowed workout ACK.
+  func retireFinish(
+    _ operation: TrainingExecutionOperation, resolution: TrainingExecutionFinishResolutionSnapshot
+  ) async throws {
+    try resolution.validate(for: operation, mode: resolution.mode)
+    guard resolution.status == .withdrawn || resolution.status == .fenced else {
+      throw TrainingExecutionError.pendingOperation
+    }
+    try await retireExact(operation)
+  }
+
   private func retireExact(_ operation: TrainingExecutionOperation) async throws {
     try enter()
     defer { busy = false }

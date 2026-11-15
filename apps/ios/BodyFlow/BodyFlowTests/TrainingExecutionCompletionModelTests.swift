@@ -138,6 +138,44 @@ actor CompletionModelServer {
         scope["recording_allowed"] = false
         value["scope"] = scope
       }
+    } else if request.httpMethod == "POST", let bytes = request.httpBody,
+      let wrapper = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+      wrapper["schema"] as? String == "training.execution.finish-resolution.v1",
+      let command = wrapper["command"] as? [String: Any],
+      let mode = wrapper["mode"] as? String
+    {
+      let operation = try TrainingExecutionOperation(
+        binding: fixture.finish().binding,
+        wireBody: JSONSerialization.data(withJSONObject: command))
+      let knownFinish = try fixture.finish()
+      let knownCancel = try fixture.operation("cancelFinish")
+      let known = operation == knownFinish || operation == knownCancel
+      if !known { return try envelope(fixture.object("progress_replay_completed")) }
+      if mode == "withdraw" { state = modeForCancellation() }
+      let own = try fixture.object(
+        mode == "withdraw" && self.mode == .cancelBeforeEffect
+          ? "cancelled_before_effect"
+          : (state == .reserved ? "reserved_completion" : "completed_completion"))
+      let current: [String: Any]
+      if mode == "withdraw" && self.mode == .cancelBeforeEffect {
+        current = try fixture.object("cancelled_current")
+      } else if state == .reserved {
+        current = [
+          "schema": "training.execution-state.v2", "scope": own["scope"]!,
+          "session": own["session"]!, "completion": own,
+        ]
+      } else {
+        current = try fixture.object("state_completed")
+      }
+      value = [
+        "schema": "training.execution-finish-resolution.v1", "mode": mode,
+        "status": "available", "reason": NSNull(), "scope": current["scope"]!,
+        "session_id": operation.sessionID.uuidString.lowercased(),
+        "operation_id": operation.operationID.uuidString.lowercased(),
+        "input_hash": operation.inputHash, "before_revision": operation.expectedRevision!,
+        "expected_epoch": operation.binding.epoch.uuidString.lowercased(), "current": current,
+        "completion": own, "withdrawal": NSNull(),
+      ]
     } else if path.hasSuffix("/cancel") {
       state = mode == .cancelBeforeEffect ? .progress : .completed
       value = try fixture.object(
@@ -169,6 +207,9 @@ actor CompletionModelServer {
           ? "cancelled_current" : (state == .completed ? "state_completed" : "state_progress"))
     }
     return try envelope(value, status: status)
+  }
+  private func modeForCancellation() -> State {
+    mode == .cancelBeforeEffect ? .progress : .completed
   }
   private func envelope(_ data: [String: Any], status: Int = 200) throws -> ConversationHTTPReply {
     .init(
@@ -243,7 +284,9 @@ extension TrainingExecutionCompletionModelTests {
     #expect(try await h.store.load(authUserID: h.repository.authUserID) == nil)
     #expect(await h.server.finishPosts == 0)
   }
-  @Test func anotherCompletionIsNeverUsedToAcknowledgeAnUnknownLocalFinish() async throws {
+  @Test func malformedResolutionNeverBorrowsAnotherCompletionToAcknowledgeAnUnknownLocalFinish()
+    async throws
+  {
     let h = try await CompletionModelHarness.make()
     let f = try TrainingCompletionFixture()
     let raw = try TrainingExecutionJSON(data: f.finish().wireBody)

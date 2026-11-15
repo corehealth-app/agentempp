@@ -18,6 +18,7 @@ import {
   createTrainingExecutionCompletionService,
   type TrainingExecutionCompletionIdentity,
 } from './training-execution-completion-runtime'
+import { parseTrainingExecutionFinishResolutionRequest } from './training-execution-finish-resolution'
 import { parseTrainingExecutionCommand } from './training-execution-kernel'
 import { trainingExecutionEnabled } from './training-execution-routes'
 import {
@@ -26,6 +27,7 @@ import {
 } from './training-execution-runtime'
 
 interface Service {
+  resolveFinish(key: string | null, body: unknown): Promise<unknown>
   progress(key: string | null, body: unknown): Promise<unknown>
   home(cursor?: unknown): Promise<unknown>
   state(session: string, epoch: string): Promise<unknown>
@@ -162,9 +164,32 @@ export function createTrainingExecutionCompletionRoutes(
     PROGRESS: createMobileRouteWithContext<Path>(async (c, p) => {
       const b = binding(c)
       query(c.request)
-      const command = parseTrainingExecutionCommand(await readJsonBody(c.request, 16384)),
+      const raw = await readJsonBody(c.request, 16384),
         path = await p.params,
         key = c.request.headers.get('Idempotency-Key')
+      if (
+        typeof raw === 'object' &&
+        raw !== null &&
+        'schema' in raw &&
+        raw.schema === 'training.execution.finish-resolution.v1'
+      ) {
+        const body = parseTrainingExecutionFinishResolutionRequest(raw)
+        if (
+          body.command.session_id !== workoutUUID.parse(path.sessionId) ||
+          body.command.expected_epoch !== epoch(c.request)
+        )
+          throw new MobileApiError(
+            409,
+            'training_execution_scope_changed',
+            'The original finish session has changed.',
+          )
+        z.literal(`tresolve1:${body.mode}:${body.command.operation_id}`).parse(key)
+        await b.authorize()
+        const value = await b.service().resolveFinish(key, body)
+        await b.authorize()
+        return response(value, c.requestId)
+      }
+      const command = parseTrainingExecutionCommand(raw)
       if (
         command.session_id !== workoutUUID.parse(path.sessionId) ||
         command.expected_epoch !== epoch(c.request)

@@ -44,6 +44,10 @@ function setup(enabled = true, replace = false) {
     createRequestId: () => 'r140-route',
   }
   const methods = {
+    resolveFinish: vi.fn(async () => ({
+      schema: 'training.execution-finish-resolution.v1',
+      status: 'fenced',
+    })),
     progress: vi.fn(async () => ({ schema: 'training.execution-mutation.v2', status: 'replayed' })),
     home: vi.fn(async () => ({ schema: 'safe-home' })),
     state: vi.fn(async () => ({ schema: 'safe-state' })),
@@ -81,6 +85,31 @@ function setup(enabled = true, replace = false) {
   return { routes, methods, request, params, headers }
 }
 describe('closed completion route family preserves old progress endpoints', () => {
+  it('routes only the explicit closed resolution wrapper to observation/withdrawal, never the finish writer', async () => {
+    for (const mode of ['observe', 'withdraw'] as const) {
+      const h = setup(),
+        body = { schema: 'training.execution.finish-resolution.v1', mode, command: golden.command }
+      const key = `tresolve1:${mode}:${golden.command.operation_id}`
+      const result = await h.routes.PROGRESS(
+        h.request(`/${golden.command.session_id}`, body, { 'Idempotency-Key': key }),
+        h.params,
+      )
+      expect(result.status).toBe(200)
+      expect(h.methods.resolveFinish).toHaveBeenCalledWith(key, body)
+      expect(h.methods.progress).not.toHaveBeenCalled()
+      expect(h.methods.submit).not.toHaveBeenCalled()
+      const bad = await h.routes.PROGRESS(
+        h.request(
+          `/${golden.command.session_id}`,
+          { ...body, extra: true },
+          { 'Idempotency-Key': key },
+        ),
+        h.params,
+      )
+      expect(bad.status).toBe(422)
+    }
+  })
+
   it('binds v2 progress recovery to the selected session, original epoch and old immutable progress key', async () => {
     const h = setup(),
       s = golden.begin.session,

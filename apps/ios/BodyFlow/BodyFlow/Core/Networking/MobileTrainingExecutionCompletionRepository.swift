@@ -4,6 +4,10 @@ import Foundation
 /// reused only for its verified original-login lifecycle, never as a fallback
 /// writer when a v2 response is absent, malformed or ambiguous.
 protocol TrainingExecutionCompletionProviding: TrainingExecutionProviding {
+  func resolveFinish(
+    _ operation: TrainingExecutionOperation, mode: TrainingExecutionFinishResolutionMode
+  ) async throws
+    -> TrainingExecutionFinishResolutionSnapshot
   func current(_ id: UUID, binding: TrainingExecutionBinding) async throws
     -> TrainingExecutionCurrentV2Snapshot
   func progress(_ operation: TrainingExecutionOperation) async throws
@@ -78,6 +82,23 @@ struct MobileTrainingExecutionCompletionRepository: TrainingExecutionCompletionP
         idempotencyKey: IdempotencyKey(validating: operation.idempotencyKey),
         unauthorizedReplay: .never, trainingExecution: .progressV2(operation)))
     try reply.data.validate(for: operation)
+    return reply.data
+  }
+  func resolveFinish(
+    _ operation: TrainingExecutionOperation, mode: TrainingExecutionFinishResolutionMode
+  ) async throws
+    -> TrainingExecutionFinishResolutionSnapshot
+  {
+    try check(operation.binding)
+    let reply = try await execute(
+      MobileAPIRequest<TrainingExecutionFinishResolutionSnapshot>(
+        method: .post, path: Self.base + "/" + operation.sessionID.uuidString.lowercased(),
+        body: operation.finishResolutionBody(mode),
+        idempotencyKey: IdempotencyKey(validating: operation.finishResolutionKey(mode)),
+        unauthorizedReplay: .never, trainingExecution: .finishResolution(operation, mode)))
+    try reply.data.validate(for: operation, mode: mode)
+    try check(reply.data.scope)
+    try trainingRequire(reply.statusCode == 200)
     return reply.data
   }
   func finish(_ operation: TrainingExecutionOperation) async throws

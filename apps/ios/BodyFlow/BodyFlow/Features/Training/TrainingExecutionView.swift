@@ -79,16 +79,8 @@ struct TrainingExecutionView: View {
           if let held = model.pending {
             pendingNotice(held)
           } else if let failure = model.failure {
-            Text(
-              failure == .changed
-                ? text(
-                  "O treino mudou. Confira os dados atualizados antes de editar.",
-                  "Training changed. Review the updated values before editing.")
-                : text(
-                  "Não foi possível atualizar agora. Seus registros salvos são preservados.",
-                  "Unable to update right now. Saved records are preserved.")
-            )
-            .accessibilityIdentifier("training.execution.failure")
+            Text(failureMessage(failure))
+              .accessibilityIdentifier("training.execution.failure")
           }
           if model.isWorking { ProgressView(text("Atualizando treino…", "Updating training…")) }
           if let session = model.session {
@@ -123,6 +115,27 @@ struct TrainingExecutionView: View {
           "As séries anotadas ficam no histórico da execução. Nenhuma atividade será registrada por esta ação.",
           "Recorded sets remain in the execution history. This action does not register an activity."
         ))
+    }
+  }
+  private func failureMessage(_ failure: TrainingExecutionModel.Failure) -> String {
+    switch failure {
+    case .finishFenced:
+      return text(
+        "A tentativa antiga foi encerrada e não será reenviada. Confira o treino atual; o histórico foi preservado.",
+        "The old attempt was closed and will not be resent. Review the current workout; history is preserved."
+      )
+    case .finishWithdrawn:
+      return text(
+        "O reenvio desta tentativa foi cancelado. Os registros já salvos permanecem no histórico.",
+        "Resending this attempt was cancelled. Previously saved records remain in history.")
+    case .changed:
+      return text(
+        "O treino mudou. Confira os dados atualizados antes de editar.",
+        "Training changed. Review the updated values before editing.")
+    case .pending, .unavailable:
+      return text(
+        "Não foi possível atualizar agora. Seus registros salvos são preservados.",
+        "Unable to update right now. Saved records are preserved.")
     }
   }
   private func pendingNotice(_ held: TrainingExecutionOperation) -> some View {

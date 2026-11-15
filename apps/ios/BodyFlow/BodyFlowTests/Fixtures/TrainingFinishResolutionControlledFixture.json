@@ -1,0 +1,2239 @@
+{
+  "provenance": "R143 actual owned SQL -> unchanged strict public projection; external identity synthetic; no hosted/device proof",
+  "cases": {
+    "ready": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "ready",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.273920Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.273920Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v1",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:05:09.233798Z",
+            "phase": "in_progress",
+            "revision": 0,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": null
+        },
+        "completion": null,
+        "withdrawal": null
+      }
+    },
+    "own_reserved": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "available",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.391138Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.391138Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v1",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:05:09.233798Z",
+            "phase": "in_progress",
+            "revision": 0,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": {
+            "schema": "training.execution-completion.v1",
+            "status": "reserved",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "139d0000-0000-4000-8000-000000000003",
+            "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+            "before_revision": 0,
+            "scope": {
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "current_local_date": "2026-11-15",
+              "open_local_date": "2026-11-15",
+              "observed_at": "2026-11-15T03:06:09.391138Z",
+              "recording_allowed": true
+            },
+            "session": {
+              "schema": "training.execution.v1",
+              "id": "13700000-0000-4000-8000-000000000020",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "local_date": "2026-11-15",
+              "started_at": "2026-11-15T03:05:09.233798Z",
+              "updated_at": "2026-11-15T03:05:09.233798Z",
+              "phase": "in_progress",
+              "revision": 0,
+              "definition": {
+                "plan_id": "13700000-0000-4000-8000-000000000004",
+                "plan_version": 1,
+                "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+                "day_index": 0,
+                "day_label": "Sábado",
+                "focus": "Força",
+                "recommended_duration_min": 30,
+                "exercises": [
+                  {
+                    "index": 0,
+                    "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 3,
+                    "reps_reference": "8–12",
+                    "rest_seconds": 60,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  },
+                  {
+                    "index": 1,
+                    "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 2,
+                    "reps_reference": "6–8",
+                    "rest_seconds": null,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  }
+                ]
+              },
+              "exercises": [
+                {
+                  "index": 0,
+                  "completed": false,
+                  "sets": []
+                },
+                {
+                  "index": 1,
+                  "completed": false,
+                  "sets": []
+                }
+              ]
+            },
+            "receipt": null,
+            "workout": null,
+            "workout_state": null,
+            "feedback": null,
+            "decision": null
+          }
+        },
+        "completion": {
+          "schema": "training.execution-completion.v1",
+          "status": "reserved",
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "session_id": "13700000-0000-4000-8000-000000000020",
+          "completion_id": "139d0000-0000-4000-8000-000000000003",
+          "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+          "before_revision": 0,
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.366794Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v1",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:05:09.233798Z",
+            "phase": "in_progress",
+            "revision": 0,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "receipt": null,
+          "workout": null,
+          "workout_state": null,
+          "feedback": null,
+          "decision": null
+        },
+        "withdrawal": null
+      }
+    },
+    "own_cancelled": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "withdraw",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "withdraw",
+        "status": "available",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.529950Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.529950Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v1",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:05:09.233798Z",
+            "phase": "in_progress",
+            "revision": 0,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": null
+        },
+        "completion": {
+          "schema": "training.execution-completion.v1",
+          "status": "cancelled",
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "session_id": "13700000-0000-4000-8000-000000000020",
+          "completion_id": "139d0000-0000-4000-8000-000000000003",
+          "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+          "before_revision": 0,
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.517483Z",
+            "recording_allowed": true
+          },
+          "session": null,
+          "receipt": {
+            "schema": "training.execution-completion-receipt.v1",
+            "kind": "cancelled",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "139d0000-0000-4000-8000-000000000003",
+            "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+            "before_revision": 0,
+            "after_revision": 0,
+            "at": "2026-11-15T03:06:09.490564Z"
+          },
+          "workout": null,
+          "workout_state": null,
+          "feedback": null,
+          "decision": null
+        },
+        "withdrawal": null
+      }
+    },
+    "own_completed": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000099",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "available",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.730098Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000099",
+        "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.730098Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v2",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:06:09.615959Z",
+            "phase": "completed",
+            "revision": 1,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": {
+            "schema": "training.execution-completion.v1",
+            "status": "completed",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "14300000-0000-4000-8000-000000000099",
+            "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+            "before_revision": 0,
+            "scope": {
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "current_local_date": "2026-11-15",
+              "open_local_date": "2026-11-15",
+              "observed_at": "2026-11-15T03:06:09.730098Z",
+              "recording_allowed": true
+            },
+            "session": {
+              "schema": "training.execution.v2",
+              "id": "13700000-0000-4000-8000-000000000020",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "local_date": "2026-11-15",
+              "started_at": "2026-11-15T03:05:09.233798Z",
+              "updated_at": "2026-11-15T03:06:09.615959Z",
+              "phase": "completed",
+              "revision": 1,
+              "definition": {
+                "plan_id": "13700000-0000-4000-8000-000000000004",
+                "plan_version": 1,
+                "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+                "day_index": 0,
+                "day_label": "Sábado",
+                "focus": "Força",
+                "recommended_duration_min": 30,
+                "exercises": [
+                  {
+                    "index": 0,
+                    "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 3,
+                    "reps_reference": "8–12",
+                    "rest_seconds": 60,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  },
+                  {
+                    "index": 1,
+                    "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 2,
+                    "reps_reference": "6–8",
+                    "rest_seconds": null,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  }
+                ]
+              },
+              "exercises": [
+                {
+                  "index": 0,
+                  "completed": false,
+                  "sets": []
+                },
+                {
+                  "index": 1,
+                  "completed": false,
+                  "sets": []
+                }
+              ]
+            },
+            "receipt": {
+              "schema": "training.execution-completion-receipt.v1",
+              "kind": "completed",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "session_id": "13700000-0000-4000-8000-000000000020",
+              "completion_id": "14300000-0000-4000-8000-000000000099",
+              "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+              "before_revision": 0,
+              "after_revision": 1,
+              "at": "2026-11-15T03:06:09.615959Z"
+            },
+            "workout": {
+              "kind": "workout",
+              "provenance": "conversation.workout.v1",
+              "registration_id": "14300000-0000-4000-8000-000000000099",
+              "workout_id": "d94a8473-4350-4e4b-9ab9-0f3bd01ec21f",
+              "performed_at": "2026-11-15T03:06:09.543210Z",
+              "local_date": "2026-11-15",
+              "time_zone": "America/Sao_Paulo",
+              "committed_at": "2026-11-15T03:06:09.615959Z",
+              "workout_type": "full_body",
+              "duration_min": 30,
+              "intensity": "moderada",
+              "estimated_kcal": 223
+            },
+            "workout_state": "present",
+            "feedback": null,
+            "decision": null
+          }
+        },
+        "completion": {
+          "schema": "training.execution-completion.v1",
+          "status": "completed",
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "session_id": "13700000-0000-4000-8000-000000000020",
+          "completion_id": "14300000-0000-4000-8000-000000000099",
+          "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+          "before_revision": 0,
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.705732Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v2",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:06:09.615959Z",
+            "phase": "completed",
+            "revision": 1,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "receipt": {
+            "schema": "training.execution-completion-receipt.v1",
+            "kind": "completed",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "14300000-0000-4000-8000-000000000099",
+            "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+            "before_revision": 0,
+            "after_revision": 1,
+            "at": "2026-11-15T03:06:09.615959Z"
+          },
+          "workout": {
+            "kind": "workout",
+            "provenance": "conversation.workout.v1",
+            "registration_id": "14300000-0000-4000-8000-000000000099",
+            "workout_id": "d94a8473-4350-4e4b-9ab9-0f3bd01ec21f",
+            "performed_at": "2026-11-15T03:06:09.543210Z",
+            "local_date": "2026-11-15",
+            "time_zone": "America/Sao_Paulo",
+            "committed_at": "2026-11-15T03:06:09.615959Z",
+            "workout_type": "full_body",
+            "duration_min": 30,
+            "intensity": "moderada",
+            "estimated_kcal": 223
+          },
+          "workout_state": "present",
+          "feedback": null,
+          "decision": null
+        },
+        "withdrawal": null
+      }
+    },
+    "other_reserved": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000099",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "pending",
+        "reason": "other_reservation",
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.428250Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000099",
+        "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.428250Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v1",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:05:09.233798Z",
+            "phase": "in_progress",
+            "revision": 0,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": {
+            "schema": "training.execution-completion.v1",
+            "status": "reserved",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "139d0000-0000-4000-8000-000000000003",
+            "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+            "before_revision": 0,
+            "scope": {
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "current_local_date": "2026-11-15",
+              "open_local_date": "2026-11-15",
+              "observed_at": "2026-11-15T03:06:09.428250Z",
+              "recording_allowed": true
+            },
+            "session": {
+              "schema": "training.execution.v1",
+              "id": "13700000-0000-4000-8000-000000000020",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "local_date": "2026-11-15",
+              "started_at": "2026-11-15T03:05:09.233798Z",
+              "updated_at": "2026-11-15T03:05:09.233798Z",
+              "phase": "in_progress",
+              "revision": 0,
+              "definition": {
+                "plan_id": "13700000-0000-4000-8000-000000000004",
+                "plan_version": 1,
+                "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+                "day_index": 0,
+                "day_label": "Sábado",
+                "focus": "Força",
+                "recommended_duration_min": 30,
+                "exercises": [
+                  {
+                    "index": 0,
+                    "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 3,
+                    "reps_reference": "8–12",
+                    "rest_seconds": 60,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  },
+                  {
+                    "index": 1,
+                    "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 2,
+                    "reps_reference": "6–8",
+                    "rest_seconds": null,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  }
+                ]
+              },
+              "exercises": [
+                {
+                  "index": 0,
+                  "completed": false,
+                  "sets": []
+                },
+                {
+                  "index": 1,
+                  "completed": false,
+                  "sets": []
+                }
+              ]
+            },
+            "receipt": null,
+            "workout": null,
+            "workout_state": null,
+            "feedback": null,
+            "decision": null
+          }
+        },
+        "completion": null,
+        "withdrawal": null
+      }
+    },
+    "fenced_old_epoch": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000097",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "fenced",
+        "reason": "epoch_changed",
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "14300000-0000-4000-8000-000000000080",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.957600Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000097",
+        "input_hash": "15cf6b0d0be7cd88d32f151ab9ea0936397c1c20fbe97af0fb4633f9dd1bb1a0",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": null,
+        "completion": null,
+        "withdrawal": null
+      }
+    },
+    "withdrawn_old_epoch": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000098",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "withdrawn",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "14300000-0000-4000-8000-000000000080",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.943099Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000098",
+        "input_hash": "0a1110745cea4fb92c693a052aa1a8dd7ed0643d2bcbbd2aee06e848b4fde8da",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": null,
+        "completion": null,
+        "withdrawal": {
+          "session_id": "13700000-0000-4000-8000-000000000020",
+          "operation_id": "14300000-0000-4000-8000-000000000098",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "before_revision": 0,
+          "input_hash": "0a1110745cea4fb92c693a052aa1a8dd7ed0643d2bcbbd2aee06e848b4fde8da",
+          "schema": "training.execution-finish-withdrawal.v1",
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "at": "2026-11-15T03:06:09.853541Z"
+        }
+      }
+    },
+    "completed_wins_withdraw": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000099",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "withdraw",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "withdraw",
+        "status": "available",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.779015Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000099",
+        "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.779015Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v2",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:06:09.615959Z",
+            "phase": "completed",
+            "revision": 1,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": {
+            "schema": "training.execution-completion.v1",
+            "status": "completed",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "14300000-0000-4000-8000-000000000099",
+            "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+            "before_revision": 0,
+            "scope": {
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "current_local_date": "2026-11-15",
+              "open_local_date": "2026-11-15",
+              "observed_at": "2026-11-15T03:06:09.779015Z",
+              "recording_allowed": true
+            },
+            "session": {
+              "schema": "training.execution.v2",
+              "id": "13700000-0000-4000-8000-000000000020",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "local_date": "2026-11-15",
+              "started_at": "2026-11-15T03:05:09.233798Z",
+              "updated_at": "2026-11-15T03:06:09.615959Z",
+              "phase": "completed",
+              "revision": 1,
+              "definition": {
+                "plan_id": "13700000-0000-4000-8000-000000000004",
+                "plan_version": 1,
+                "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+                "day_index": 0,
+                "day_label": "Sábado",
+                "focus": "Força",
+                "recommended_duration_min": 30,
+                "exercises": [
+                  {
+                    "index": 0,
+                    "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 3,
+                    "reps_reference": "8–12",
+                    "rest_seconds": 60,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  },
+                  {
+                    "index": 1,
+                    "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 2,
+                    "reps_reference": "6–8",
+                    "rest_seconds": null,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  }
+                ]
+              },
+              "exercises": [
+                {
+                  "index": 0,
+                  "completed": false,
+                  "sets": []
+                },
+                {
+                  "index": 1,
+                  "completed": false,
+                  "sets": []
+                }
+              ]
+            },
+            "receipt": {
+              "schema": "training.execution-completion-receipt.v1",
+              "kind": "completed",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "session_id": "13700000-0000-4000-8000-000000000020",
+              "completion_id": "14300000-0000-4000-8000-000000000099",
+              "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+              "before_revision": 0,
+              "after_revision": 1,
+              "at": "2026-11-15T03:06:09.615959Z"
+            },
+            "workout": {
+              "kind": "workout",
+              "provenance": "conversation.workout.v1",
+              "registration_id": "14300000-0000-4000-8000-000000000099",
+              "workout_id": "d94a8473-4350-4e4b-9ab9-0f3bd01ec21f",
+              "performed_at": "2026-11-15T03:06:09.543210Z",
+              "local_date": "2026-11-15",
+              "time_zone": "America/Sao_Paulo",
+              "committed_at": "2026-11-15T03:06:09.615959Z",
+              "workout_type": "full_body",
+              "duration_min": 30,
+              "intensity": "moderada",
+              "estimated_kcal": 223
+            },
+            "workout_state": "present",
+            "feedback": null,
+            "decision": null
+          }
+        },
+        "completion": {
+          "schema": "training.execution-completion.v1",
+          "status": "completed",
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "session_id": "13700000-0000-4000-8000-000000000020",
+          "completion_id": "14300000-0000-4000-8000-000000000099",
+          "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+          "before_revision": 0,
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.754424Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v2",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:06:09.615959Z",
+            "phase": "completed",
+            "revision": 1,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "receipt": {
+            "schema": "training.execution-completion-receipt.v1",
+            "kind": "completed",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "14300000-0000-4000-8000-000000000099",
+            "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+            "before_revision": 0,
+            "after_revision": 1,
+            "at": "2026-11-15T03:06:09.615959Z"
+          },
+          "workout": {
+            "kind": "workout",
+            "provenance": "conversation.workout.v1",
+            "registration_id": "14300000-0000-4000-8000-000000000099",
+            "workout_id": "d94a8473-4350-4e4b-9ab9-0f3bd01ec21f",
+            "performed_at": "2026-11-15T03:06:09.543210Z",
+            "local_date": "2026-11-15",
+            "time_zone": "America/Sao_Paulo",
+            "committed_at": "2026-11-15T03:06:09.615959Z",
+            "workout_type": "full_body",
+            "duration_min": 30,
+            "intensity": "moderada",
+            "estimated_kcal": 223
+          },
+          "workout_state": "present",
+          "feedback": null,
+          "decision": null
+        },
+        "withdrawal": null
+      }
+    },
+    "terminal_other_completed": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000098",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "fenced",
+        "reason": "terminal",
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.816225Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000098",
+        "input_hash": "0a1110745cea4fb92c693a052aa1a8dd7ed0643d2bcbbd2aee06e848b4fde8da",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.816225Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v2",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:06:09.615959Z",
+            "phase": "completed",
+            "revision": 1,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": {
+            "schema": "training.execution-completion.v1",
+            "status": "completed",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "14300000-0000-4000-8000-000000000099",
+            "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+            "before_revision": 0,
+            "scope": {
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "current_local_date": "2026-11-15",
+              "open_local_date": "2026-11-15",
+              "observed_at": "2026-11-15T03:06:09.816225Z",
+              "recording_allowed": true
+            },
+            "session": {
+              "schema": "training.execution.v2",
+              "id": "13700000-0000-4000-8000-000000000020",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "local_date": "2026-11-15",
+              "started_at": "2026-11-15T03:05:09.233798Z",
+              "updated_at": "2026-11-15T03:06:09.615959Z",
+              "phase": "completed",
+              "revision": 1,
+              "definition": {
+                "plan_id": "13700000-0000-4000-8000-000000000004",
+                "plan_version": 1,
+                "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+                "day_index": 0,
+                "day_label": "Sábado",
+                "focus": "Força",
+                "recommended_duration_min": 30,
+                "exercises": [
+                  {
+                    "index": 0,
+                    "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 3,
+                    "reps_reference": "8–12",
+                    "rest_seconds": 60,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  },
+                  {
+                    "index": 1,
+                    "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 2,
+                    "reps_reference": "6–8",
+                    "rest_seconds": null,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  }
+                ]
+              },
+              "exercises": [
+                {
+                  "index": 0,
+                  "completed": false,
+                  "sets": []
+                },
+                {
+                  "index": 1,
+                  "completed": false,
+                  "sets": []
+                }
+              ]
+            },
+            "receipt": {
+              "schema": "training.execution-completion-receipt.v1",
+              "kind": "completed",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "session_id": "13700000-0000-4000-8000-000000000020",
+              "completion_id": "14300000-0000-4000-8000-000000000099",
+              "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+              "before_revision": 0,
+              "after_revision": 1,
+              "at": "2026-11-15T03:06:09.615959Z"
+            },
+            "workout": {
+              "kind": "workout",
+              "provenance": "conversation.workout.v1",
+              "registration_id": "14300000-0000-4000-8000-000000000099",
+              "workout_id": "d94a8473-4350-4e4b-9ab9-0f3bd01ec21f",
+              "performed_at": "2026-11-15T03:06:09.543210Z",
+              "local_date": "2026-11-15",
+              "time_zone": "America/Sao_Paulo",
+              "committed_at": "2026-11-15T03:06:09.615959Z",
+              "workout_type": "full_body",
+              "duration_min": 30,
+              "intensity": "moderada",
+              "estimated_kcal": 223
+            },
+            "workout_state": "present",
+            "feedback": null,
+            "decision": null
+          }
+        },
+        "completion": null,
+        "withdrawal": null
+      }
+    },
+    "withdrawn_other_completed": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000098",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "withdraw",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "withdraw",
+        "status": "withdrawn",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.918400Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "14300000-0000-4000-8000-000000000098",
+        "input_hash": "0a1110745cea4fb92c693a052aa1a8dd7ed0643d2bcbbd2aee06e848b4fde8da",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.918400Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v2",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:06:09.615959Z",
+            "phase": "completed",
+            "revision": 1,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": {
+            "schema": "training.execution-completion.v1",
+            "status": "completed",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "14300000-0000-4000-8000-000000000099",
+            "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+            "before_revision": 0,
+            "scope": {
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "current_local_date": "2026-11-15",
+              "open_local_date": "2026-11-15",
+              "observed_at": "2026-11-15T03:06:09.918400Z",
+              "recording_allowed": true
+            },
+            "session": {
+              "schema": "training.execution.v2",
+              "id": "13700000-0000-4000-8000-000000000020",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "local_date": "2026-11-15",
+              "started_at": "2026-11-15T03:05:09.233798Z",
+              "updated_at": "2026-11-15T03:06:09.615959Z",
+              "phase": "completed",
+              "revision": 1,
+              "definition": {
+                "plan_id": "13700000-0000-4000-8000-000000000004",
+                "plan_version": 1,
+                "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+                "day_index": 0,
+                "day_label": "Sábado",
+                "focus": "Força",
+                "recommended_duration_min": 30,
+                "exercises": [
+                  {
+                    "index": 0,
+                    "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 3,
+                    "reps_reference": "8–12",
+                    "rest_seconds": 60,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  },
+                  {
+                    "index": 1,
+                    "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 2,
+                    "reps_reference": "6–8",
+                    "rest_seconds": null,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  }
+                ]
+              },
+              "exercises": [
+                {
+                  "index": 0,
+                  "completed": false,
+                  "sets": []
+                },
+                {
+                  "index": 1,
+                  "completed": false,
+                  "sets": []
+                }
+              ]
+            },
+            "receipt": {
+              "schema": "training.execution-completion-receipt.v1",
+              "kind": "completed",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "session_id": "13700000-0000-4000-8000-000000000020",
+              "completion_id": "14300000-0000-4000-8000-000000000099",
+              "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+              "before_revision": 0,
+              "after_revision": 1,
+              "at": "2026-11-15T03:06:09.615959Z"
+            },
+            "workout": {
+              "kind": "workout",
+              "provenance": "conversation.workout.v1",
+              "registration_id": "14300000-0000-4000-8000-000000000099",
+              "workout_id": "d94a8473-4350-4e4b-9ab9-0f3bd01ec21f",
+              "performed_at": "2026-11-15T03:06:09.543210Z",
+              "local_date": "2026-11-15",
+              "time_zone": "America/Sao_Paulo",
+              "committed_at": "2026-11-15T03:06:09.615959Z",
+              "workout_type": "full_body",
+              "duration_min": 30,
+              "intensity": "moderada",
+              "estimated_kcal": 223
+            },
+            "workout_state": "present",
+            "feedback": null,
+            "decision": null
+          }
+        },
+        "completion": null,
+        "withdrawal": {
+          "session_id": "13700000-0000-4000-8000-000000000020",
+          "operation_id": "14300000-0000-4000-8000-000000000098",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "before_revision": 0,
+          "input_hash": "0a1110745cea4fb92c693a052aa1a8dd7ed0643d2bcbbd2aee06e848b4fde8da",
+          "schema": "training.execution-finish-withdrawal.v1",
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "at": "2026-11-15T03:06:09.853541Z"
+        }
+      }
+    },
+    "own_cancelled_other_completed": {
+      "command": {
+        "schema": "training.execution.finish.v1",
+        "source": {
+          "text": "Fiz full body por 30 min com intensidade moderada.",
+          "channel": "text"
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "expected_revision": 0
+      },
+      "mode": "observe",
+      "payload": {
+        "schema": "training.execution-finish-resolution.v1",
+        "mode": "observe",
+        "status": "available",
+        "reason": null,
+        "scope": {
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "time_zone": "America/Sao_Paulo",
+          "current_local_date": "2026-11-15",
+          "open_local_date": "2026-11-15",
+          "observed_at": "2026-11-15T03:06:09.681063Z",
+          "recording_allowed": true
+        },
+        "session_id": "13700000-0000-4000-8000-000000000020",
+        "operation_id": "139d0000-0000-4000-8000-000000000003",
+        "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+        "before_revision": 0,
+        "expected_epoch": "13700000-0000-4000-8000-000000000010",
+        "current": {
+          "schema": "training.execution-state.v2",
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.681063Z",
+            "recording_allowed": true
+          },
+          "session": {
+            "schema": "training.execution.v2",
+            "id": "13700000-0000-4000-8000-000000000020",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "local_date": "2026-11-15",
+            "started_at": "2026-11-15T03:05:09.233798Z",
+            "updated_at": "2026-11-15T03:06:09.615959Z",
+            "phase": "completed",
+            "revision": 1,
+            "definition": {
+              "plan_id": "13700000-0000-4000-8000-000000000004",
+              "plan_version": 1,
+              "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+              "day_index": 0,
+              "day_label": "Sábado",
+              "focus": "Força",
+              "recommended_duration_min": 30,
+              "exercises": [
+                {
+                  "index": 0,
+                  "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 3,
+                  "reps_reference": "8–12",
+                  "rest_seconds": 60,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                },
+                {
+                  "index": 1,
+                  "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                  "name": "Supino",
+                  "muscle_group": null,
+                  "recommended_sets": 2,
+                  "reps_reference": "6–8",
+                  "rest_seconds": null,
+                  "rpe_target": null,
+                  "notes": null,
+                  "execution_steps": [],
+                  "common_mistakes": []
+                }
+              ]
+            },
+            "exercises": [
+              {
+                "index": 0,
+                "completed": false,
+                "sets": []
+              },
+              {
+                "index": 1,
+                "completed": false,
+                "sets": []
+              }
+            ]
+          },
+          "completion": {
+            "schema": "training.execution-completion.v1",
+            "status": "completed",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "14300000-0000-4000-8000-000000000099",
+            "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+            "before_revision": 0,
+            "scope": {
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "current_local_date": "2026-11-15",
+              "open_local_date": "2026-11-15",
+              "observed_at": "2026-11-15T03:06:09.681063Z",
+              "recording_allowed": true
+            },
+            "session": {
+              "schema": "training.execution.v2",
+              "id": "13700000-0000-4000-8000-000000000020",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "time_zone": "America/Sao_Paulo",
+              "local_date": "2026-11-15",
+              "started_at": "2026-11-15T03:05:09.233798Z",
+              "updated_at": "2026-11-15T03:06:09.615959Z",
+              "phase": "completed",
+              "revision": 1,
+              "definition": {
+                "plan_id": "13700000-0000-4000-8000-000000000004",
+                "plan_version": 1,
+                "plan_hash": "3791b20c526113d3a8f1068e4d8447d027785d657883900d628dea1005647b55",
+                "day_index": 0,
+                "day_label": "Sábado",
+                "focus": "Força",
+                "recommended_duration_min": 30,
+                "exercises": [
+                  {
+                    "index": 0,
+                    "fingerprint": "4bb3cd1105ce82fa0267625daf4129be93ef2a105a846b47b2c2ed078557946d",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 3,
+                    "reps_reference": "8–12",
+                    "rest_seconds": 60,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  },
+                  {
+                    "index": 1,
+                    "fingerprint": "e28005d4c5f88783dfd909dc3b38292f089519d40ae008adcc37e7c549b81757",
+                    "name": "Supino",
+                    "muscle_group": null,
+                    "recommended_sets": 2,
+                    "reps_reference": "6–8",
+                    "rest_seconds": null,
+                    "rpe_target": null,
+                    "notes": null,
+                    "execution_steps": [],
+                    "common_mistakes": []
+                  }
+                ]
+              },
+              "exercises": [
+                {
+                  "index": 0,
+                  "completed": false,
+                  "sets": []
+                },
+                {
+                  "index": 1,
+                  "completed": false,
+                  "sets": []
+                }
+              ]
+            },
+            "receipt": {
+              "schema": "training.execution-completion-receipt.v1",
+              "kind": "completed",
+              "owner_id": "13700000-0000-4000-8000-000000000002",
+              "auth_user_id": "13700000-0000-4000-8000-000000000001",
+              "epoch": "13700000-0000-4000-8000-000000000010",
+              "session_id": "13700000-0000-4000-8000-000000000020",
+              "completion_id": "14300000-0000-4000-8000-000000000099",
+              "input_hash": "8ac4ab043dd94e875630dfbe6b9694066710817b7535b81629cd55835f8cc4fc",
+              "before_revision": 0,
+              "after_revision": 1,
+              "at": "2026-11-15T03:06:09.615959Z"
+            },
+            "workout": {
+              "kind": "workout",
+              "provenance": "conversation.workout.v1",
+              "registration_id": "14300000-0000-4000-8000-000000000099",
+              "workout_id": "d94a8473-4350-4e4b-9ab9-0f3bd01ec21f",
+              "performed_at": "2026-11-15T03:06:09.543210Z",
+              "local_date": "2026-11-15",
+              "time_zone": "America/Sao_Paulo",
+              "committed_at": "2026-11-15T03:06:09.615959Z",
+              "workout_type": "full_body",
+              "duration_min": 30,
+              "intensity": "moderada",
+              "estimated_kcal": 223
+            },
+            "workout_state": "present",
+            "feedback": null,
+            "decision": null
+          }
+        },
+        "completion": {
+          "schema": "training.execution-completion.v1",
+          "status": "cancelled",
+          "owner_id": "13700000-0000-4000-8000-000000000002",
+          "auth_user_id": "13700000-0000-4000-8000-000000000001",
+          "epoch": "13700000-0000-4000-8000-000000000010",
+          "session_id": "13700000-0000-4000-8000-000000000020",
+          "completion_id": "139d0000-0000-4000-8000-000000000003",
+          "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+          "before_revision": 0,
+          "scope": {
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "time_zone": "America/Sao_Paulo",
+            "current_local_date": "2026-11-15",
+            "open_local_date": "2026-11-15",
+            "observed_at": "2026-11-15T03:06:09.656403Z",
+            "recording_allowed": true
+          },
+          "session": null,
+          "receipt": {
+            "schema": "training.execution-completion-receipt.v1",
+            "kind": "cancelled",
+            "owner_id": "13700000-0000-4000-8000-000000000002",
+            "auth_user_id": "13700000-0000-4000-8000-000000000001",
+            "epoch": "13700000-0000-4000-8000-000000000010",
+            "session_id": "13700000-0000-4000-8000-000000000020",
+            "completion_id": "139d0000-0000-4000-8000-000000000003",
+            "input_hash": "7e225be048b7093ed1df3f03a6838f15e27f9cb3a1377c30b2214524d57cad2b",
+            "before_revision": 0,
+            "after_revision": 0,
+            "at": "2026-11-15T03:06:09.490564Z"
+          },
+          "workout": null,
+          "workout_state": null,
+          "feedback": null,
+          "decision": null
+        },
+        "withdrawal": null
+      }
+    }
+  }
+}

@@ -404,3 +404,123 @@ describe('original-auth public completion runtime over real backend and public w
     expect(h.rpc).not.toHaveBeenCalled()
   })
 })
+
+describe('original finish resolution keeps observation and explicit withdrawal separate', () => {
+  function install(
+    h: ReturnType<typeof setup>,
+    action: 'absent' | 'available' | 'withdrawn' = 'absent',
+  ) {
+    const c = h.g.command,
+      request = {
+        session_id: c.session_id,
+        operation_id: c.operation_id,
+        epoch: c.expected_epoch,
+        before_revision: c.expected_revision,
+        input_hash: h.g.begin.completion.input_hash,
+      },
+      scope = h.g.begin.scope
+    const raw = {
+      action,
+      request,
+      scope,
+      state: { action: 'progress', scope, session: h.g.begin.session },
+      ...(action === 'available' ? { completion: { ...h.g.begin, action: 'available' } } : {}),
+      ...(action === 'withdrawn'
+        ? {
+            withdrawal: {
+              schema: 'training.execution-finish-withdrawal.v1',
+              ...request,
+              owner_id: scope.owner_id,
+              auth_user_id: scope.auth_user_id,
+              at: scope.observed_at,
+            },
+          }
+        : {}),
+    }
+    const original = h.rpc.getMockImplementation()
+    if (!original) throw Error('Missing actual fixture')
+    h.rpc.mockImplementation(async (name, args) =>
+      name === 'observe_training_execution_finish_authenticated' ||
+      name === 'withdraw_training_execution_finish_authenticated'
+        ? { data: raw, error: null }
+        : original(name, args),
+    )
+    const body = (mode: 'observe' | 'withdraw') => ({
+      schema: 'training.execution.finish-resolution.v1',
+      mode,
+      command: c,
+    })
+    return {
+      raw,
+      body,
+      key: (mode: 'observe' | 'withdraw') => `tresolve1:${mode}:${c.operation_id}`,
+    }
+  }
+  it('observes a never-admitted exact command without executing it or creating education', async () => {
+    const h = setup(),
+      f = install(h)
+    expect(await h.service.resolveFinish(f.key('observe'), f.body('observe'))).toMatchObject({
+      status: 'ready',
+      mode: 'observe',
+      completion: null,
+    })
+    const call = h.rpc.mock.calls.find(
+      ([n]) => n === 'observe_training_execution_finish_authenticated',
+    )
+    expect(call?.[1]).toEqual({
+      p_user_id: h.g.begin.scope.owner_id,
+      p_auth_user_id: h.g.begin.scope.auth_user_id,
+      p_auth_session_id: '139d0000-0000-4000-8000-000000000005',
+      p_command: h.g.command,
+    })
+    expect(
+      h.rpc.mock.calls.some(
+        ([n]) => n.startsWith('begin_') || n.startsWith('commit_') || n.startsWith('withdraw_'),
+      ),
+    ).toBe(false)
+    expect(h.ensureWorkout).not.toHaveBeenCalled()
+    expect(h.writes()).toBe(0)
+  })
+  it('withdraws only explicitly, returns the bound marker and never treats ready/reserved as cancellation', async () => {
+    for (const action of ['withdrawn', 'absent', 'available'] as const) {
+      const h = setup(),
+        f = install(h, action),
+        pending = h.service.resolveFinish(f.key('withdraw'), f.body('withdraw'))
+      if (action === 'withdrawn')
+        expect(await pending).toMatchObject({
+          status: 'withdrawn',
+          mode: 'withdraw',
+          completion: null,
+        })
+      else await expect(pending).rejects.toMatchObject({ status: 503 })
+      expect(h.writes()).toBe(0)
+      expect(h.ensureWorkout).not.toHaveBeenCalled()
+    }
+  })
+  it('rejects wrong mode keys and extra fields before any provider observation', async () => {
+    const h = setup(),
+      f = install(h)
+    await expect(
+      h.service.resolveFinish(f.key('observe'), f.body('withdraw')),
+    ).rejects.toBeDefined()
+    await expect(
+      h.service.resolveFinish(f.key('observe'), { ...f.body('observe'), extra: true }),
+    ).rejects.toBeDefined()
+    expect(h.rpc).not.toHaveBeenCalled()
+    expect(h.capture).not.toHaveBeenCalled()
+  })
+  it('never publishes an observation after the original authentication disappears', async () => {
+    const h = setup(),
+      f = install(h),
+      original = h.rpc.getMockImplementation()
+    if (!original) throw Error('Missing fixture')
+    h.rpc.mockImplementation(async (name, args) => {
+      const result = await original(name, args)
+      if (name === 'observe_training_execution_finish_authenticated')
+        h.authPort.verifyAccessToken.mockRejectedValue(Error('Expired original login'))
+      return result
+    })
+    await expect(h.service.resolveFinish(f.key('observe'), f.body('observe'))).rejects.toBeDefined()
+    expect(h.writes()).toBe(0)
+  })
+})

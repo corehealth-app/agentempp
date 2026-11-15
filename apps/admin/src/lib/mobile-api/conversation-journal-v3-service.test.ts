@@ -149,6 +149,59 @@ describe('actual persisted SQL page through the default historical domain servic
     })
 })
 describe('real readonly journal v3 composition', () => {
+  it('overlaps fresh patient and non-admin reads only after real Auth completes', async () => {
+    const h = setup()
+    let releaseAuth: () => void = () => {},
+      releaseAdmin: () => void = () => {},
+      releasePatient: () => void = () => {}
+    const authGate = new Promise<void>((resolve) => {
+        releaseAuth = resolve
+      }),
+      adminGate = new Promise<void>((resolve) => {
+        releaseAdmin = resolve
+      }),
+      patientGate = new Promise<void>((resolve) => {
+        releasePatient = resolve
+      })
+    h.currentAuth.verifyAccessToken.mockImplementationOnce(async () => {
+      await authGate
+      return h.who.identity
+    })
+    h.currentAuth.isAdmin.mockImplementationOnce(async () => {
+      await adminGate
+      return false
+    })
+    h.currentAuth.loadPatient.mockImplementationOnce(async () => {
+      await patientGate
+      return h.who.patient
+    })
+    const read = h.service.read(h.who, { epoch: h.epoch, limit: 10, cursor: null })
+    try {
+      await vi.waitFor(() => expect(h.currentAuth.verifyAccessToken).toHaveBeenCalledTimes(1))
+      expect(h.currentAuth.isAdmin).not.toHaveBeenCalled()
+      expect(h.currentAuth.loadPatient).not.toHaveBeenCalled()
+      releaseAuth()
+      await vi.waitFor(() => {
+        expect(h.currentAuth.isAdmin).toHaveBeenCalledTimes(1)
+        expect(h.currentAuth.loadPatient).toHaveBeenCalledTimes(1)
+      })
+      expect(h.capture).not.toHaveBeenCalled()
+    } finally {
+      releaseAuth()
+      releaseAdmin()
+      releasePatient()
+      await read
+    }
+    // Each observation still performs both pre/post mappings with fresh Auth.
+    expect(h.currentAuth.verifyAccessToken.mock.calls.length).toBe(
+      h.currentAuth.isAdmin.mock.calls.length,
+    )
+    expect(h.currentAuth.verifyAccessToken.mock.calls.length).toBe(
+      h.currentAuth.loadPatient.mock.calls.length,
+    )
+    expect(h.currentAuth.verifyAccessToken.mock.calls.length).toBeGreaterThan(2)
+  })
+
   it.each([
     false,
     true,

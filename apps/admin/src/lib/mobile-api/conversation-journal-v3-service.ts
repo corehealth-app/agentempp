@@ -7,13 +7,13 @@ import type { MobileAuthContext } from './auth'
 import {
   assertConversationReadonlyNonAdmin,
   type ConversationCurrentScopeDependencies,
-  createConversationCurrentScope,
   createConversationReadonlyAuth,
   parseConversationReadonlyIdentity,
   parseConversationReadonlyPatient,
 } from './conversation-current-scope'
 import type { ConversationFeedbackPresentationV2 } from './conversation-feedback-presentation-v2'
 import { createConversationFeedbackPublicComposition } from './conversation-feedback-public-composition'
+import { createConversationJournalCurrentScope } from './conversation-journal-current-scope'
 import {
   type ConversationJournalV3Page,
   decodeConversationJournalV3Cursor,
@@ -236,7 +236,10 @@ export function createConversationJournalV3Service(
               return false
             }),
         }),
-        lane = createConversationCurrentScope(db, who, identity, { auth, clinical: { capture } })
+        lane = createConversationJournalCurrentScope(db, who, identity, {
+          auth,
+          clinical: { capture },
+        })
       async function observe() {
         if (closed) throw closed
         try {

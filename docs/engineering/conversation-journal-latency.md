@@ -30,3 +30,23 @@ Local tests and compilation do not qualify the hosted response time. Before
 release, measure the real authenticated candidate and reopen the existing meal
 on the native app, then verify direct editing and Day/Week parity. Preserve the
 original registration instead of resending it to repeat the check.
+
+A local-only diagnostic build then confirmed `mobile_api_timeout` in the native
+history request after the first hosted repair. Actual stored V1/V3 packets still
+decoded successfully. The replacement response remained close to 30 seconds:
+28,635 ms followed by 25,866 ms in direct HTTP observations. Those two HTTP reads
+do not establish a reliable native cold-open margin.
+
+V3 now uses its own lane with parallel **read-only mapping** checks. Each
+mapping first awaits fresh verified Auth and checks the original Auth identity. Its existing
+non-admin and patient reads then overlap; both must finish successfully before
+clinical state is read or authority is returned. Every pre/post mapping, typed
+patient/admin decoder, owner/epoch comparison and serial monotonic clinical lane
+remains. The protected shared scope source stays byte-exact; other callers keep
+their original serial mapping. There is no cached Auth result, removed observation, longer client deadline or partial response.
+
+The actual V3 service regression holds Auth, admin and patient boundaries: the
+old code cannot enter the patient read while admin is held; the new code does,
+only after Auth resolves. Neighboring cases retain sticky refusal on admin
+transition, caller-scope changes and backwards clinical time in the journal lane
+and unchanged shared lane. Hosted latency and native cold re-opening still require independent qualification.

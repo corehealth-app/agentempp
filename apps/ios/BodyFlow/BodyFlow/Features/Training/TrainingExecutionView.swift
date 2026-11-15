@@ -50,7 +50,7 @@ struct TrainingExecutionRootView: View {
 @MainActor
 struct TrainingExecutionView: View {
   @Bindable var model: TrainingExecutionModel
-  @State private var editor: Editor?
+  @State private var sheet: Sheet?
   @State private var asksAbandon = false
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) != .portugueseBrazil }
@@ -59,6 +59,16 @@ struct TrainingExecutionView: View {
     let exercise: Int
     var draft: TrainingExecutionSetDraft
     var id: UUID { draft.id }
+  }
+  private enum Sheet: Identifiable {
+    case set(Editor)
+    case finish(UUID)
+    var id: UUID {
+      switch self {
+      case .set(let editor): return editor.id
+      case .finish(let id): return id
+      }
+    }
   }
   var body: some View {
     ScrollView {
@@ -94,8 +104,12 @@ struct TrainingExecutionView: View {
     .accessibilityIdentifier("training.execution.root")
     .task { if model.home == nil && !model.isClosed { await model.load() } }
     .refreshable { await model.load() }
-    .sheet(item: Binding(get: { model.isClosed ? nil : editor }, set: { editor = $0 })) { context in
-      TrainingExecutionSetEditor(model: model, exercise: context.exercise, draft: context.draft)
+    .sheet(item: Binding(get: { model.isClosed ? nil : sheet }, set: { sheet = $0 })) { context in
+      switch context {
+      case .set(let editor):
+        TrainingExecutionSetEditor(model: model, exercise: editor.exercise, draft: editor.draft)
+      case .finish: TrainingExecutionFinishEditor(model: model)
+      }
     }
     .confirmationDialog(
       text("Abandonar esta execução?", "Abandon this execution?"), isPresented: $asksAbandon
@@ -113,7 +127,11 @@ struct TrainingExecutionView: View {
   }
   private func pendingNotice(_ held: TrainingExecutionOperation) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text(text("Há uma alteração pendente de confirmação.", "An update is awaiting confirmation."))
+      Text(
+        held.kind == "finish"
+          ? text("A conclusão aguarda confirmação.", "Completion is awaiting confirmation.")
+          : text("Há uma alteração pendente de confirmação.", "An update is awaiting confirmation.")
+      )
       if let home = model.home, held.binding.matches(home.scope) {
         Text(
           text(
@@ -121,6 +139,16 @@ struct TrainingExecutionView: View {
             "Retry recovers the same update without creating another set."))
         Button(text("Tentar novamente", "Try again")) { Task { _ = await model.retryPending() } }
           .disabled(model.isWorking).accessibilityIdentifier("training.execution.retry-pending")
+        if held.kind == "finish" && model.supportsCompletion {
+          Text(
+            text(
+              "Se a atividade já foi registrada, ela será preservada.",
+              "If the activity was already recorded, it will be preserved."))
+          Button(text("Cancelar tentativa de conclusão", "Cancel completion attempt")) {
+            Task { _ = await model.cancelPendingCompletion() }
+          }
+          .disabled(model.isWorking).accessibilityIdentifier("training.execution.cancel-completion")
+        }
       } else {
         Text(
           text(
@@ -132,7 +160,7 @@ struct TrainingExecutionView: View {
   private func plans(_ home: TrainingExecutionHomeSnapshot) -> some View {
     VStack(alignment: .leading, spacing: 18) {
       if !model.resumableSessions.isEmpty {
-        Text(text("Em andamento", "In progress")).font(.headline)
+        Text(text("Suas execuções", "Your executions")).font(.headline)
         ForEach(model.resumableSessions) { item in
           Button {
             Task { await model.select(item.id) }
@@ -140,6 +168,15 @@ struct TrainingExecutionView: View {
             VStack(alignment: .leading) {
               Text(item.dayLabel)
               Text("\(item.localDate) · \(item.completedExercises)/\(item.totalExercises)")
+              Text(
+                item.historyPhase == .completed
+                  ? text("Concluída", "Completed")
+                  : item.historyPhase == .abandoned
+                    ? text("Abandonada", "Abandoned")
+                    : item.historyReserved
+                      ? text("Conclusão pendente", "Completion pending")
+                      : item.historyDayClosed
+                        ? text("Dia encerrado", "Day closed") : text("Em andamento", "In progress"))
             }
           }.disabled(model.isWorking).accessibilityIdentifier(
             "training.execution.resume.\(item.id.uuidString.lowercased())")
@@ -183,12 +220,22 @@ struct TrainingExecutionView: View {
     VStack(alignment: .leading, spacing: 18) {
       Text(session.definition.dayLabel).font(.title2)
       Text(session.localDate).font(.caption)
-      Text(
-        session.phase == .abandoned
-          ? text("Execução abandonada", "Abandoned execution")
-          : text("Execução em andamento", "Execution in progress")
-      )
-      .accessibilityIdentifier("training.execution.phase")
+      TrainingExecutionPhaseView(phase: session.phase, english: english)
+      if let completion = model.completion {
+        TrainingExecutionCompletionFactsView(completion: completion, english: english)
+        if let content = TrainingExecutionShareContent(completion: completion, english: english) {
+          ShareLink(item: content.text, preview: SharePreview(text("Meu treino", "My training"))) {
+            Label(text("Compartilhar treino", "Share training"), systemImage: "square.and.arrow.up")
+          }.accessibilityIdentifier("training.execution.share")
+        }
+      }
+      if model.supportsCompletion && session.phase == .inProgress && model.pending == nil {
+        Button(text("Concluir e registrar treino", "Complete and record training")) {
+          sheet = .finish(UUID())
+        }
+        .buttonStyle(.borderedProminent).disabled(!model.canEdit)
+        .accessibilityIdentifier("training.execution.finish")
+      }
       ForEach(session.definition.exercises) { prescription in
         let actual = session.exercises[prescription.index]
         VStack(alignment: .leading, spacing: 12) {
@@ -199,7 +246,7 @@ struct TrainingExecutionView: View {
               TrainingExecutionActualSetView(set: set, english: english)
               HStack {
                 Button(text("Editar série", "Edit set")) {
-                  editor = .init(exercise: prescription.index, draft: .init(set: set))
+                  sheet = .set(.init(exercise: prescription.index, draft: .init(set: set)))
                 }
                 Button(text("Remover série", "Remove set"), role: .destructive) {
                   Task { _ = await model.removeSet(exercise: prescription.index, setID: set.id) }
@@ -209,7 +256,7 @@ struct TrainingExecutionView: View {
           }
           if let index = (0..<100).first(where: { i in !actual.sets.contains { $0.index == i } }) {
             Button(text("Anotar série", "Record set")) {
-              editor = .init(exercise: prescription.index, draft: .init(index: index))
+              sheet = .set(.init(exercise: prescription.index, draft: .init(index: index)))
             }
             .disabled(!model.canEdit).accessibilityIdentifier(
               "training.execution.add-set.\(prescription.index)")
@@ -376,5 +423,20 @@ struct TrainingExecutionSetEditor: View {
         }
       }
     }
+  }
+}
+
+struct TrainingExecutionPhaseView: View {
+  let phase: TrainingExecutionSession.Phase
+  let english: Bool
+  var body: some View {
+    Text(
+      phase == .completed
+        ? (english ? "Completed execution" : "Execução concluída")
+        : phase == .abandoned
+          ? (english ? "Abandoned execution" : "Execução abandonada")
+          : (english ? "Execution in progress" : "Execução em andamento")
+    )
+    .accessibilityIdentifier("training.execution.phase")
   }
 }

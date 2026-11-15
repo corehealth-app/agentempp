@@ -3,7 +3,20 @@ import Foundation
 /// Explicit additive transport. The old v1 repository remains closed and is
 /// reused only for its verified original-login lifecycle, never as a fallback
 /// writer when a v2 response is absent, malformed or ambiguous.
-struct MobileTrainingExecutionCompletionRepository: Sendable {
+protocol TrainingExecutionCompletionProviding: TrainingExecutionProviding {
+  func current(_ id: UUID, binding: TrainingExecutionBinding) async throws
+    -> TrainingExecutionCurrentV2Snapshot
+  func progress(_ operation: TrainingExecutionOperation) async throws
+    -> TrainingExecutionProgressV2Snapshot
+  func finish(_ operation: TrainingExecutionOperation) async throws
+    -> TrainingExecutionCompletionSnapshot
+  func completion(_ identity: TrainingExecutionCompletionIdentity) async throws
+    -> TrainingExecutionCompletionSnapshot
+  func cancel(_ identity: TrainingExecutionCompletionIdentity) async throws
+    -> TrainingExecutionCompletionSnapshot
+}
+
+struct MobileTrainingExecutionCompletionRepository: TrainingExecutionCompletionProviding {
   let ownerID: UUID, authUserID: UUID
   private let original: MobileTrainingExecutionRepository
   private let transport: MobileAPITransport
@@ -22,7 +35,9 @@ struct MobileTrainingExecutionCompletionRepository: Sendable {
   func publish(_ action: @escaping @MainActor @Sendable () throws -> Void) async throws {
     try await original.publish(action)
   }
-  func home(cursor: TrainingExecutionCursor?) async throws -> TrainingExecutionHomeV2Snapshot {
+  func completionHome(cursor: TrainingExecutionCursor?) async throws
+    -> TrainingExecutionHomeV2Snapshot
+  {
     var query: [URLQueryItem] = []
     if let cursor {
       guard cursor.ownerID == ownerID,
@@ -132,5 +147,27 @@ struct MobileTrainingExecutionCompletionRepository: Sendable {
       try await validate()
       throw error
     }
+  }
+}
+
+extension MobileTrainingExecutionCompletionRepository {
+  func home(cursor: TrainingExecutionCursor?) async throws -> TrainingExecutionHomeSnapshot {
+    try .init(verified: await completionHome(cursor: cursor))
+  }
+  func read(_ id: UUID) async throws -> TrainingExecutionReadSnapshot {
+    let fresh = try await completionHome(cursor: nil)
+    return try .init(verified: await current(id, binding: .init(fresh.scope)))
+  }
+  /// The v2 model must consume its distinct proof/status. Never turn pending or
+  /// not_applied into an invented old v1 mutation receipt, even for compatibility.
+  func submit(_ operation: TrainingExecutionOperation) async throws
+    -> TrainingExecutionMutationSnapshot
+  {
+    throw TrainingExecutionError.unavailable
+  }
+  func reconcile(_ rejection: TrainingExecutionRejectedOperation) async throws
+    -> TrainingExecutionRejectedResolution
+  {
+    throw TrainingExecutionError.unavailable
   }
 }

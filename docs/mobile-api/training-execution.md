@@ -187,3 +187,36 @@ suites run on Simulator; external HTTP/Auth/entitlement providers remain synthet
 The new repository is **not composed into the visible model/UI yet**. Staging
 migrations/flags, native finish/history/share UI and hosted/distributed qualification
 remain required. No completion activation or TestFlight delivery is claimed here.
+
+### R142: native completion presentation and protected recovery
+
+The native v2 provider now adapts already-validated home/read values into the
+shared view model without accepting v2 in the old wire decoders. History retains
+completed/abandoned/reserved/day-closed states. The model keeps the separate
+completion proof, requires an explicit actual report, and stores the immutable
+finish operation in the same pending slot before its first POST. Cold recovery
+first reads the exact completion; a terminal proof needs no new POST, and an
+explicit retry can submit the same reservation identity once. A POST error is
+never caught as a reason for another physical POST in that attempt.
+
+The UI has a completion editor, pending retry/cancel, actual linked workout and
+six historical feedback sections. A late cancellation that observes a completed
+workout displays that real completion. A pre-effect cancelled receipt clears only
+the exact pending command and reads the independent current uncompleted session.
+Sharing is user-initiated and contains only owned performed activity/set facts;
+reserved or removed records cannot create a share payload. Prescription, clinical
+targets, daily budget, block and identifiers are excluded from the export.
+
+`TrainingExecutionSessionSource(completionEnabled: true)` selects the explicit v2
+provider. The existing app composition keeps its current default until backend
+compatibility and connected qualification pass. Native component/model tests
+are not a distributed or hosted qualification. The in-process AX probe on this
+OS returns no nodes for the root ScrollView, so component rendering checks are
+reported separately from actual scrolling/viewport/device QA.
+
+Remaining activation gate: an unaccepted local finish may coexist with another
+client's completed session. A receipt for the other completion must never clear
+it. The current model preserves that uncertainty. Before activation, qualify a
+separate original-login absent-plus-permanent-fence resolution for that exact
+finish identity (including concurrent/in-flight and reset/day cases). Do not
+replace missing evidence with a generic pending deletion or an unrelated receipt.

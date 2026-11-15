@@ -163,8 +163,17 @@ struct TrainingExecutionSession: Sendable, Equatable, Identifiable {
 }
 
 struct TrainingExecutionSummary: Sendable, Equatable, Identifiable {
+  private(set) var historyPhase: TrainingExecutionSession.Phase = .inProgress
+  private(set) var historyDayClosed = false
+  private(set) var historyReserved = false
   let id: UUID, revision: Int, localDate: String, startedAt: String, updatedAt: String, planID: UUID
   let dayIndex: Int, dayLabel: String, totalExercises: Int, completedExercises: Int
+  init(verified history: TrainingExecutionHistorySummary) {
+    self = history.base
+    historyPhase = history.phase
+    historyDayClosed = history.dayClosed
+    historyReserved = history.completion?.status == .reserved
+  }
   init(_ raw: TrainingExecutionJSON, scope: TrainingExecutionScope) throws {
     let o = try raw.object(["id", "revision", "local_date", "started_at", "updated_at", "plan_id", "day_index", "day_label", "total_exercises", "completed_exercises"])
     id = try o.field("id").uuid(); revision = try o.field("revision").integer(max: Int32.max.int)
@@ -194,6 +203,11 @@ struct TrainingExecutionCursor: Sendable, Equatable {
 
 struct TrainingExecutionHomeSnapshot: Decodable, Sendable, Equatable {
   let scope: TrainingExecutionScope, plan: TrainingExecutionPlan?, sessions: [TrainingExecutionSummary], nextCursor: TrainingExecutionCursor?
+  /// Typed view-model adapter, not an alternate v1 wire decoder.
+  init(verified value: TrainingExecutionHomeV2Snapshot) {
+    scope = value.scope; plan = value.plan
+    sessions = value.sessions.map { .init(verified: $0) }; nextCursor = value.nextCursor
+  }
   init(data: Data) throws { try self.init(TrainingExecutionJSON(data: data)) }
   init(from decoder: any Decoder) throws { try self.init(TrainingExecutionJSON(from: decoder)) }
   private init(_ raw: TrainingExecutionJSON) throws {
@@ -214,6 +228,9 @@ struct TrainingExecutionHomeSnapshot: Decodable, Sendable, Equatable {
 
 struct TrainingExecutionReadSnapshot: Decodable, Sendable, Equatable {
   let scope: TrainingExecutionScope, session: TrainingExecutionSession
+  init(verified value: TrainingExecutionCurrentV2Snapshot) {
+    scope = value.scope; session = value.session
+  }
   init(data: Data) throws { try self.init(TrainingExecutionJSON(data: data)) }
   init(from decoder: any Decoder) throws { try self.init(TrainingExecutionJSON(from: decoder)) }
   private init(_ raw: TrainingExecutionJSON) throws {

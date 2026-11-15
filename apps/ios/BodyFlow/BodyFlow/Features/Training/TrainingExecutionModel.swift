@@ -6,6 +6,7 @@ final class TrainingExecutionModel {
   enum Failure: Equatable { case changed, pending, unavailable }
   private var provider: (any TrainingExecutionProviding)?
   private let store: TrainingExecutionPendingStore
+  private let makeCompletionID: @Sendable () -> UUID
   private var work: Task<Bool, Never>?
   private var workID: UUID?
   private(set) var isClosed = false
@@ -13,18 +14,25 @@ final class TrainingExecutionModel {
   private(set) var failure: Failure?
   private(set) var home: TrainingExecutionHomeSnapshot?
   private(set) var session: TrainingExecutionSession?
+  private(set) var completion: TrainingExecutionCompletionSnapshot?
+  var supportsCompletion: Bool { provider is any TrainingExecutionCompletionProviding }
   private(set) var pending: TrainingExecutionOperation?
   private(set) var resumableSessions: [TrainingExecutionSummary] = []
   private(set) var nextCursor: TrainingExecutionCursor?
   var canEdit: Bool {
     guard !isClosed, !isWorking, pending == nil, let home, let session else { return false }
-    return session.phase == .inProgress && home.scope.recordingAllowed
+    return session.phase == .inProgress && completion?.status != .reserved
+      && home.scope.recordingAllowed
       && session.localDate == home.scope.openLocalDate
       && TrainingExecutionBinding(home.scope) == binding(session)
   }
-  init(provider: any TrainingExecutionProviding, store: TrainingExecutionPendingStore) {
+  init(
+    provider: any TrainingExecutionProviding, store: TrainingExecutionPendingStore,
+    makeCompletionID: @escaping @Sendable () -> UUID = { UUID() }
+  ) {
     self.provider = provider
     self.store = store
+    self.makeCompletionID = makeCompletionID
   }
   func publishIfCurrent(_ publish: @escaping @MainActor @Sendable () throws -> Void) async throws {
     guard !isClosed, let provider else { throw CancellationError() }
@@ -38,6 +46,7 @@ final class TrainingExecutionModel {
       let fresh = try await provider.home(cursor: nil)
       let held = try await model.store.load(authUserID: provider.authUserID)
       var selected: TrainingExecutionSession?
+      var selectedCompletion: TrainingExecutionCompletionSnapshot?
       let oldScopeChanged =
         model.home.map { !TrainingExecutionBinding($0.scope).matches(fresh.scope) } ?? false
       let retainedID = model.session.flatMap {
@@ -46,18 +55,18 @@ final class TrainingExecutionModel {
       let id = held?.sessionID ?? retainedID
       if let id, held.map({ $0.binding.matches(fresh.scope) }) ?? true {
         do {
-          let result = try await provider.read(id)
-          guard TrainingExecutionBinding(fresh.scope).matches(result.scope) else {
-            throw TrainingExecutionError.scopeChanged
-          }
+          let result = try await model.readCurrent(provider, id: id, scope: fresh.scope)
           selected = result.session
+          selectedCompletion = result.completion
         } catch MobileAPITransportError.http(status: 404, code: _, requestID: _) { selected = nil }
       }
       let current = selected
+      let currentCompletion = selectedCompletion
       try await model.publishIfCurrent {
         try model.accept(fresh)
         model.pending = held
         model.session = current
+        model.completion = currentCompletion
         model.resumableSessions = fresh.sessions
         model.nextCursor = fresh.nextCursor
         model.failure =
@@ -97,13 +106,11 @@ final class TrainingExecutionModel {
   func select(_ id: UUID) async {
     _ = await run { model, provider in
       let fresh = try await provider.home(cursor: nil)
-      let result = try await provider.read(id)
-      guard TrainingExecutionBinding(fresh.scope).matches(result.scope) else {
-        throw TrainingExecutionError.scopeChanged
-      }
+      let result = try await model.readCurrent(provider, id: id, scope: fresh.scope)
       try await model.publishIfCurrent {
         try model.accept(fresh)
         model.session = result.session
+        model.completion = result.completion
         model.failure = nil
       }
       return true
@@ -112,6 +119,7 @@ final class TrainingExecutionModel {
   func showPlan() async {
     guard !isWorking else { return }
     session = nil
+    completion = nil
     await load()
   }
   func start(dayIndex: Int) async -> Bool {
@@ -126,6 +134,7 @@ final class TrainingExecutionModel {
         try await model.publishIfCurrent {
           try model.accept(fresh)
           model.session = nil
+          model.completion = nil
           model.failure = .changed
         }
         return false
@@ -153,34 +162,38 @@ final class TrainingExecutionModel {
         try await model.publishIfCurrent {
           try model.accept(fresh)
           model.session = nil
+          model.completion = nil
           model.failure = .changed
         }
         return false
       }
       try await model.publishIfCurrent { try model.accept(fresh) }
-      return try await model.send(held, provider: provider)
+      return try await model.send(held, provider: provider, recovering: true)
     }
   }
   private func update(_ action: TrainingExecutionOperation.Action) async -> Bool {
-    guard pending == nil, let shown = session, shown.phase == .inProgress else { return false }
+    guard canEdit, let shown = session else { return false }
     return await run { model, provider in
       let fresh = try await provider.home(cursor: nil)
-      let current = try await provider.read(shown.id)
+      let current = try await model.readCurrent(provider, id: shown.id, scope: fresh.scope)
       guard model.binding(shown).matches(fresh.scope), model.binding(shown).matches(current.scope),
         current.session.revision == shown.revision, current.session == shown
       else {
         try await model.publishIfCurrent {
           try model.accept(fresh)
           model.session = current.session
+          model.completion = current.completion
           model.failure = .changed
         }
         return false
       }
-      guard fresh.scope.recordingAllowed, current.session.localDate == fresh.scope.openLocalDate
+      guard fresh.scope.recordingAllowed, current.completion?.status != .reserved,
+        current.session.localDate == fresh.scope.openLocalDate
       else {
         try await model.publishIfCurrent {
           try model.accept(fresh)
           model.session = current.session
+          model.completion = current.completion
           model.failure = .changed
         }
         return false
@@ -192,7 +205,8 @@ final class TrainingExecutionModel {
     }
   }
   private func send(
-    _ operation: TrainingExecutionOperation, provider: any TrainingExecutionProviding
+    _ operation: TrainingExecutionOperation, provider: any TrainingExecutionProviding,
+    recovering: Bool = false
   ) async throws -> Bool {
     try await provider.validate()
     do { try await store.claim(operation) }  // protected before the first physical POST
@@ -207,6 +221,9 @@ final class TrainingExecutionModel {
     try await publishIfCurrent {
       self.pending = operation
       self.failure = nil
+    }
+    if let modern = provider as? any TrainingExecutionCompletionProviding {
+      return try await sendV2(operation, provider: modern, recovering: recovering)
     }
     do {
       let result = try await provider.submit(operation)
@@ -230,6 +247,125 @@ final class TrainingExecutionModel {
       }
       return false
     }
+  }
+  private struct Current {
+    let scope: TrainingExecutionScope, session: TrainingExecutionSession,
+      completion: TrainingExecutionCompletionSnapshot?
+  }
+  private func readCurrent(
+    _ provider: any TrainingExecutionProviding, id: UUID, scope: TrainingExecutionScope
+  ) async throws -> Current {
+    if let modern = provider as? any TrainingExecutionCompletionProviding {
+      let value = try await modern.current(id, binding: .init(scope))
+      return .init(scope: value.scope, session: value.session, completion: value.completion)
+    }
+    let value = try await provider.read(id)
+    guard TrainingExecutionBinding(scope).matches(value.scope) else {
+      throw TrainingExecutionError.scopeChanged
+    }
+    return .init(scope: value.scope, session: value.session, completion: nil)
+  }
+  func finish(report: String) async -> Bool {
+    guard supportsCompletion, canEdit, let shown = session else { return false }
+    return await run { model, provider in
+      let fresh = try await provider.home(cursor: nil)
+      let current = try await model.readCurrent(provider, id: shown.id, scope: fresh.scope)
+      guard model.binding(shown).matches(fresh.scope), current.session == shown,
+        current.completion == nil, fresh.scope.recordingAllowed,
+        shown.localDate == fresh.scope.openLocalDate
+      else {
+        try await model.publishIfCurrent {
+          try model.accept(fresh)
+          model.session = current.session
+          model.completion = current.completion
+          model.failure = .changed
+        }
+        return false
+      }
+      try await model.publishIfCurrent { try model.accept(fresh) }
+      let op = try TrainingExecutionOperation.finish(
+        session: current.session, report: report, id: model.makeCompletionID())
+      return try await model.send(op, provider: provider)
+    }
+  }
+  func cancelPendingCompletion() async -> Bool {
+    guard let held = pending, held.kind == "finish" else { return false }
+    return await run { model, provider in
+      guard let modern = provider as? any TrainingExecutionCompletionProviding else { return false }
+      let fresh = try await modern.home(cursor: nil)
+      guard held.binding.matches(fresh.scope) else { throw TrainingExecutionError.scopeChanged }
+      let value = try await modern.cancel(.init(operation: held))
+      _ = try await model.acceptCompletion(value, operation: held, provider: modern)
+      return true
+    }
+  }
+  private func sendV2(
+    _ operation: TrainingExecutionOperation, provider: any TrainingExecutionCompletionProviding,
+    recovering: Bool
+  ) async throws -> Bool {
+    if operation.kind == "finish" {
+      let value: TrainingExecutionCompletionSnapshot
+      if recovering {
+        let known: TrainingExecutionCompletionSnapshot?
+        do {
+          known = try await provider.completion(.init(operation: operation))
+        } catch MobileAPITransportError.http(status: 404, code: _, requestID: _) { known = nil }
+        // Only the readonly lookup can permit this one identical POST. A POST
+        // failure is never caught as a reason to send another physical write.
+        if let known, known.status != .reserved {
+          value = known
+        } else {
+          value = try await provider.finish(operation)
+        }
+      } else {
+        value = try await provider.finish(operation)
+      }
+      return try await acceptCompletion(value, operation: operation, provider: provider)
+    }
+    let value = try await provider.progress(operation)
+    try await provider.validate()
+    if value.status != .pending { try await store.acknowledgeProgress(operation, result: value) }
+    try await publishIfCurrent {
+      self.session = value.current?.session
+      self.completion = value.current?.completion
+      if value.status == .pending {
+        self.failure = .pending
+      } else {
+        self.pending = nil
+        self.failure = value.status == .notApplied ? .changed : nil
+      }
+    }
+    return value.status != .pending && value.status != .notApplied
+  }
+  private func acceptCompletion(
+    _ value: TrainingExecutionCompletionSnapshot, operation: TrainingExecutionOperation,
+    provider: any TrainingExecutionCompletionProviding
+  ) async throws -> Bool {
+    try value.validate(for: operation)
+    try await provider.validate()
+    if value.status == .reserved {
+      try await publishIfCurrent {
+        self.completion = value
+        self.session = value.session
+        self.failure = .pending
+      }
+      return false
+    }
+    let current: Current?
+    if value.status == .cancelled {
+      current = try await readCurrent(provider, id: operation.sessionID, scope: value.scope)
+    } else {
+      current = nil
+    }
+    try await provider.validate()
+    try await store.acknowledgeCompletion(operation, result: value)
+    try await publishIfCurrent {
+      self.completion = value
+      self.session = current?.session ?? value.session
+      self.pending = nil
+      self.failure = value.status == .cancelled ? .changed : nil
+    }
+    return value.status == .completed
   }
   private func accept(_ fresh: TrainingExecutionHomeSnapshot) throws {
     guard let provider, fresh.scope.ownerID == provider.ownerID,
@@ -293,6 +429,7 @@ final class TrainingExecutionModel {
     work?.cancel()
     home = nil
     session = nil
+    completion = nil
     pending = nil
     resumableSessions = []
     nextCursor = nil

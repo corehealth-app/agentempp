@@ -24,6 +24,8 @@ import {
 } from './training-execution-kernel'
 
 type CompletionName =
+  | 'read_training_execution_state_v2_authenticated'
+  | 'read_training_execution_home_v2_authenticated'
   | 'begin_training_execution_completion_authenticated'
   | 'read_training_execution_completion_authenticated'
   | 'cancel_training_execution_completion_authenticated'
@@ -81,7 +83,13 @@ function pin(raw: BoundTrainingExecutionCompletion, owner: string) {
   if (!isDeepStrictEqual(raw, bound)) throw Error('Changed original completion')
   return bound
 }
-function proof(raw: unknown, bound: BoundTrainingExecutionCompletion, auth: string) {
+/** Internal trusted SQL proof, not a public response DTO or an authority from a
+ * request body. The runtime must keep the actual original-login RPC boundary. */
+export function readTrainingExecutionCompletionProof(
+  raw: unknown,
+  bound: BoundTrainingExecutionCompletion,
+  auth: string,
+) {
   const copy = workoutSnapshot(raw)
   if (Buffer.byteLength(JSON.stringify(copy), 'utf8') > 2_097_152)
     throw Error('Oversized completion')
@@ -243,7 +251,7 @@ export function createTrainingExecutionCompletionBackend(
       return envelope.data
     }
     async function read() {
-      return proof(
+      return readTrainingExecutionCompletionProof(
         await call('read_training_execution_completion_authenticated', {
           ...args,
           p_completion_id: bound.command.operation_id,
@@ -286,7 +294,7 @@ export function createTrainingExecutionCompletionBackend(
     },
     async submit(raw: BoundTrainingExecutionCompletion) {
       const { bound, args, call, current } = request(raw)
-      const beginning = proof(
+      const beginning = readTrainingExecutionCompletionProof(
         await call('begin_training_execution_completion_authenticated', {
           ...args,
           p_command: bound.command,
@@ -297,7 +305,7 @@ export function createTrainingExecutionCompletionBackend(
       if (beginning.completion.status === 'cancelled')
         return workoutSnapshot({ status: 'cancelled' as const })
       async function live() {
-        const value = proof(
+        const value = readTrainingExecutionCompletionProof(
           await call('read_training_execution_completion_authenticated', {
             ...args,
             p_completion_id: bound.command.operation_id,

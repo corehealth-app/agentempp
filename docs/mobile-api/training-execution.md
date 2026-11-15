@@ -1,6 +1,6 @@
 # Training execution — T5 implementation in progress
 
-The approved conversational plan remains the delivery contract. The source contains a preparation kernel, private SQL persistence, original-Auth server adapter and three additive HTTP routes. The handlers, real service and kernel have been qualified against disposable local PostgreSQL and, subsequently, real Supabase Auth/API in a dedicated staging QA preview. **The native execution UI and client release are still pending.** Persisted per-exercise execution is not yet delivered to clients.
+The approved conversational plan remains the delivery contract. The source contains a preparation kernel, private SQL persistence, original-Auth server adapter and three additive HTTP routes. The handlers, real service and kernel have been qualified against disposable local PostgreSQL and, subsequently, real Supabase Auth/API in a dedicated staging QA preview. **The native progress UI was subsequently qualified in a local candidate (R138); native protected completion, sharing and client release remain pending.** Persisted per-exercise execution is not yet distributed to clients.
 
 `training-execution-kernel.ts` projects the server-owned current training plan and prepares start/update transitions. The selected plan UUID/version/content hash and exercise ordinals are pinned in the session. Two exercises with the same name retain different identities. Recommendations remain separate from actual set UUIDs, repetitions, kilograms, duration and completion; missing actual values remain null, and zero stays zero.
 
@@ -81,3 +81,75 @@ Completion produces an additive `training.execution.v2` completed state. Existin
 Local qualification uses an owned Unix-only, network-sandboxed PostgreSQL copy with synthetic data. `supabase/tests/training_execution_completion.sql` rolls back its fixtures and exercises the actual protected writers: duplicate identity/content, frozen progress, cancellation/late jobs, expired original login (including expiry **inside** the writer), day closure, timezone changes, real two-owner isolation, final-audit failure rollback, ordinary-workout compatibility, unchanged food targets, absent registration XP/block rewards, epoch/account deletion and no performed effect from a future plan.
 
 `fixtures/training_execution_completion_concurrency.py` observes real locks for competing finish UUIDs and both commit/cancel orders. `fixtures/training_execution_completion_backend.mjs` runs the bundled real TypeScript backend against the same actual SQL, including cancellation, a lost committed reply, independent recovery and exact replay. These runners accept only the explicitly registered disposable local R139 copy and remove their exact synthetic identities. They are not hosted Auth/HTTP/native/TestFlight evidence. The checked-in golden is one synthetic rollback capture, used as an oracle rather than a substitute for these real SQL runs.
+
+### Public completion protocol (R140, source-only; not activated)
+
+A separate `execution-v2` route family publishes a whitelist projection of the
+protected R139 result. It never returns the private frozen state, source capture,
+prepared calculation, original login UUID or SQL command. Existing progress-v1
+routes and DTOs remain strict.
+
+| Route suffix after `/api/mobile/v1/training/execution-v2` | Method | Result |
+| --- | --- | --- |
+| empty | GET | `training.execution-home.v2`, up to 20 current-epoch history summaries, including completed, abandoned and closed-day history; closed keyset cursor. |
+| `/:sessionId` | GET | `training.execution-state.v2`, current progress or a completed state with its independently validated linked receipt. |
+| `/completions` | POST | The closed R139 accepted actual report, `tfinish1:<operation_id>`. |
+| `/:sessionId/completions/:completionId` | GET | Exact original completion, with the expected input digest supplied in `X-Training-Completion-Hash`; no source text in the URL. |
+| `/:sessionId/completions/:completionId/cancel` | POST | Closed `training.execution.finish-cancel.v1` body and `tcancel1:<completion_id>`; no second workout after completion. |
+
+All routes require original bearer and `X-Training-Owner`; state/completion
+operations also bind `X-Training-Epoch`. Success requires `X-Training-Execution: 2`,
+`X-Training-Completion: 1` and `Cache-Control: no-store`. A reserved result is 202;
+completed/cancelled observations are 200. A cancelled result intentionally has no
+current execution snapshot: the caller reads current state separately. Malformed
+trusted SQL observations fail as unavailable, rather than blaming user input.
+
+Activation requires **all three existing/new gates**:
+`MOBILE_TRAINING_COMPLETION_ENABLED`, the original training-execution gate and the
+existing current-clinical/workout-command gates. The new gate is not enabled by
+this source increment. Neither migration `20261114225500` nor
+`20261114235000_training_completion_public_read.sql` has been applied to staging.
+
+An uncompleted T5 reservation is hidden from the ordinary Flow journal. Its exact
+pending identity belongs to the Training recovery UI; cancellation must not leave
+a fictitious performed activity in Flow. Once the atomic protected writer commits,
+the existing workout journal discovers that ordinary immutable command exactly
+once. Summary completion counts still count checked exercises only: finishing a
+session does not invent sets, repetitions or checked exercises. Old histories are
+not edited.
+
+The runtime optionally seals the canonical feedback through the existing service
+using the actual protected source/preparation/effect, then obtains its public rich
+presentation through the unchanged read-only workout facade. Education failure
+cannot invalidate or repeat the workout; a mandatory access/scope change is still
+propagated. The private backend already fences every RPC on both sides, so the
+transport does not duplicate those same provider observations. Direct public reads
+retain their own before/after fences. The original live SQL login lock, expiry
+checks, owner/epoch checks and entitlement checks remain required.
+
+Local R140 evidence includes actual SQL current-state/history/cancel/discovery,
+23 executions over two stable pages, altered cursor/Auth/login rejection, closed
+day history and ACLs. Removing only the new journal exclusion inside a rollback
+transaction makes the reservation-discovery test fail; the real function passes.
+The complete final migration was applied to the disposable copy and the clean
+post-application SQL suite passed. One initial fixture overlap was diagnosed and
+cleaned; no retry of an uncertain hosted operation occurred.
+
+`fixtures/training_execution_completion_http.mjs` runs the actual handlers, real
+runtime/backend, protected domain writer and canonical feedback against owned
+Unix-only PostgreSQL. The external Auth/entitlement provider is synthetic; its
+live original `auth.sessions` row is real. Cancellation, lost reply after commit,
+same-operation replay, cold state/home, exact one-workout/one-receipt/one-feedback/
+one-journal-event counts, privacy projection and revoked-login rejection pass.
+This does **not** establish hosted Auth, native completion, latency in staging or
+TestFlight availability. Native finish/pending/replay reconciliation, sharing and
+connected qualification remain open before activation.
+
+The full BFF scan covers all 101 mobile routes, preserves the previous 96 and
+frozen 93 export streams and checks the complete transitive graph. A same-path
+96-route baseline established webpack's extraction of unchanged current-scope and
+training modules. Exact source pins and full replacement module hashes qualify
+those relocations; historical media/workout import pins are restored only after
+that complete certificate. No global worker/admin scan is excluded. Old uncertain
+media remain preserved, and automatic disposal remains restricted to the qualified
+new cohort.

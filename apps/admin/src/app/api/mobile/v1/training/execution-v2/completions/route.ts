@@ -1,0 +1,4 @@
+import { createTrainingExecutionCompletionRoutes } from '@/lib/mobile-api/training-execution-completion-routes'
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const POST = createTrainingExecutionCompletionRoutes().POST

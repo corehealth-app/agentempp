@@ -3,6 +3,10 @@ import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import {
+  completionBuildPaths,
+  completionTransports,
+} from '../scripts/training-completion-surface.mjs'
 import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../.next/server')
@@ -19,7 +23,7 @@ function currentAppPaths(): Record<string, string> {
           '/api/mobile/v1/training/execution/route',
           '/api/mobile/v1/training/execution/[sessionId]/route',
           '/api/mobile/v1/training/execution/commands/route',
-        ].includes(path),
+        ].includes(path) && !completionBuildPaths.has(path.replace(/\/route$/, '')),
     ),
   )
 }
@@ -49,7 +53,8 @@ function exportStream(root: string, wrapper: boolean) {
           'training/execution/route.ts',
           'training/execution/[sessionId]/route.ts',
           'training/execution/commands/route.ts',
-        ].includes(relative(root, file).split('\\').join('/')),
+        ].includes(relative(root, file).split('\\').join('/')) &&
+        !completionTransports.has(relative(root, file).split('\\').join('/')),
     )
     .map((file) => {
       const source = readFileSync(file, 'utf8')

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { completionTransports } from './training-completion-surface.mjs'
 
 const expectedCount = 93
 const expectedHash = '379b260d910f1364041880fb6aab30c458c9a8b511760735a9396aa8a058b5cf'
@@ -168,8 +169,31 @@ const executionTransports = new Map([
   ['training/execution/[sessionId]/route.ts', ['GET', 'dynamic', 'runtime']],
   ['training/execution/commands/route.ts', ['POST', 'dynamic', 'runtime']],
 ])
-const currentSources = sourceRecords(),
-  currentWrappers = wrapperRecords()
+const completeSources = sourceRecords(),
+  completeWrappers = wrapperRecords()
+for (const [label, records] of [
+  ['SOURCE', completeSources],
+  ['WRAPPER', completeWrappers],
+]) {
+  console.info(`${label}_COMPLETION_CURRENT_ROUTE_EXPORT_COUNT=${records.length}`)
+  if (
+    records.length !== 101 ||
+    hashRecords(records) !== 'f82e91383b9737c9cc81d31bd12241702f2edd81ed28810350a92f3f96efcdb2'
+  )
+    fail(`${label}_COMPLETION_CURRENT_STREAM`)
+  for (const [path, methods] of completionTransports) {
+    const record = records.find((r) => r.path === path)
+    if (JSON.stringify(record?.exports) !== JSON.stringify(methods))
+      fail(`${label}_COMPLETION_EXPORTS:${path}`)
+    if (
+      label === 'WRAPPER' &&
+      record?.sourcePath !== `@/app/api/mobile/v1/${path.replace(/\.ts$/, '')}`
+    )
+      fail(`${label}_COMPLETION_SOURCE:${path}`)
+  }
+}
+const currentSources = completeSources.filter((r) => !completionTransports.has(r.path)),
+  currentWrappers = completeWrappers.filter((r) => !completionTransports.has(r.path))
 for (const [label, records] of [
   ['SOURCE', currentSources],
   ['WRAPPER', currentWrappers],

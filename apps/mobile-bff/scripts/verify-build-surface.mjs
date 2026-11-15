@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { completionBuildPaths } from './training-completion-surface.mjs'
 
 const expectedMobileRouteCount = 93
 const expectedMobileRouteHash = '22926ab33b91fc36dde1834843c56d38fb6b06fe00de0294fe79e54529ba3013'
@@ -518,6 +519,23 @@ function verifyBuildSurface() {
   let surface
   try {
     surface = inspectBuildSurface(buildRoot)
+    console.info(
+      `BUILD_COMPLETION_CURRENT_MOBILE_ROUTE_PATH_COUNT=${surface.mobileRoutePaths.length}`,
+    )
+    if (
+      surface.mobileRoutePaths.length !== 101 ||
+      [...completionBuildPaths].some((p) => !surface.mobileRoutePaths.includes(p))
+    )
+      fail('COMPLETION_CURRENT_ROUTES')
+    const priorPaths = surface.routePaths.filter((p) => !completionBuildPaths.has(p)),
+      priorMobile = surface.mobileRoutePaths.filter((p) => !completionBuildPaths.has(p))
+    surface = {
+      ...surface,
+      routePaths: priorPaths,
+      mobileRoutePaths: priorMobile,
+      routePathHash: sha256(priorPaths.map((p) => `${p}\n`).join('')),
+      mobileRoutePathHash: sha256(priorMobile.map((p) => `${p}\n`).join('')),
+    }
     const execution = new Set([
       '/api/mobile/v1/training/execution',
       '/api/mobile/v1/training/execution/[sessionId]',

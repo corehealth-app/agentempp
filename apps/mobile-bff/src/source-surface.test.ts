@@ -16,6 +16,10 @@ import { basename, dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 import { describe, expect, test } from 'vitest'
+import {
+  completionBuildPaths,
+  completionTransports,
+} from '../scripts/training-completion-surface.mjs'
 import { inspectBuildSurface } from '../scripts/verify-build-surface.mjs'
 import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
@@ -97,17 +101,31 @@ function tracedTargets(route: string, includeExecution = false): string[] {
 
 function semanticChunks(markers: string[]): string[] {
   const chunksRoot = realpathSync(resolve(buildRoot, 'server/chunks'))
-  return walkFiles(resolve(buildRoot, 'server/chunks'))
-    .filter((path) => {
-      if (!path.endsWith('.js')) return false
-      const source = readFileSync(path, 'utf8')
-      return markers.every((marker) => source.includes(marker))
-    })
-    .map((path) => {
-      const physical = realpathSync(path)
-      expect(relative(chunksRoot, physical), path).toMatch(/^[\w.-]+\.js$/)
-      return physical
-    })
+  return (
+    walkFiles(resolve(buildRoot, 'server/chunks'))
+      .filter((path) => {
+        if (!path.endsWith('.js')) return false
+        const source = readFileSync(path, 'utf8')
+        return markers.every((marker) => source.includes(marker))
+      })
+      .map((path) => {
+        const physical = realpathSync(path)
+        expect(relative(chunksRoot, physical), path).toMatch(/^[\w.-]+\.js$/)
+        return physical
+      })
+      // These historical certificates cover the frozen93 graph. The additive
+      // completion-only chunk is independently scanned by the full101 gate.
+      .filter((physical) =>
+        Object.entries(
+          JSON.parse(readFileSync(appPathsManifestPath, 'utf8')) as Record<string, string>,
+        ).some(
+          ([route]) =>
+            !completionBuildPaths.has(route.replace(/\/route$/, '')) &&
+            route.endsWith('/route') &&
+            tracedTargets(route, true).includes(physical),
+        ),
+      )
+  )
 }
 
 function chunkConsumers(chunk: string): string[] {
@@ -392,7 +410,42 @@ function certifyNutritionJournalSplitContent(text: string): void {
  * translation. All three neighboring intake modules, canonical contracts,
  * source/epoch fences, exact consumers and forbidden scans remain unchanged.
  * Certify the entire new executable body; do not normalize away the change. */
+/** R140 only relinks the unchanged workout facade after webpack extracts
+ * the now-shared current-scope module. Full new executable bodies and original
+ * source bytes are checked before restoring that ONE import for the old pins. */
+function restoreWorkoutFacadeLinkR140(body: string): string {
+  if (!body.includes('c(93498)')) return body
+  for (const [name, hash] of [
+    [
+      'conversation-current-scope.ts',
+      'f8106d2f19e5085c099719c736a396ed428f10349bc25ed9b7b04959e6697aed',
+    ],
+    [
+      'conversation-workout-command-service.ts',
+      'dee0b58351a9423feabae7d1516de9735b2427c7369913fd30dbec203855613a',
+    ],
+  ])
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name)))
+        .digest('hex'),
+    ).toBe(hash)
+  for (const [id, hash] of [
+    ['93498', '21239d114e06d780ee4e5221fd60a783b3540a02209e36c0b687c64ea0bda359'],
+    ['72820', '97188fca6a52a4948cc0bf3f1a12004529a82d634d6547441780dfdc73a2dc7e'],
+  ]) {
+    const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
+      (file) =>
+        file.endsWith('.js') && new RegExp(`(?:^|[,;{])${id}:`).test(readFileSync(file, 'utf8')),
+    )
+    expect(copies.length).toBeGreaterThan(0)
+    for (const file of copies) certifyPhysicalModule(file, id, [hash])
+  }
+  expect(body.split('c(93498)')).toHaveLength(2)
+  return body.replace('c(93498)', 'c(73772)')
+}
 function certifyStructuredIntakeRouterR128(body: string): string {
+  body = restoreWorkoutFacadeLinkR140(body)
   expect(createHash('sha256').update(body).digest('hex')).toBe(
     '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3',
   )
@@ -433,7 +486,11 @@ function certifyExactSharedTable(
       return [
         id,
         createHash('sha256')
-          .update(id === '6535' ? certifyStructuredIntakeRouterR128(body) : body)
+          .update(
+            id === '6535'
+              ? certifyStructuredIntakeRouterR128(body)
+              : restoreWorkoutFacadeLinkR140(body),
+          )
           .digest('hex'),
       ].join(':')
     }) ?? []
@@ -832,7 +889,7 @@ function certifyPhysicalModule(file: string, id: string, allowedHashes: readonly
   }
   visit(source)
   expect(found, `one physical reviewed module ${id}`).toHaveLength(1)
-  const body = found[0]?.getText(source) ?? ''
+  const body = restoreWorkoutFacadeLinkR140(found[0]?.getText(source) ?? '')
   expect(allowedHashes).toContain(createHash('sha256').update(body).digest('hex'))
   expect(text.startsWith('"use strict";') || body.startsWith('(a,b,c)=>{"use strict";')).toBe(true)
   return body
@@ -989,7 +1046,11 @@ const executionRouteFiles = new Set([
 function sourceRecords(): Array<{ path: string; exports: string[] }> {
   return walkFiles(sourceRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
-    .filter((path) => !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')))
+    .filter(
+      (path) =>
+        !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')) &&
+        !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')),
+    )
     .map((path) => ({
       path: relative(sourceRoot, path).split(sep).join('/'),
       exports: routeExports(readFileSync(path, 'utf8')),
@@ -1008,7 +1069,11 @@ function currentAppPathsManifest(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(
       JSON.parse(readFileSync(appPathsManifestPath, 'utf8')) as Record<string, string>,
-    ).filter(([path]) => !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '.ts')),
+    ).filter(
+      ([path]) =>
+        !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '.ts') &&
+        !completionTransports.has(path.replace('/api/mobile/v1/', '') + '.ts'),
+    ),
   )
 }
 
@@ -1435,10 +1500,14 @@ describe('authoritative Mobile API source surface', () => {
   test('preserves the prior88 Mobile and prior89 total streams within the additive 93/94 build', () => {
     const currentSurface = inspectBuildSurface(buildRoot)
     const paths = currentSurface.routePaths.filter(
-      (path) => !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts'),
+      (path) =>
+        !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
+        !completionBuildPaths.has(path),
     )
     const mobile = currentSurface.mobileRoutePaths.filter(
-      (path) => !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts'),
+      (path) =>
+        !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
+        !completionBuildPaths.has(path),
     )
     const digest = (values: string[]) =>
       createHash('sha256')
@@ -1921,7 +1990,7 @@ describe('authoritative Mobile API source surface', () => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
         return [appPath, `app${appPath}.js`]
       }),
-      ...[...executionRouteFiles].map((path) => {
+      ...[...executionRouteFiles, ...completionTransports.keys()].map((path) => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
         return [appPath, `app${appPath}.js`]
       }),
@@ -1941,6 +2010,10 @@ describe('authoritative Mobile API source surface', () => {
         const script = resolve(root, 'scripts/verify-build-surface.mjs')
         mkdirSync(dirname(script), { recursive: true })
         writeFileSync(script, readFileSync(resolve(appRoot, 'scripts/verify-build-surface.mjs')))
+        writeFileSync(
+          resolve(dirname(script), 'training-completion-surface.mjs'),
+          readFileSync(resolve(appRoot, 'scripts/training-completion-surface.mjs')),
+        )
         symlinkSync(syntheticBuild, resolve(root, '.next'), 'dir')
         const result = spawnSync(process.execPath, [script], {
           encoding: 'utf8',
@@ -2508,7 +2581,10 @@ describe('authoritative Mobile API source surface', () => {
     certifySharedModule(
       workoutChunk,
       'reconcile_conversation_workout',
-      '4fccbc5add63f82c43a05756fb7717bfa501b0f19ab0961ccc1e8b002321dd49',
+      // R140 full re-certification after shared current-scope extraction.
+      // Old96 same-path baseline retained 4fccbc5a...; source bytes are
+      // unchanged and BOTH replacement modules are pinned above.
+      '21239d114e06d780ee4e5221fd60a783b3540a02209e36c0b687c64ea0bda359',
     )
     // T48's lookup-only GET reuses the same qualified STABLE history reader.
     // The two new public markers must remain confined to that parent entry;
@@ -2714,10 +2790,11 @@ describe('authoritative Mobile API source surface', () => {
         11 + // R106: exact newly factored issuer edges, independently pinned above.
         3 + // R111: closed five-module shared table, exact three media consumers.
         116 + // R118: exactly the new read-only training entry, independently bounded above.
-        3 * 114, // R136: complete new execution route traces, bounded separately below.
+        3 * 114 + // R136: original execution route traces remain exact.
+        5 * 120, // R140: five explicit completion traces; all included in scans.
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4)
-    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4)
+    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
+    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     // The three new routes add exactly one fully certified shared chunk and
@@ -2736,8 +2813,11 @@ describe('authoritative Mobile API source surface', () => {
     expect(executionChunks).toHaveLength(1)
     const executionChunk = executionChunks[0] ?? ''
     certifyExactSharedTable(executionChunk, [
-      ['33228', 'fec6d988d94e02db42e08e71919701b0a8bcfd847e90d808eb6358ebc6dd5447'],
-      ['95069', 'debd1c08a61cb82201c173093291c21ce8837d96b31922f641cb4a36f7d29496'],
+      // R140 compiler extraction of the same five source-pinned modules.
+      ['19521', 'c46d66b4179746bd8802a67e6c5ce569b51de781c352325bfe880f57417689e9'],
+      ['70091', 'b52dec32b8708effa9ae429fe80bb0aacfd6cac8edf543e9cab887e19b430022'],
+      ['88551', 'b559f2b47031c5be3cbcd27819010f548026f104945bac04a2df3bbb40f0a3b4'],
+      ['93288', 'c592e7ebe24caf41c29cd98ad49e0c401416db555ca98261c64e7b53561d9588'],
     ])
     const sourcePins = {
       'training-execution-routes.ts':
@@ -3785,8 +3865,12 @@ describe('authoritative Mobile API source surface', () => {
 describe('current96 execution build extension', () => {
   test('builds all three required execution routes and scans their entire transitive graph', () => {
     const surface = inspectBuildSurface(buildRoot)
-    expect(surface.mobileRoutePaths).toHaveLength(96)
-    expect(surface.routePaths).toHaveLength(97)
+    expect(surface.mobileRoutePaths).toHaveLength(101)
+    expect(surface.routePaths).toHaveLength(102)
+    expect(surface.mobileRoutePaths.filter((path) => !completionBuildPaths.has(path))).toHaveLength(
+      96,
+    )
+    for (const path of completionBuildPaths) expect(surface.mobileRoutePaths).toContain(path)
     for (const path of [
       '/api/mobile/v1/training/execution',
       '/api/mobile/v1/training/execution/[sessionId]',

@@ -12,6 +12,7 @@ import {
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
+import { completionTransports } from '../scripts/training-completion-surface.mjs'
 
 const testDirectory = dirname(fileURLToPath(import.meta.url))
 const sourceRoot = resolve(testDirectory, '../../admin/src/app/api/mobile/v1')
@@ -97,9 +98,14 @@ function sourceExports(source: string): string[] {
   ).sort()
 }
 
-function sourceRecords(includeExecution = false): RouteRecord[] {
+function sourceRecords(includeExecution = false, includeCompletion = false): RouteRecord[] {
   return walkFiles(sourceRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter(
+      (path) =>
+        includeCompletion ||
+        !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')),
+    )
     .filter(
       (path) =>
         includeExecution ||
@@ -112,9 +118,14 @@ function sourceRecords(includeExecution = false): RouteRecord[] {
     .sort((left, right) => left.path.localeCompare(right.path, 'en'))
 }
 
-function wrapperRecords(includeExecution = false): RouteRecord[] {
+function wrapperRecords(includeExecution = false, includeCompletion = false): RouteRecord[] {
   return walkFiles(wrapperRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter(
+      (path) =>
+        includeCompletion ||
+        !completionTransports.has(relative(wrapperRoot, path).split(sep).join('/')),
+    )
     .filter(
       (path) =>
         includeExecution ||
@@ -185,6 +196,10 @@ function withUnexpectedAuthComposition<T>(
       script,
       readFileSync(resolve(testDirectory, '../scripts/verify-route-mirror.mjs')),
     )
+    writeFileSync(
+      resolve(dirname(script), 'training-completion-surface.mjs'),
+      readFileSync(resolve(testDirectory, '../scripts/training-completion-surface.mjs')),
+    )
     for (const [from, to] of [
       [sourceRoot, resolve(root, 'apps/admin/src/app/api/mobile/v1')],
       [wrapperRoot, resolve(root, 'apps/mobile-bff/src/app/api/mobile/v1')],
@@ -238,6 +253,10 @@ function withNutritionMutation<T>(
       script,
       readFileSync(resolve(testDirectory, '../scripts/verify-route-mirror.mjs')),
     )
+    writeFileSync(
+      resolve(dirname(script), 'training-completion-surface.mjs'),
+      readFileSync(resolve(testDirectory, '../scripts/training-completion-surface.mjs')),
+    )
     for (const [from, to] of [
       [sourceRoot, resolve(root, 'apps/admin/src/app/api/mobile/v1')],
       [wrapperRoot, resolve(root, 'apps/mobile-bff/src/app/api/mobile/v1')],
@@ -285,6 +304,19 @@ function withNutritionMutation<T>(
 }
 
 describe('dedicated Mobile BFF wrapper mirror', () => {
+  test('adds the complete five-route versioned family while the original96 and frozen93 remain pinned', () => {
+    const source = sourceRecords(true, true),
+      wrappers = wrapperRecords(true, true)
+    expect(source).toHaveLength(101)
+    expect(wrappers.map(({ path, exports }) => ({ path, exports }))).toEqual(source)
+    expect(hashRecords(source)).toBe(
+      'f82e91383b9737c9cc81d31bd12241702f2edd81ed28810350a92f3f96efcdb2',
+    )
+    for (const records of [source, wrappers])
+      for (const [path, exports] of completionTransports)
+        expect(records.find((r) => r.path === path)?.exports).toEqual(exports)
+  })
+
   test('adds exactly three execution transports to the complete current96 stream while retaining frozen93 checks', () => {
     const sources = sourceRecords(true),
       wrappers = wrapperRecords(true)

@@ -336,7 +336,8 @@ struct AppShellView: View {
                 ) {
                     navigationStack(for: tab)
                 }
-                .accessibilityIdentifier(tab.accessibilityIdentifier)
+                // The visible PerformeNavigationButton owns this identifier.
+                // Reusing it on the hidden system tab creates a second target.
             }
         }
         .toolbar(.hidden, for: .tabBar)

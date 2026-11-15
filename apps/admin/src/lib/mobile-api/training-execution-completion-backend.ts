@@ -4,16 +4,23 @@
  * No route, capability, feedback writer or native cutover is installed here. */
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
+import { resolveConversationWorkoutReport } from './conversation-workout-authority'
 import {
   type ConversationWorkoutBackendRPC,
   createConversationWorkoutBackend,
 } from './conversation-workout-backend'
 import {
+  parseConversationWorkoutSource,
   workoutClock,
+  workoutDigest,
   workoutHash,
   workoutSnapshot,
   workoutUUID,
 } from './conversation-workout-contracts'
+import {
+  parseConversationWorkoutEffect,
+  pinConversationWorkoutPreparation,
+} from './conversation-workout-writer'
 import {
   type BoundTrainingExecutionCompletion,
   bindTrainingExecutionCompletion,
@@ -24,6 +31,7 @@ import {
 } from './training-execution-kernel'
 
 type CompletionName =
+  | 'submit_training_execution_completion_authenticated'
   | 'observe_training_execution_finish_authenticated'
   | 'withdraw_training_execution_finish_authenticated'
   | 'reconcile_training_execution_progress_authenticated'
@@ -266,6 +274,80 @@ export function createTrainingExecutionCompletionBackend(
     return { bound, args, current, call, read }
   }
   return Object.freeze({
+    /** One original-login transaction executes the existing protected SQL
+     * primitives. Parse its complete proofs independently; the transport's
+     * status alone is never an acknowledgement. No retry on a lost response. */
+    async submitAtomic(raw: BoundTrainingExecutionCompletion) {
+      const { bound, args, call } = request(raw)
+      const value = z
+        .discriminatedUnion('status', [
+          z.object({ status: z.literal('cancelled'), completion: z.unknown() }).strict(),
+          z
+            .object({
+              status: z.literal('decision'),
+              source: z.unknown(),
+              preparation: z.unknown(),
+              completion: z.unknown(),
+            })
+            .strict(),
+          z
+            .object({
+              status: z.literal('saved'),
+              source: z.unknown(),
+              preparation: z.unknown(),
+              effect: z.unknown(),
+              completion: z.unknown(),
+            })
+            .strict(),
+        ])
+        .parse(
+          await call('submit_training_execution_completion_authenticated', {
+            ...args,
+            p_command: bound.command,
+          }),
+        )
+      const completion = readTrainingExecutionCompletionProof(value.completion, bound, auth)
+      if (value.status === 'cancelled') {
+        if (completion.completion.status !== 'cancelled')
+          throw Error('Unproved cancelled completion')
+        return workoutSnapshot({ status: 'cancelled' as const })
+      }
+      const source = parseConversationWorkoutSource(bound.workout, value.source)
+      if (source.epoch !== bound.command.expected_epoch)
+        throw Error('Changed completion source epoch')
+      const preparation = z
+        .object({
+          action: z.enum(['prepared', 'replay']).optional(),
+          prepared_hash: workoutHash,
+          prepared: z.unknown(),
+        })
+        .strict()
+        .parse(value.preparation)
+      const decision = resolveConversationWorkoutReport(source)
+      if (value.status === 'decision') {
+        if (
+          completion.completion.status !== 'reserved' ||
+          decision.status === 'ready' ||
+          !isDeepStrictEqual(preparation.prepared, decision) ||
+          preparation.prepared_hash !== workoutDigest(decision)
+        )
+          throw Error('Changed completion decision')
+        return workoutSnapshot(decision)
+      }
+      const prepared = pinConversationWorkoutPreparation(source, preparation.prepared)
+      if (preparation.prepared_hash !== workoutDigest(prepared))
+        throw Error('Changed completion preparation')
+      const effect = parseConversationWorkoutEffect(source, prepared, value.effect)
+      if (
+        completion.completion.status !== 'completed' ||
+        !isDeepStrictEqual(
+          (completion.completion.receipt as { workout: unknown }).workout,
+          effect.receipt,
+        )
+      )
+        throw Error('Workout has no linked training completion')
+      return workoutSnapshot({ status: 'saved' as const, source, prepared, effect, completion })
+    },
     async read(raw: BoundTrainingExecutionCompletion) {
       return request(raw).read()
     },

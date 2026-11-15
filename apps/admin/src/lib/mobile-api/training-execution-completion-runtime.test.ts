@@ -26,6 +26,20 @@ function setup(failFeedback = false) {
       name: string,
       _args: Record<string, unknown>,
     ): Promise<{ data: unknown; error: null }> => {
+      if (name === 'submit_training_execution_completion_authenticated') {
+        if (!completed) writes++
+        completed = true
+        return {
+          data: {
+            status: 'saved',
+            source: g.source,
+            preparation: g.preparation,
+            effect: g.effect,
+            completion: g.completed,
+          },
+          error: null,
+        }
+      }
       if (name === 'begin_training_execution_completion_authenticated')
         return { data: completed ? { ...g.completed, action: 'replay' } : g.begin, error: null }
       if (name === 'read_training_execution_completion_authenticated')
@@ -96,6 +110,7 @@ function setup(failFeedback = false) {
     if (failFeedback) throw Error('Optional education unavailable')
     return null
   })
+  const readHistorical = vi.fn(async (_input: unknown) => null)
   const authorize = vi.fn(async () => {}),
     capture = vi.fn(async () => profile)
   const service = createTrainingExecutionCompletionService(
@@ -108,7 +123,7 @@ function setup(failFeedback = false) {
       feedbackV3WriterEnabled: () => true,
       feedbackV3: () => ({
         ensureWorkout,
-        readHistorical: async () => null,
+        readHistorical,
         readRoot: vi.fn(),
         ensureRoot: vi.fn(),
         ensureReply: vi.fn(),
@@ -127,6 +142,7 @@ function setup(failFeedback = false) {
     rpc,
     authPort,
     ensureWorkout,
+    readHistorical,
     authorize,
     capture,
     service,
@@ -362,8 +378,40 @@ describe('original-auth public completion runtime over real backend and public w
     await h.service.submit(`tfinish1:${h.g.command.operation_id}`, h.g.command)
     // A bounded registration must not perform two identical before/after
     // observations at EVERY SQL boundary. The backend already owns that fence.
-    expect(h.capture.mock.calls.length).toBeLessThanOrEqual(50)
+    expect(h.capture.mock.calls.length).toBeLessThanOrEqual(3)
     expect(h.writes()).toBe(1)
+  })
+  it('returns the proved workout through the current-safe feedback renderer without re-reconciling the saved domain', async () => {
+    const h = setup()
+    const value = await h.service.submit(`tfinish1:${h.g.command.operation_id}`, h.g.command)
+    expect(value.status).toBe('completed')
+    expect(h.rpc.mock.calls.map(([n]) => n)).toEqual([
+      'submit_training_execution_completion_authenticated',
+    ])
+    expect(h.readHistorical).toHaveBeenCalledTimes(1)
+    expect(h.readHistorical.mock.calls[0]?.[0]).toMatchObject({
+      auth: h.who,
+      proof: { kind: 'workout.report', effect: h.g.effect, prepared: h.g.preparation.prepared },
+    })
+    expect(h.writes()).toBe(1)
+  })
+  it('recovers a lost atomic reply by observation only, never resubmitting a finish', async () => {
+    const h = setup(),
+      original = h.rpc.getMockImplementation()
+    if (!original) throw Error('Missing boundary fixture')
+    h.rpc.mockImplementation(async (name, args) => {
+      const v = await original(name, args)
+      if (name === 'submit_training_execution_completion_authenticated')
+        throw Error('Lost after commit')
+      return v
+    })
+    expect(
+      await h.service.submit(`tfinish1:${h.g.command.operation_id}`, h.g.command),
+    ).toMatchObject({ status: 'completed' })
+    expect(h.writes()).toBe(1)
+    expect(
+      h.rpc.mock.calls.filter(([n]) => n === 'submit_training_execution_completion_authenticated'),
+    ).toHaveLength(1)
   })
   it.each([
     'home',

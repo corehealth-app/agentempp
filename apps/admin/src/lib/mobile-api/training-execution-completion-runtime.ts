@@ -8,6 +8,7 @@ import type { MobileAuthContext } from './auth'
 import { createConversationCurrentScope } from './conversation-current-scope'
 import { createConversationFeedbackPublicComposition } from './conversation-feedback-public-composition'
 import { conversationFeedbackV3WriterEnabled } from './conversation-feedback-server-policy'
+import { conversationJournalInstant } from './conversation-meal-journal-store'
 import {
   type ConversationWorkoutCommandDependencies,
   createConversationWorkoutCommandService,
@@ -20,6 +21,8 @@ import {
   workoutUUID,
 } from './conversation-workout-contracts'
 import type { ConversationWorkoutEffect } from './conversation-workout-writer'
+import { projectCurrentClinicalPublicPolicy } from './current-clinical-read-model'
+import type { CurrentClinicalSnapshot } from './current-clinical-state'
 import { MobileApiError } from './http'
 import { hashMobileRequest } from './idempotency'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
@@ -119,6 +122,23 @@ function changed(): never {
     'The original training completion has changed.',
   )
 }
+// Apply the same final policy/time fence as the frozen workout facade without
+// changing that facade's exports or certified executable surface.
+function currentCompletionFeedback(
+  value: PublicTrainingExecutionCompletion['feedback'],
+  state: CurrentClinicalSnapshot,
+  effect: ConversationWorkoutEffect,
+): PublicTrainingExecutionCompletion['feedback'] {
+  if (!value) return null
+  const { observed_at: _latest, ...latest } = projectCurrentClinicalPublicPolicy(state),
+    { observed_at: _shown, ...shown } = value.current_policy,
+    at = conversationJournalInstant(value.provenance.observed_at)
+  return isDeepStrictEqual(latest, shown) &&
+    at >= conversationJournalInstant(effect.receipt.committed_at) &&
+    at <= conversationJournalInstant(state.observed_at)
+    ? value
+    : null
+}
 export function createTrainingExecutionCompletionService(
   db: ServiceClient,
   original: MobileAuthContext,
@@ -152,8 +172,9 @@ export function createTrainingExecutionCompletionService(
     )
     async function current() {
       await authorize()
-      await scope.observe()
+      const state = await scope.observe()
       await authorize()
+      return state
     }
     // The private backend already checks this same sticky current scope
     // immediately before and after each RPC. Do not stack a second pair of
@@ -239,7 +260,7 @@ export function createTrainingExecutionCompletionService(
   async function present(
     raw: unknown,
     bound: BoundTrainingExecutionCompletion,
-    current: () => Promise<void>,
+    current: () => Promise<CurrentClinicalSnapshot>,
     recovery: {
       source: CapturedConversationWorkoutSource
       prepared: unknown
@@ -256,34 +277,52 @@ export function createTrainingExecutionCompletionService(
     let feedback = value.feedback
     if (value.status === 'completed' && value.workout) {
       try {
-        if (recovery && feedbackEnabled) {
-          try {
-            await feedbackComposition(auth, bound.command.expected_epoch).ensureWorkout(recovery)
-          } catch {
-            /* Optional canonical education never changes the domain receipt. */
+        if (recovery) {
+          // The completed transaction has already independently proved source,
+          // preparation, effect and the linked training ACK. Use those proofs
+          // in the existing current-safe reader instead of reconciling the
+          // entire workout domain a second time merely to render feedback.
+          const composition = feedbackComposition(auth, bound.command.expected_epoch)
+          if (feedbackEnabled) {
+            try {
+              await composition.ensureWorkout(recovery)
+            } catch {
+              /* Optional canonical education never changes the domain receipt. */
+            }
           }
+          feedback = await composition.readHistorical({
+            auth,
+            proof: {
+              kind: 'workout.report',
+              source: recovery.source,
+              prepared: recovery.prepared,
+              effect: recovery.effect,
+            },
+          })
+        } else {
+          const result = await workout.read(
+            auth,
+            bound.command.operation_id,
+            bound.workout.inputHash,
+            bound.command.expected_epoch,
+            '2',
+          )
+          if (
+            result.status === 'saved' &&
+            result.registration.workout_id === value.workout.workout_id &&
+            result.registration.registration_id === value.workout.registration_id &&
+            result.command_id === value.completion_id &&
+            result.input_hash === bound.workout.inputHash &&
+            result.epoch === value.epoch
+          )
+            feedback = result.feedback
         }
-        const result = await workout.read(
-          auth,
-          bound.command.operation_id,
-          bound.workout.inputHash,
-          bound.command.expected_epoch,
-          '2',
-        )
-        if (
-          result.status === 'saved' &&
-          result.registration.workout_id === value.workout.workout_id &&
-          result.registration.registration_id === value.workout.registration_id &&
-          result.command_id === value.completion_id &&
-          result.input_hash === bound.workout.inputHash &&
-          result.epoch === value.epoch
-        )
-          feedback = result.feedback
       } catch {
         /* Optional feedback never repeats/invalidates the official workout. */
       }
     }
-    await current() // mandatory failures cannot be swallowed by optional enrichment
+    const final = await current() // mandatory failures cannot be swallowed by optional enrichment
+    if (recovery) feedback = currentCompletionFeedback(feedback, final, recovery.effect)
     return workoutSnapshot({ ...value, feedback, decision })
   }
   return Object.freeze({
@@ -431,7 +470,9 @@ export function createTrainingExecutionCompletionService(
       if (current && command.schema === 'training.execution.start.v1') return unavailable()
       let written: Awaited<ReturnType<ReturnType<typeof createTrainingExecutionService>['mutate']>>
       try {
-        written = await createTrainingExecutionService(db, auth, l.current).mutate(command)
+        written = await createTrainingExecutionService(db, auth, async () => {
+          await l.current()
+        }).mutate(command)
       } catch (error) {
         // The original writer may have committed before a lost reply. This
         // is observation only: never submit a second mutation automatically.
@@ -582,9 +623,28 @@ export function createTrainingExecutionCompletionService(
     async submit(key: string | null, raw: unknown) {
       const bound = bindTrainingExecutionCompletion(owner, key, raw),
         l = lane(bound.command.expected_epoch)
-      await l.current()
-      const result = await l.backend.submit(bound)
-      await l.current()
+      // submitAtomic already owns this same original-scope callback before and
+      // after its transaction. Do not duplicate those provider observations.
+      let result: Awaited<ReturnType<typeof l.backend.submitAtomic>>
+      try {
+        result = await l.backend.submitAtomic(bound)
+      } catch (error) {
+        // One transaction may have committed before its response was lost.
+        // Recover only through the exact original read; never retry a writer.
+        await l.current()
+        const recovered = await lookup({
+          session_id: bound.command.session_id,
+          completion_id: bound.command.operation_id,
+          epoch: bound.command.expected_epoch,
+          input_hash: bound.inputHash,
+        })
+        const proof = trusted(() =>
+          projectTrainingExecutionCompletion(recovered.data, bound, auth.authUserId),
+        )
+        if (proof.status === 'completed' || proof.status === 'cancelled')
+          return present(recovered.data, bound, recovered.current, null)
+        throw error
+      }
       if (result.status === 'saved') return present(result.completion, bound, l.current, result)
       if (result.status === 'needs_reply' || result.status === 'not_reported') {
         // No performed effect exists for these semantic outcomes. Safe SQL

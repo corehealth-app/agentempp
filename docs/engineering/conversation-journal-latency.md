@@ -50,3 +50,23 @@ old code cannot enter the patient read while admin is held; the new code does,
 only after Auth resolves. Neighboring cases retain sticky refusal on admin
 transition, caller-scope changes and backwards clinical time in the journal lane
 and unchanged shared lane. Hosted latency and native cold re-opening still require independent qualification.
+
+
+A separate native cold-navigation failure happened before the journal started.
+Switching to Nutrition while Flow was opening cancelled the originating view
+`.task`. The shell coordinator forwarded that cancellation into its owned
+factory, reported `unavailable`, and the returning root only automatically loads
+from `idle`. The saved correction and historical HTTP/native decoder were valid.
+
+Opening now belongs to the authenticated shell across transient tab navigation.
+A cancelled view cannot start a new factory, but cancelling an existing waiter
+does not cancel the shared opening. A returning view joins that same operation.
+Explicit owner withdrawal still cancels the owned work, invalidates the bound
+model synchronously and joins retirement; late publication remains forbidden by
+the original owner/generation, authority and coordinator work-identity fences.
+Genuine opening failures retain the existing explicit Retry action.
+
+A real source/URLSession barrier regression failed on the former implementation.
+It holds the opening request, cancels the view waiter, joins a fresh returning
+waiter and requires one read-only request and one ready model. Neighboring tests
+retain cancelled-entry admission, account withdrawal, retry and owned cleanup.

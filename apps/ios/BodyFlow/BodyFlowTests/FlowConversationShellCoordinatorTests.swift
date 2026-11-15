@@ -76,6 +76,68 @@ struct FlowConversationShellCoordinatorTests {
     #expect(await f.edit.http.lifecycle.workCount == 0)
     await coordinator.close()
   }
+  @Test func cancellingTheViewWaiterDoesNotCancelTheAuthenticatedShellOpening() async throws {
+    let f = try await RuntimeSourceFixture.make()
+    defer { f.remove() }
+    let barrier = ConversationControllerBarrier()
+    await f.edit.http.stub.respond { _, _ in
+      await barrier.enter()
+      return try f.wire.sessionReply(epoch: f.edit.group.epoch)
+    }
+    let coordinator = FlowConversationShellCoordinator(
+      userID: f.edit.disk.lease.userID, source: f.source)
+    let view = Task { await coordinator.load() }
+    #expect(await barrier.waitEnteredOrFinished())
+    #expect(coordinator.phase == .loading && coordinator.model == nil)
+    // A tab disappears, but the same authenticated shell still owns this open.
+    view.cancel()
+    let returnEntry = AsyncStream<Bool>.makeStream()
+    let returningView = Task {
+      returnEntry.continuation.yield(true)
+      await coordinator.load()
+    }
+    var entered = returnEntry.stream.makeAsyncIterator()
+    #expect(await entered.next() == true)
+    returnEntry.continuation.finish()
+    #expect(coordinator.phase == .loading)
+    #expect(await f.edit.http.stub.requests.count == 1)
+    await barrier.release()
+    await view.value
+    await returningView.value
+    #expect(coordinator.phase == .ready && coordinator.model != nil)
+    await coordinator.load()
+    #expect(await f.edit.http.stub.requests.count == 1)
+    #expect(await f.edit.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await coordinator.close()
+    #expect(coordinator.phase == .closed && coordinator.model == nil)
+    #expect(await f.edit.http.lifecycle.workCount == 0)
+  }
+
+  @Test func alreadyCancelledViewCannotStartTheFactoryButFreshViewCanOpen() async throws {
+    let f = try await RuntimeSourceFixture.make()
+    defer { f.remove() }
+    await f.sessionReplies()
+    let coordinator = FlowConversationShellCoordinator(
+      userID: f.edit.disk.lease.userID, source: f.source)
+    let entry = ConversationControllerBarrier()
+    let cancelledView = Task {
+      await entry.enter()
+      await coordinator.load()
+    }
+    #expect(await entry.waitEnteredOrFinished())
+    cancelledView.cancel()
+    await entry.release()
+    await cancelledView.value
+    #expect(coordinator.phase == .idle && coordinator.model == nil)
+    #expect(await f.edit.http.stub.requests.isEmpty)
+    #expect(await f.edit.http.lifecycle.workCount == 0)
+    await coordinator.load()
+    #expect(coordinator.phase == .ready && coordinator.model != nil)
+    #expect(await f.edit.http.stub.requests.count == 1)
+    await coordinator.close()
+    #expect(await f.edit.http.lifecycle.workCount == 0)
+  }
+
   @Test func opensOnceAndSynchronouslyWithdrawsTheOldOwner() async throws {
     let f = try await RuntimeSourceFixture.make()
     defer { f.remove() }

@@ -61,11 +61,9 @@ final class FlowConversationShellCoordinator {
       }
     }
     work = task
-    await withTaskCancellationHandler {
-      await task.value
-    } onCancel: {
-      task.cancel()
-    }
+    // Opening belongs to the authenticated shell, which survives tab changes.
+    // A disappearing view does not own cancellation; owner withdrawal cancels `work`.
+    await task.value
   }
   func invalidateSynchronously() {
     let newlyClosed = phase != .closed

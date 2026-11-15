@@ -206,3 +206,33 @@ pendentes nos fornecedores. Os limites nominais de execução de uma Function,
 isoladamente, também não atestam o término de uma operação já recebida pelo Storage.
 O ciclo completo de exclusão de conta e R105-REVIEW-1 continuam abertos. Nenhuma
 regra clínica, chave, agendamento, endereço do app ou versão TestFlight foi alterado.
+
+
+## Caracterização conectada R155 — exclusão de uma conta QA nova
+
+Em 15/11/2026, uma conta sintética nova recebeu uma autorização comum do app e
+armazenou oito bytes de áudio. O diagnóstico hospedado usou os helpers reais de
+exclusão, descarte e purge do produto, limitado ao seletor dessa conta. Antes da
+hora de segurança, o purge não removeu o cadastro nem o conteúdo. A hora transcorreu
+no relógio real; não houve alteração de datas para antecipar a operação.
+
+Após o prazo, o purge permaneceu adiado até o descarte da mídia e então removeu
+o cadastro. A verificação independente encontrou ausentes o paciente, o catálogo,
+a identidade Auth, suas sessões e refresh tokens. O marcador comum de zero bytes
+e os três registros técnicos privados de autorização, coorte e obrigação sobreviveram.
+A autorização original, ainda válida, retornou `400 Duplicate` ao tentar reenviar
+os oito bytes e não mudou a versão do marcador. O JWT da conta apagada recebeu 401.
+
+A resposta diagnóstica da exclusão Auth retornou 503, embora o log do provedor
+no intervalo exato registre DELETE 200 e o banco comprove a ausência. Essa resposta
+foi preservada e reconciliada, sem repetir a exclusão nem afirmar sua causa.
+O teste não comprova remoção de logs de segurança, backups, campos JSON ou todos
+os metadados físicos do fornecedor.
+
+As 69 mídias antigas e suas oito autorizações e oito obrigações mantiveram os
+hashes; QA A/B, suas três sessões anteriores e o áudio antigo de origem incerta
+permaneceram preservados. As credenciais e capacidades locais exclusivas foram
+encerradas; o diagnóstico foi removido e o provedor confirmou 404, com os quatro
+runtimes protegidos inalterados. Essa é uma qualificação delimitada da exclusão
+de conta e conteúdo. A drenagem global de emissores/removers antigos e os demais
+gates de R105, app nativo e distribuição continuam independentes e abertos.

@@ -167,3 +167,42 @@ não dentro de uma Function antiga implantada. O acionamento foi manual; não é
 nova prova do disparo por horário. A drenagem global dos emissores/removers e o
 ciclo completo de exclusão de conta continuam abertos, assim como R105-REVIEW-1.
 Não houve nova implantação, alteração do agendamento ou liberação multimodal.
+
+## Caracterização conectada R154 — requisição diagnóstica hospedada
+
+Em 15/11/2026, as mesmas sete funções antigas de R133, com os corpos e hashes
+preservados do commit `71d1322e313356ed688775c36cf84f3fbb90cc5c`, foram executadas
+em um diagnóstico temporário na Vercel, em São Paulo. O diagnóstico ficou fora
+das rotas do produto e dos registros do Inngest, limitado a uma sessão, um arquivo
+QA de oito bytes e um prazo de 45 minutos. Seus controles de acesso e isolamento
+passaram em 12 testes locais; a chamada hospedada sem autenticação retornou 401.
+
+A requisição hospedada leu o catálogo em `pending_upload` e ficou suspensa no
+adaptador. O cliente recebeu a confirmação do descarte atual em HTTP 200 antes
+de liberar a requisição antiga. A liberação usou um objeto de controle vazio e
+temporário, sem autorização de upload emitida, no caminho privado fixado do teste.
+A remoção antiga então apagou a barreira; sua atualização de catálogo recusou o
+registro já apagado. A autorização original do app ainda recriou oito bytes.
+Uma inspeção independente confirmou esses bytes e a obrigação de descarte intacta.
+
+O descarte explícito atual reparou esse caminho em HTTP 200. O banco confirmou
+zero bytes, objeto comum com versão conhecida, resultado de processamento nulo e
+obrigação independente preservada. Repetir o upload original retornou HTTP 400,
+sem mudar a versão da barreira. O worker agendado não foi invocado nessa rodada;
+a prova de reparação pelo worker registrado continua sendo a de R133.
+
+As 69 mídias anteriores ao corte, suas autorizações e obrigações mantiveram os
+hashes. Refeições, treinos, intakes e permissões anteriores da QA A, os dados
+verificados da QA B e as três sessões Auth anteriores permaneceram preservados.
+A permissão e a sessão exclusivas do teste foram encerradas. O objeto de controle
+foi removido pelo Storage e sua ausência conferida no banco. O diagnóstico foi
+excluído e o provedor confirmou 404; os quatro runtimes protegidos permaneceram
+inalterados. As cópias locais de capacidades e do acesso temporário foram removidas.
+
+Essa evidência acrescenta uma requisição **hospedada** com os corpos antigos
+congelados; não suspende nem atesta a execução de uma requisição do deployment
+imutável antigo. Não comprova a drenagem global de emissores, removers ou operações
+pendentes nos fornecedores. Os limites nominais de execução de uma Function,
+isoladamente, também não atestam o término de uma operação já recebida pelo Storage.
+O ciclo completo de exclusão de conta e R105-REVIEW-1 continuam abertos. Nenhuma
+regra clínica, chave, agendamento, endereço do app ou versão TestFlight foi alterado.

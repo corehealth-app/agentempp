@@ -66,8 +66,8 @@ struct FlowConversationView: View {
     .task { await model.refreshConversation() }
     .onDisappear { model.cancelTransientWork() }
     .onChange(of: model.isWorking) { _, busy in if !busy { Task { await model.loadHistory() } } }
-    .onChange(of: model.neutralIntake?.isWorking) { _, busy in
-      if busy == false { Task { await model.loadHistory() } }
+    .onChange(of: model.neutralIntake?.historyRefreshID) { _, completedWork in
+      if completedWork != nil { Task { await model.loadHistory() } }
     }
     .onChange(of: model.mealEditor?.isWorking) { _, busy in
       if busy == false { Task { await model.loadHistory() } }

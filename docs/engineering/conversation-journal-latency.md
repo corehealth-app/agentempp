@@ -70,3 +70,32 @@ A real source/URLSession barrier regression failed on the former implementation.
 It holds the opening request, cancels the view waiter, joins a fresh returning
 waiter and requires one read-only request and one ready model. Neighboring tests
 retain cancelled-entry admission, account withdrawal, retry and owned cleanup.
+
+## Native read-only restoration and automatic history refresh
+
+A mounted Flow root previously observed the neutral intake model's generic busy
+flag. Its session restoration toggled that flag even though it only read state.
+The busy-to-idle callback started a journal request before question origins had
+finished restoring; the root's final explicit history load then replaced it.
+A controlled URLSession test with the actual mounted view and an origins barrier
+observed one premature request and two total journal requests.
+
+The neutral model now emits a transient completion ID for user work, including
+failed sends whose server outcome may require a fresh read. Read-only restoration
+does not emit that signal. The view observes this ID for automatic history loads;
+its busy flag, progress, dispatch, outbox, and deferred foreground refresh retain
+their behavior. Explicit retry, pagination and root refresh still use their
+existing fresh-read paths.
+
+The same mounted-view regression now observes zero requests before releasing the
+origins barrier and one afterwards. Native regression coverage also exercises
+successful sends, lost responses, media restoration, origin cancellation and
+owner withdrawal, read retries, historical commentary and shell ownership.
+This is controlled native evidence, not a measured improvement in hosted latency,
+a physical-device result or a distributed-build qualification.
+
+Preserve native test results at an explicit task-owned `-resultBundlePath`.
+The observed Xcode Logs/Test retention kept only the latest two runs and removed
+the initial RED result bundle during later runs. Its observed failure and full
+log remain evidence; a missing result bundle must not be reported as preserved.
+The GREEN and regression bundles were copied to the qualification directory.

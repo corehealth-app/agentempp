@@ -987,3 +987,31 @@ actor NeutralOriginalBlockingFileWorker: ConversationOriginalFileWorking {
     return try original.restage(in: staging)
   }
 }
+
+@MainActor @Suite("Neutral work history refresh signals", .serialized)
+struct FlowNeutralHistoryRefreshSignalTests {
+  @Test(arguments: [false, true])
+  func actualSendAndLostResponseRequestHistoryButReadOnlyRefreshDoesNot(_ loseResponse: Bool) async throws {
+    let f = try await neutralVisibleFixture(loseFirstPost: loseResponse)
+    defer { f.disk.remove() }
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, neutralIntakeEnabled: true)
+    let neutral = try #require(model.neutralIntake)
+    #expect(neutral.historyRefreshID == nil)
+    await neutral.refresh()
+    #expect(neutral.historyRefreshID == nil)
+    neutral.composer = "Comi uma caneca de leite com uma medida de whey"
+    await neutral.submit()
+    let afterSend = try #require(neutral.historyRefreshID)
+    #expect(!neutral.isWorking)
+    #expect(await f.http.stub.requests.contains {
+      $0.httpMethod == "POST" && $0.url?.path == "/api/mobile/v1/conversation/intakes"
+    })
+    await neutral.refresh()
+    #expect(neutral.historyRefreshID == afterSend)
+    await model.close()
+    await neutral.submit()
+    #expect(neutral.historyRefreshID == afterSend)
+  }
+}

@@ -69,6 +69,8 @@ final class FlowNeutralIntakeModel {
   private var operationID = UUID()
   private var closed = false
   private(set) var isWorking = false
+  // Session restoration is read-only; only completed user work requests another journal read.
+  private(set) var historyRefreshID: UUID?
   private var heldIntakeCount = 0
   var heldCount: Int { heldIntakeCount + (heldOriginal == nil ? 0 : 1) }
   var hasHeldOriginal: Bool { !closed && heldOriginal != nil }
@@ -284,7 +286,7 @@ final class FlowNeutralIntakeModel {
     }
   }
   func refresh() async {
-    await run { id in
+    await run(refreshHistory: false) { id in
       let publish = self.publisher(id)
       try await self.controller.refreshSession(publish)
       try await self.restoreOriginal()
@@ -678,7 +680,10 @@ final class FlowNeutralIntakeModel {
       for _ in 0..<count { onFactualEffect() }
     }
   }
-  private func run(_ action: @escaping @MainActor @Sendable (UUID) async throws -> Void) async {
+  private func run(
+    refreshHistory: Bool = true,
+    _ action: @escaping @MainActor @Sendable (UUID) async throws -> Void
+  ) async {
     guard !closed, !isWorking, !Task.isCancelled else { return }
     let id = UUID()
     operationID = id
@@ -712,6 +717,7 @@ final class FlowNeutralIntakeModel {
       task = nil
       isWorking = false
       mediaPhase = nil
+      if !closed && refreshHistory { historyRefreshID = id }
       if !closed { await onWorkSettled() }
     }
   }

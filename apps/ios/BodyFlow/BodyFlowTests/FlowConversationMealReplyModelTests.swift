@@ -1330,3 +1330,48 @@ extension ConversationMealQuestionOriginsTests {
     await model.close()
   }
 }
+
+#if canImport(UIKit)
+@MainActor @Suite("Flow automatic history loading", .serialized)
+struct FlowAutomaticHistoryLoadingTests {
+  @Test func mountedColdRefreshWaitsForOriginsBeforeItsSingleJournalRead() async throws {
+    let f = try await coldOriginsNativeFixture()
+    defer { f.disk.remove() }
+    let model = try await f.open(), barrier = ConversationControllerBarrier()
+    await f.server.holdOrigins(barrier)
+    let shell = SignUpRenderingProbe.host(
+      FlowConversationView(model: model), width: 390, height: 1200)
+    defer { shell.detach() }
+    let deadline = Task {
+      try? await Task.sleep(for: .seconds(5))
+      if !Task.isCancelled { await barrier.finish() }
+    }
+    let entered = await barrier.waitEnteredOrFinished()
+    deadline.cancel()
+    #expect(entered, "The mounted Flow task must reach its actual origins request")
+    shell.settle()
+    let beforeOrigins = await f.http.stub.requests.filter {
+      $0.url?.path == "/api/mobile/v1/conversation/journal"
+    }
+    #expect(beforeOrigins.isEmpty,
+      "Read-only session restoration must not start a journal request that its final refresh replaces")
+    await barrier.release()
+    for _ in 0..<100 {
+      shell.settle()
+      if model.recoveredMealQuestionOrigins.count == 2 && !model.isLoadingUnifiedHistory {
+        let reads = await f.http.stub.requests.filter {
+          $0.url?.path == "/api/mobile/v1/conversation/journal"
+        }
+        if !reads.isEmpty { break }
+      }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    let requests = await f.http.stub.requests
+    #expect(model.recoveredMealQuestionOrigins.count == 2)
+    #expect(requests.filter { $0.url?.path == "/api/mobile/v1/conversation/journal" }.count == 1)
+    #expect(requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+    #expect(model.savedEffectRevision == 0)
+    await model.close()
+  }
+}
+#endif

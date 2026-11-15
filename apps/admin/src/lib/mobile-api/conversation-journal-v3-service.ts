@@ -485,6 +485,30 @@ export function createConversationJournalV3Service(
             feedback: null,
           }
         }
+        // Each historical workout keeps its complete independent Auth/clinical
+        // observations. Overlap only these read-only enrichments, with a small
+        // request-local bound; publish nothing until all finish and the final
+        // current-policy fence below passes. Page order remains authoritative.
+        const workoutCommands = actualPage.items.flatMap((item) => {
+            if (item.kind === 'workout') return [item.command_id]
+            if (item.kind !== 'intake') return []
+            const child = requireValue(intakes.get(item.intake_id)).selection?.command
+            return child?.kind === 'workout.report' ? [child.command_id] : []
+          }),
+          workoutOutcomes = new Map<string, PublicConversationJournalV3Entry['outcome']>()
+        let nextWorkout = 0
+        async function hydrateWorkouts() {
+          while (nextWorkout < workoutCommands.length) {
+            if (closed) throw closed
+            const command = requireValue(workoutCommands[nextWorkout++]),
+              outcome = await workoutOutcome(command)
+            if (closed) throw closed
+            workoutOutcomes.set(command, workoutSnapshot(outcome))
+          }
+        }
+        await Promise.all(
+          Array.from({ length: Math.min(4, workoutCommands.length) }, () => hydrateWorkouts()),
+        )
         for (const item of actualPage.items) {
           let entry: PublicConversationJournalV3Entry
           if (item.kind === 'intake') {
@@ -506,7 +530,7 @@ export function createConversationJournalV3Service(
                 feedback: null,
               }
             else if (child?.kind === 'workout.report')
-              outcome = await workoutOutcome(child.command_id)
+              outcome = requireValue(workoutOutcomes.get(child.command_id))
             else if (child?.kind === 'meal.report') {
               const e = requireValue(mealEvents.get(`command/${child.command_id}`)),
                 t = requireValue(mealThreads.get(child.command_id))
@@ -543,7 +567,7 @@ export function createConversationJournalV3Service(
                 origin_epoch: w.binding.epoch,
               },
               input: observedInput(w.bound.command.source),
-              outcome: await workoutOutcome(w.bound.commandId),
+              outcome: requireValue(workoutOutcomes.get(w.bound.commandId)),
             }
           } else {
             const e = requireValue(mealEvents.get(item.event_id)),

@@ -14,7 +14,11 @@ import {
 } from './__fixtures__/conversation-thread-page'
 import { bindConversationIntake } from './conversation-intake-contracts'
 import { createConversationJournalV3Service } from './conversation-journal-v3-service'
-import { workoutDigest, workoutUUID } from './conversation-workout-contracts'
+import {
+  bindConversationWorkoutCommand,
+  workoutDigest,
+  workoutUUID,
+} from './conversation-workout-contracts'
 import { projectCurrentClinicalPublicPolicy } from './current-clinical-read-model'
 import { readCurrentClinicalState } from './current-clinical-state'
 import actualJournal from './testing/conversation-journal-v3-pg-golden.json'
@@ -145,6 +149,98 @@ describe('actual persisted SQL page through the default historical domain servic
     })
 })
 describe('real readonly journal v3 composition', () => {
+  it.each([
+    false,
+    true,
+  ])('overlaps independent historical workout reads with a bounded load and atomic Auth fence (revoked=%s)', async (revoke) => {
+    const h = setup(),
+      template = actualWorkout.workout_reconcile_actual_golden[0]?.bound_command.command
+    if (!template) throw new Error('Missing controlled original workout command')
+    const commands = Array.from({ length: 8 }, (_, index) => {
+        const commandId = `c1500000-0000-4000-8000-${String(8 - index).padStart(12, '0')}`
+        return bindConversationWorkoutCommand(h.who.userId, `cmsg1:${commandId}`, {
+          ...structuredClone(template),
+          command_id: commandId,
+        })
+      }),
+      admitted = '2026-11-04T12:01:00.000001Z'
+    Object.assign(h.raw, {
+      workouts: commands.map((command) => ({
+        binding: {
+          owner_id: h.who.userId,
+          command_id: command.commandId,
+          input_hash: command.inputHash,
+          epoch: h.epoch,
+          admitted_at: admitted,
+        },
+        source_input: command.command,
+      })),
+      items: commands.map((command) => ({
+        kind: 'workout',
+        event_id: `workout/${command.commandId}`,
+        at: admitted,
+        command_id: command.commandId,
+      })),
+    })
+    h.capture.mockImplementation(async () => journalClinical(h.raw.observed_at))
+    const releases = new Map<string, () => void>(),
+      reconciled: string[] = []
+    let hold = true,
+      active = 0,
+      maximum = 0
+    h.rpc.mockImplementation(async (name, rawArgs) => {
+      if (name === 'read_conversation_journal_page_v3') return { data: h.raw, error: null }
+      if (name !== 'reconcile_conversation_workout')
+        throw new Error('Read-only history cannot invoke another domain or provider')
+      const id = (rawArgs as Record<string, unknown>).p_command_id
+      if (typeof id !== 'string' || !commands.some((command) => command.commandId === id))
+        throw new Error('Unexpected workout authority')
+      reconciled.push(id)
+      active += 1
+      maximum = Math.max(maximum, active)
+      try {
+        if (hold) await new Promise<void>((resolve) => releases.set(id, resolve))
+        return {
+          data: { action: 'available', source: null, preparation: null, effect: null },
+          error: null,
+        }
+      } finally {
+        active -= 1
+      }
+    })
+    const observed = h.service.read(h.who, { epoch: h.epoch, limit: 10, cursor: null }).then(
+      (value) => ({ value, error: null }),
+      (error: unknown) => ({ value: null, error }),
+    )
+    try {
+      await vi.waitFor(() => expect(releases.size).toBeGreaterThan(1), { timeout: 1000 })
+      expect(maximum).toBeLessThanOrEqual(4)
+      if (revoke) h.currentAuth.isAdmin.mockResolvedValue(true)
+    } finally {
+      hold = false
+      for (const release of releases.values()) release()
+      await observed
+    }
+    const result = await observed
+    expect(maximum).toBeLessThanOrEqual(4)
+    if (revoke) {
+      expect(result.value).toBeNull()
+      expect(result.error).toBeDefined()
+      await expect(
+        h.service.read(h.who, { epoch: h.epoch, limit: 10, cursor: null }),
+      ).rejects.toBeDefined()
+    } else {
+      expect(result.error).toBeNull()
+      expect(result.value?.items.map((item) => item.event_id)).toEqual(
+        commands.map((command) => `workout/${command.commandId}`),
+      )
+      expect(result.value?.items.every((item) => item.outcome.status === 'pending')).toBe(true)
+      expect(new Set(reconciled).size).toBe(8)
+      expect(reconciled).toHaveLength(8)
+    }
+    expect(h.currentAuth.verifyAccessToken.mock.calls.length).toBeGreaterThan(8)
+    expect(h.capture.mock.calls.length).toBeGreaterThan(8)
+  })
   it.each([
     0, 1, 2,
   ])('reads actual SQL workout case %s through the real typed reader, including nullable energy', async (caseIndex) => {

@@ -93,6 +93,10 @@ struct TrainingExecutionView: View {
         }
       }.padding()
     }
+    // A different execution is a different document. Keep its first controls
+    // visible rather than inheriting the offset of a long history/plan list.
+    // Revisions of that same execution retain the user's reading position.
+    .id(model.session?.id)
     .accessibilityIdentifier("training.execution.root")
     .task { if model.home == nil && !model.isClosed { await model.load() } }
     .refreshable { await model.load() }

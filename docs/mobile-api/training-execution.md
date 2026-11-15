@@ -220,3 +220,27 @@ it. The current model preserves that uncertainty. Before activation, qualify a
 separate original-login absent-plus-permanent-fence resolution for that exact
 finish identity (including concurrent/in-flight and reset/day cases). Do not
 replace missing evidence with a generic pending deletion or an unrelated receipt.
+
+
+### R148: native document position and qualification boundary
+
+The execution scroll document is identified by the selected session UUID. A new
+execution or history selection starts at its first controls, instead of inheriting
+the scroll offset of a long plan/history list. Saving a revision of the same
+session keeps that document identity and reading position. This is presentation
+state only: it does not create or replay a command, alter the original Auth scope,
+or change the pending operation and completion contracts.
+
+The connected Simulator regression failed with the session header above the
+scroll viewport; the identical start gesture passed after this change, without a
+corrective scroll. The new completion from the previous QA round was also read
+after a process restart, with all six feedback sections and the original saved
+set. Its native system share sheet was opened and dismissed without selecting a
+destination or sending content.
+
+The qualified completion provider remains an explicit bundled opt-in for the
+validated current-clinical conversation candidate. Default builds retain progress
+v1; an invalid explicit selection disables training only, and a v2 failure never
+falls back to a v1 writer. These are connected staging/Simulator checks, not
+physical-device, TestFlight or Roberto installation/acceptance evidence. Full T5
+contract review and the other approved delivery obligations remain open.

@@ -33,6 +33,9 @@ struct FlowConversationMealEditorContent: View {
   @State private var discardID: ConversationMealEditOutboxID?
   private var language: SupportedAppLanguage { BodyFlowPresentationLanguage.resolve(locale) }
   private var english: Bool { language == .englishUnitedStates }
+  private var quantityUnitLabel: String {
+    model.quantityUnit == "scoop" && !english ? "medida" : model.quantityUnit
+  }
   var body: some View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
       if model.presentation != nil {
@@ -45,7 +48,7 @@ struct FlowConversationMealEditorContent: View {
           .font(BodyFlowTypography.cardTitle)
           if !model.foodName.isEmpty {
             Text(verbatim: model.foodName).accessibilityIdentifier("conversation.edit.locked-name")
-            Text(verbatim: "\(model.quantityText(language: language)) \(model.quantityUnit)")
+            Text(verbatim: "\(model.quantityText(language: language)) \(quantityUnitLabel)")
               .accessibilityIdentifier("conversation.edit.locked-quantity")
           }
           if model.pendingItems.count > 1 {
@@ -86,7 +89,7 @@ struct FlowConversationMealEditorContent: View {
             )
             .keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
             .accessibilityIdentifier("conversation.edit.quantity")
-            Text(verbatim: model.quantityUnit).accessibilityIdentifier("conversation.edit.unit")
+            Text(verbatim: quantityUnitLabel).accessibilityIdentifier("conversation.edit.unit")
           }
           if model.canToggleQuantityUnit(language: language) {
             Button(

@@ -371,6 +371,23 @@ struct FlowConversationMealEditModelTests {
         }, diagnostic)
       await model.close()
     }
+    @Test func portugueseWheyEditorShowsMeasureWithoutChangingItsCanonicalReference() async throws {
+      let f = try FlowEditUIFixture("whey")
+      defer { f.base.disk.remove() }
+      let model = try await openEditor(f)
+      try model.beginEditing(group: f.group, itemID: #require(f.group.current?.items.first?.id))
+      model.setQuantityText("0,5", language: .portugueseBrazil)
+      let host = SignUpRenderingProbe.host(
+        FlowConversationMealEditorContent(model: model)
+          .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 900)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      #expect(nodes.contains { $0.identifier == "conversation.edit.unit" && $0.label == "medida" })
+      #expect(model.quantityUnit == "scoop")
+      #expect(model.quantityText(language: .portugueseBrazil) == "0,5")
+      #expect(model.canSave(language: .portugueseBrazil))
+      await model.close()
+    }
     @Test func nativeUncertainEditorExposesOriginalReadOnlyFieldsAndReconciliationOnly()
       async throws
     {

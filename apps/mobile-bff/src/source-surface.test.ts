@@ -2159,6 +2159,19 @@ describe('authoritative Mobile API source surface', () => {
     )
   })
 
+  test.each([
+    false,
+    true,
+  ])('detects duplicate bundle targets independently of manifest order (%s)', (reverse) => {
+    const entries = Object.entries(currentAppPathsManifest()).sort(([a], [b]) => a.localeCompare(b))
+    if (reverse) entries.reverse()
+    const appPaths = Object.fromEntries(entries)
+    appPaths['/api/mobile/v1/today/route'] = appPaths['/api/mobile/v1/me/route']
+    expect(() => withSyntheticBuild(appPaths, inspectBuildSurface)).toThrow(
+      /APP_PATH_BUNDLE_TARGET_DUPLICATE/,
+    )
+  })
+
   test('excludes only the exact internal not-found page without rewriting other page identities', () => {
     const appPaths = {
       ...currentAppPathsManifest(),

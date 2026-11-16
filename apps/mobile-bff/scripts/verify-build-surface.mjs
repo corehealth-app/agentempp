@@ -129,6 +129,11 @@ function validateApplicationRouteBundles(buildRoot, entries) {
       throw new Error(`APP_PATH_BUNDLE_TARGET_DUPLICATE:${entry.target}`)
     }
     targets.set(entry.target, entry.appPath)
+  }
+
+  // Classify shared targets before validating either route's individual
+  // identity, independently of Next's manifest insertion order.
+  for (const entry of entries) {
     const approvedWebhook =
       entry.appPath === revenueCatAppPath && entry.target === revenueCatBundleTarget
     if (!isMobileRouteBundleTarget(entry.target) && !approvedWebhook) {

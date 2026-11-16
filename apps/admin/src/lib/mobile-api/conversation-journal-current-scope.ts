@@ -50,9 +50,10 @@ async function patient(auth: ConversationReadonlyAuth, user: string): Promise<Mo
   }
   return parseConversationReadonlyPatient(raw, user)
 }
-/** Journal-only serial, sticky clinical observations. Mapping checks remain
- * fresh before and after each observation; this lane grants no write capability,
- * bootstrap, token renewal or authority derived from historical rows. */
+/** Journal-only serial, sticky clinical observations. Concurrent callers may
+ * share a snapshot only when all were admitted before its capture begins.
+ * Fresh pre/post Auth mapping remains required; completed snapshots are never
+ * reused. This lane grants no write, bootstrap or token-renewal capability. */
 export function createConversationJournalCurrentScope<
   Scope extends ConversationCurrentScopeBinding,
 >(
@@ -91,12 +92,16 @@ export function createConversationJournalCurrentScope<
     if (p.id !== owner || p.authUserId !== auth.authUserId)
       throw failure(409, 'conversation_patient_changed')
   }
-  async function observeNow(scope?: Scope) {
+  async function observeNow(scope: Scope | undefined, sealAdmission: () => void) {
     if (closed) throw closed
     try {
       if (scope !== undefined && !isDeepStrictEqual(snapshot(scope), expectedScope))
         throw failure(409, 'conversation_scope_changed')
       await checkMapping()
+      if (closed) throw closed
+      // A caller arriving after this boundary needs a subsequent snapshot;
+      // an in-flight capture may already have observed an earlier DB state.
+      sealAdmission()
       const state = readCurrentClinicalState(
         await captureCurrentClinicalState(clinical, {
           userId: owner,
@@ -109,28 +114,46 @@ export function createConversationJournalCurrentScope<
       const at = conversationJournalInstant(state.observed_at)
       if (previous !== null && at < previous) throw failure(409, 'conversation_scope_changed')
       await checkMapping()
+      if (closed) throw closed
       previous = at
       return state
     } catch (error) {
       closed =
         error instanceof MobileApiError ? error : failure(503, 'conversation_scope_unavailable')
       throw closed
+    } finally {
+      sealAdmission()
     }
   }
   let lane: Promise<void> = Promise.resolve()
+  let pending: {
+    admission: { open: boolean }
+    work: Promise<Awaited<ReturnType<typeof observeNow>>>
+  } | null = null
   function observe(scope?: Scope) {
+    if (closed) return Promise.reject(closed)
     let wanted: Scope | undefined
     try {
       wanted = scope === undefined ? undefined : snapshot(scope)
-    } catch {
-      closed = failure(503, 'conversation_scope_unavailable')
+      if (wanted !== undefined && !isDeepStrictEqual(wanted, expectedScope))
+        throw failure(409, 'conversation_scope_changed')
+    } catch (error) {
+      closed =
+        error instanceof MobileApiError ? error : failure(503, 'conversation_scope_unavailable')
       return Promise.reject(closed)
     }
-    const work = lane.then(() => observeNow(wanted))
-    lane = work.then(
-      () => undefined,
-      () => undefined,
+    if (pending?.admission.open) return pending.work
+    const admission = { open: true }
+    const work = lane.then(() =>
+      observeNow(wanted, () => {
+        admission.open = false
+      }),
     )
+    pending = { admission, work }
+    const clear = () => {
+      if (pending?.work === work) pending = null
+    }
+    lane = work.then(clear, clear)
     return work
   }
   return Object.freeze({

@@ -21,6 +21,81 @@ function setup() {
 }
 
 describe('journal-only current owner and epoch observation', () => {
+  it('shares a fresh observation only among requests admitted before its clinical read starts', async () => {
+    const f = setup()
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    f.authPort.verifyAccessToken.mockImplementationOnce(async () => {
+      await held
+      return f.auth.identity
+    })
+    const first = f.scope.observe(f.binding)
+    await vi.waitFor(() => expect(f.authPort.verifyAccessToken).toHaveBeenCalledTimes(1))
+    const second = f.scope.observe(f.binding)
+    release()
+    expect(await Promise.all([first, second])).toEqual([f.profile, f.profile])
+    // Both callers precede this actual snapshot. No caller receives an older
+    // completed observation, and both wait for its fresh post-Auth mapping.
+    expect(f.capture).toHaveBeenCalledTimes(1)
+    expect(f.authPort.verifyAccessToken).toHaveBeenCalledTimes(2)
+    expect(f.authPort.isAdmin).toHaveBeenCalledTimes(2)
+    expect(f.authPort.loadPatient).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts another fresh observation for a caller arriving after clinical capture begins', async () => {
+    const f = setup()
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    f.capture.mockImplementationOnce(async () => {
+      await held
+      return f.profile
+    })
+    const first = f.scope.observe()
+    await vi.waitFor(() => expect(f.capture).toHaveBeenCalledTimes(1))
+    const second = f.scope.observe()
+    release()
+    expect(await Promise.all([first, second])).toEqual([f.profile, f.profile])
+    expect(f.capture).toHaveBeenCalledTimes(2)
+    expect(f.authPort.verifyAccessToken).toHaveBeenCalledTimes(4)
+  })
+
+  it('never reuses a completed observation for a later caller', async () => {
+    const f = setup()
+    expect(await f.scope.observe()).toEqual(f.profile)
+    expect(await f.scope.observe()).toEqual(f.profile)
+    expect(f.capture).toHaveBeenCalledTimes(2)
+    expect(f.authPort.verifyAccessToken).toHaveBeenCalledTimes(4)
+  })
+
+  it('refuses every waiting caller when the shared post-capture mapping becomes admin', async () => {
+    const f = setup()
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    f.authPort.verifyAccessToken.mockImplementationOnce(async () => {
+      await held
+      return f.auth.identity
+    })
+    f.authPort.isAdmin.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const first = f.scope.observe()
+    await vi.waitFor(() => expect(f.authPort.verifyAccessToken).toHaveBeenCalledTimes(1))
+    const second = f.scope.observe()
+    const results = Promise.allSettled([first, second])
+    release()
+    for (const result of await results) {
+      expect(result.status).toBe('rejected')
+      if (result.status === 'rejected')
+        expect(result.reason).toMatchObject({ status: 403, code: 'patient_admin_account_conflict' })
+    }
+    expect(f.capture).toHaveBeenCalledTimes(1)
+    expect(await f.scope.check()).toBe(false)
+  })
+
   it('requires both fresh mapping reads before publishing clinical state', async () => {
     const f = setup()
     let release: () => void = () => {}

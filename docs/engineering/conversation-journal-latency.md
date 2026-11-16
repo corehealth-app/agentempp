@@ -99,3 +99,29 @@ The observed Xcode Logs/Test retention kept only the latest two runs and removed
 the initial RED result bundle during later runs. Its observed failure and full
 log remain evidence; a missing result bundle must not be reported as preserved.
 The GREEN and regression bundles were copied to the qualification directory.
+
+
+## Fresh observation waves
+
+A later connected round still exposed intermittent cold-history refusal. One
+instrumented native read completed in 24,434 ms with a single request, and the
+same ten-entry HTTP page took 24,810 ms; other cold native rounds displayed
+unavailable history. Their exact errors were not observed, so they are not
+retrospectively classified as timeouts. Native reliability remains a release gate.
+
+The journal lane previously queued a complete Auth/mapping/clinical observation
+for every nested read-only caller, including concurrent enrichment operations.
+It now admits concurrent callers to one **new** observation only until its
+clinical capture starts. Every admitted caller precedes the actual snapshot and
+waits for both its fresh pre- and post-capture verified Auth, non-admin and patient
+mapping checks. Admission closes before invoking capture. A caller arriving during
+capture or its post-checks queues a subsequent real observation; a completed
+result is never reused. These batches are request-local and convey no write or
+historical authority. Shared protected command scopes remain unchanged.
+
+Barrier regressions distinguish calls before capture, calls during capture and
+calls after completion. Concurrent post-capture admin revocation refuses every
+waiting caller, and existing backwards-clock/owner/epoch/sticky-refusal tests
+remain. The same native request deadline, four-workout bound, complete feedback,
+immutable page order and final fresh policy fence remain. Test results establish
+these semantics; they do not establish hosted timing or native reliability.

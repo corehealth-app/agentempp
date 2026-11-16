@@ -278,14 +278,16 @@ function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string 
   return restored
 }
 
-/** R127 extends only the complete bound-photo pointer after an independently
- * proved consumption predicate. The observed build changes only module65556;
- * all other19 complete module hashes, consumers and negative controls match.
- * Pin the full new source/body, rather than masking the changed executable. */
-function certifyPhotoReportR127(body: string): string {
-  expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '2046e9b3d50e7b17b4cb3c3aaff106d5296c47414430baa3d9358cd26da73221',
-  )
+/** R163 additionally accounts for a positive bound-photo report whose caption
+ * is labeled media_pointer and retains its genuine consumption predicate.
+ * The entire actual module table was compared: only65556 changes; the other19
+ * complete certified bodies and moved parser still match. Pin the whole new
+ * source/body; retain every consumer scan and executable-tampering refusal. */
+function certifyPhotoReportR163(body: string): string {
+  expect(
+    createHash('sha256').update(body).digest('hex'),
+    'certified nutrition-shared module contents / complete photo report validator',
+  ).toBe('a5af333ad6fb31be8e67604e1c8db7d05b7403359d573e3b3a49080aae17b9b4')
   return body
 }
 
@@ -314,7 +316,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('c6c04b6665b9545ac9d47751e9585c5cdb2581bae3d64b621cbcc6d0eb6224c1')
+  ).toBe('6cdfdcf826ad75e03b2ee7e73f1f46a3060c24373c45c21030bfac0d0ed5308a')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -368,7 +370,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
               id === '67584'
                 ? restoreImageParserLinkR106('67584', body)
                 : id === '65556'
-                  ? certifyPhotoReportR127(body)
+                  ? certifyPhotoReportR163(body)
                   : body,
             )
             .digest('hex')}`,
@@ -390,7 +392,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:2046e9b3d50e7b17b4cb3c3aaff106d5296c47414430baa3d9358cd26da73221',
+      '65556:a5af333ad6fb31be8e67604e1c8db7d05b7403359d573e3b3a49080aae17b9b4',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
       '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',
@@ -1725,6 +1727,15 @@ describe('authoritative Mobile API source surface', () => {
     expect(() => certifyNutritionJournalSplitContent(text.replace('13300:', '999999:'))).toThrow(
       /certified nutrition-shared module contents/,
     )
+    expect(text.split('["reported","media_pointer"].includes')).toHaveLength(2)
+    expect(() =>
+      certifyNutritionJournalSplitContent(
+        text.replace(
+          '["reported","media_pointer"].includes',
+          '["reported","nominal_list"].includes',
+        ),
+      ),
+    ).toThrow(/certified nutrition-shared module contents/)
     expect(text.split('quantity_g_estimate:0,confidence:')).toHaveLength(2)
     expect(() =>
       certifyNutritionJournalSplitContent(

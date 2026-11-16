@@ -236,7 +236,7 @@ function trailingPhotoPointerStart(
 ): number | null {
   if (
     !['media_caption', 'media_context'].includes(source.unit) ||
-    source.classification !== 'reported' ||
+    !['reported', 'media_pointer'].includes(source.classification) ||
     !media ||
     !['meal_photo', 'conversation_photo'].includes(media.kind) ||
     visualCount === 0
@@ -494,8 +494,15 @@ export function validateConversationMealInterpretationModel(
           mark('unbound_span')
         if (span.kind === 'food') hasFood = true
       }
-      if (s.classification === 'reported' && reports !== 1) mark('report_count')
-      if (s.classification !== 'reported' && reports) mark('report_count')
+      // A provider can label the whole caption as a photo pointer while still
+      // retaining its genuine consumption predicate. Only the fully validated
+      // bound-photo tail above accounts for that reporting span; a pointer
+      // label alone cannot establish a report or discard any other discourse.
+      const reportedPhotoPointer =
+        s.classification === 'media_pointer' && photoPointerStart !== null
+      if ((s.classification === 'reported' || reportedPhotoPointer) && reports !== 1)
+        mark('report_count')
+      if (s.classification !== 'reported' && !reportedPhotoPointer && reports) mark('report_count')
       if (s.classification === 'media_pointer' && !source.media_binding)
         mark('missing_media_action')
     }

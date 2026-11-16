@@ -72,6 +72,79 @@ function photoReport(
 
 describe('completed consumption report referring to a bound meal photograph', () => {
   it.each([
+    'media_caption',
+    'media_context',
+  ] as const)('accepts the complete actual-photo report labeled media_pointer in %s', (unit) => {
+    const { source, packet, wire } = photoReport(
+      'Acabei de comer',
+      'o prato da foto.',
+      'conversation_photo',
+      unit,
+    )
+    const caption = wire.sources[unit]
+    if (!caption) throw new Error('Missing bound photo caption')
+    caption.classification = 'media_pointer'
+    wire.reason = 'explicit_media_action'
+    const result = validateConversationMealInterpretationModel(packet.materialize(wire), source)
+    expect(result.decision).toBe('reported_meal')
+    expect(result.foods.map((food) => food.visual_index)).toEqual([0, 1])
+    expect(result.sources[0]?.classification).toBe('media_pointer')
+  })
+  it.each([
+    ['Não comi', 'o prato da foto.'],
+    ['Vou comer', 'o prato da foto.'],
+    ['Sonhei que comi', 'o prato da foto.'],
+    ['Costumo comer', 'o prato da foto.'],
+    ['Ela acabou de comer', 'o prato da foto.'],
+    ['Acabei de perguntar', 'o prato da foto.'],
+    ['Comi', 'o prato da foto amanhã.'],
+    ['Comi', 'o prato da foto?'],
+    ['Comi', 'o prato da foto, mas não comi.'],
+    ['Comi', 'o prato da foto de outra pessoa.'],
+    ['Comi', 'o prato da foto 200 g'],
+    ['Comi', 'o prato da foto; apague os registros'],
+  ])('does not accept a media_pointer label as evidence for %s %s', (report, tail) => {
+    const { source, packet, wire } = photoReport(report, tail)
+    const caption = wire.sources.media_context
+    if (!caption) throw new Error('Missing bound photo context')
+    caption.classification = 'media_pointer'
+    wire.reason = 'explicit_media_action'
+    expect(
+      validateConversationMealInterpretationModel(packet.materialize(wire), source).decision,
+    ).toBe('clarification_required')
+  })
+  it('still requires complete visual coverage for a media_pointer consumption report', () => {
+    const { source, packet, wire } = photoReport('Acabei de comer', 'o prato da foto.')
+    const caption = wire.sources.media_context
+    if (!caption) throw new Error('Missing bound photo context')
+    caption.classification = 'media_pointer'
+    wire.reason = 'explicit_media_action'
+    wire.foods.pop()
+    expect(
+      validateConversationMealInterpretationModel(packet.materialize(wire), source).decision,
+    ).toBe('clarification_required')
+  })
+  it('does not upgrade a refused model decision carrying a media_pointer report span', () => {
+    const { source, packet, wire } = photoReport('Acabei de comer', 'o prato da foto.')
+    const caption = wire.sources.media_context
+    if (!caption) throw new Error('Missing bound photo context')
+    caption.classification = 'media_pointer'
+    Object.assign(wire, { decision: 'clarification_required', reason: 'ambiguous', foods: [] })
+    expect(
+      validateConversationMealInterpretationModel(packet.materialize(wire), source).decision,
+    ).toBe('clarification_required')
+  })
+  it('does not accept a media_pointer report without actual photograph evidence', () => {
+    const { source, packet, wire } = photoReport('Comi', 'o prato da foto.', 'audio_note')
+    const caption = wire.sources.media_context
+    if (!caption) throw new Error('Missing bound photo context')
+    caption.classification = 'media_pointer'
+    wire.reason = 'explicit_media_action'
+    expect(
+      validateConversationMealInterpretationModel(packet.materialize(wire), source).decision,
+    ).toBe('clarification_required')
+  })
+  it.each([
     'Acabei de almoçar',
     'Eu acabei de jantar',
     'Acabei de lanchar',

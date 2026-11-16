@@ -221,7 +221,11 @@ struct FlowConversationMealPresentationTests {
   {
     let f = try FlowActualEditLifecycleFixture()
     let disk = try OutboxDiskFixture()
-    defer { disk.remove() }
+    let edits = try EditOutboxFixture()
+    defer {
+      disk.remove()
+      edits.remove()
+    }
     let lifecycle = ConversationHTTPTestLifecycle()
     await lifecycle.replace(
       .init(userID: f.authUserID, generation: 7, bearer: "synthetic-lifecycle"))
@@ -229,6 +233,8 @@ struct FlowConversationMealPresentationTests {
     let owner = try ConversationOutboxOwner(lease: await lifecycle.leaseForRequest())
     let keys = OutboxKeychainFake()
     await keys.seed(disk.key.withUnsafeBytes { Data($0) }, owner: owner.hash)
+    let editKeys = OutboxKeychainFake()
+    await editKeys.seed(edits.key.withUnsafeBytes { Data($0) }, owner: owner.hash)
     try disk.store.update(owner: owner, key: disk.key) {
       $0.append(
         .init(
@@ -246,7 +252,11 @@ struct FlowConversationMealPresentationTests {
     }
     let model = try await FlowConversationModel.open(
       transport: http.transport, lifecycle: lifecycle, store: disk.store,
-      keyVault: .init(service: "synthetic", security: keys))
+      keyVault: .init(service: "synthetic", security: keys),
+      editing: .init(
+        store: edits.store,
+        keyVault: .init(
+          service: ConversationMealEditOutboxSession.keychainService, security: editKeys)))
     await model.sendQueued(commandID: f.command.commandID)
     let original = try #require(model.savedRows.first)
     let originalFeedback = try #require(original.feedback)
@@ -264,6 +274,26 @@ struct FlowConversationMealPresentationTests {
       current.revision == 7
         && current.current?.items.first(where: { $0.foodName.contains("whey") })?.quantityG == 35)
     #expect(current.current?.items.first(where: { $0.foodName.contains("whey") })?.kcal == 123.2)
+    #if canImport(UIKit)
+      // Neutral and V3 transcript rows mount these controls, rather than the
+      // older saved-response component. Verify what those actual rows expose.
+      #expect(model.canLoadMealDetails(commandID: original.id))
+      let controls = SignUpRenderingProbe.host(
+        FlowConversationMealControlsContent(model: model, commandID: original.id)
+          .environment(\.locale, Locale(identifier: "en_US")), width: 390, height: 1600)
+      defer { controls.detach() }
+      let whey = try #require(current.current?.items.first(where: { $0.foodName.contains("whey") }))
+      let nodes = controls.nodes()
+      let node = try #require(
+        nodes.first {
+          $0.identifier == "conversation.meal.current-item.\(whey.id.uuidString.lowercased())"
+            && $0.isElement
+        }, Comment(rawValue: nodes.map(\.description).joined(separator: "\n")))
+      #expect(node.label.contains("35 g"))
+      #expect(
+        node.label.contains("123.2") && node.label.contains("kcal"),
+        "The edited item's current nutrition must appear in the actual chat controls")
+    #endif
     #expect(model.savedRows.first?.feedback == originalFeedback)
     #expect(model.savedRows.first?.receipt == original.receipt)
     await http.stub.respond { _, _ in .failure(503, "conversation_meal_edit_unavailable") }

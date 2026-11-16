@@ -16,7 +16,8 @@
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
           if let group = model.currentGroup(commandID: commandID) {
             FlowConversationMealGroupView(
-              group: group, editing: model.mealEditActions(commandID: commandID), showsFacts: false,
+              group: group, editing: model.mealEditActions(commandID: commandID),
+              showsFacts: group.revision > 0,
               showsCurrentQuantity: true)
           } else if model.isLoadingMealDetails(commandID: commandID) {
             ProgressView(english ? "Loading current meal…" : "Carregando refeição atual…")

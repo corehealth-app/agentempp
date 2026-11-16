@@ -140,6 +140,17 @@ function stored() {
   }
 }
 describe('public command submission and effect-only reconciliation', () => {
+  it('identifies a missing legacy epoch without initializing it during GET', async () => {
+    const f = fixture()
+    f.p.clinical.capture.mockResolvedValue({ ...clinical(), epoch: null })
+    await expect(f.service.session(candidateAuth)).rejects.toMatchObject({
+      status: 409,
+      code: 'conversation_session_initialization_required',
+    })
+    expect(f.p.writer.prepare).not.toHaveBeenCalled()
+    expect(f.p.writer.commit).not.toHaveBeenCalled()
+    expect(f.p.register).not.toHaveBeenCalled()
+  })
   it('observes an authenticated current server epoch without a food/model/writer operation', async () => {
     const f = fixture(),
       reply = await f.service.session(candidateAuth)

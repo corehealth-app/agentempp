@@ -16,6 +16,7 @@ import { basename, dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 import { describe, expect, test } from 'vitest'
+import { priorSessionObservationRecords } from '../scripts/session-initialization-surface.mjs'
 import {
   completionBuildPaths,
   completionTransports,
@@ -446,6 +447,31 @@ function restoreWorkoutFacadeLinkR140(body: string): string {
 }
 function certifyStructuredIntakeRouterR128(body: string): string {
   body = restoreWorkoutFacadeLinkR140(body)
+  // R161 adds only the typed missing-epoch refusal to neutral GET discovery.
+  // Pin the complete current source/body, then reverse that ONE literal clause
+  // and require the original R141 body below. No arbitrary changed code or
+  // initialization writer is certified as a read-only bridge.
+  const initializationRefusal =
+    'if(await r(),null===e.epoch)throw new i.t0(409,"conversation_session_initialization_required","Conversation session initialization is required");'
+  if (body.includes(initializationRefusal)) {
+    expect(
+      createHash('sha256')
+        .update(
+          readFileSync(
+            resolve(appRoot, '../admin/src/lib/mobile-api/conversation-intake-session.ts'),
+          ),
+        )
+        .digest('hex'),
+    ).toBe('3468759b4fad5a058ebf2aab1e6bdc4644b6a8df3c7f14e640e567af761c3d19')
+    expect(createHash('sha256').update(body).digest('hex')).toBe(
+      '77aecc5d3cb5ce51243f5ab0894094328b64208a2264bfce4ca21be0ed82aeed',
+    )
+    expect(body.split(initializationRefusal)).toHaveLength(2)
+    body = body.replace(initializationRefusal, 'await r();')
+    expect(createHash('sha256').update(body).digest('hex')).toBe(
+      '4d88e8a1503d7960ffc7ce0cdda285739c07b0a9540ff77b524f44661518abf0',
+    )
+  }
   // R141's organized additive imports change only Webpack's allocation of
   // the already-certified byte-identical image parser. Certify the complete
   // raw router AND every complete moved parser body before restoring exactly
@@ -1066,19 +1092,49 @@ const executionRouteFiles = new Set([
 ])
 
 function sourceRecords(): Array<{ path: string; exports: string[] }> {
-  return walkFiles(sourceRoot)
-    .filter((path) => path.endsWith(`${sep}route.ts`))
-    .filter(
-      (path) =>
-        !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')) &&
-        !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')),
-    )
-    .map((path) => ({
-      path: relative(sourceRoot, path).split(sep).join('/'),
-      exports: routeExports(readFileSync(path, 'utf8')),
-    }))
-    .sort((left, right) => left.path.localeCompare(right.path, 'en'))
+  return priorSessionObservationRecords(
+    walkFiles(sourceRoot)
+      .filter((path) => path.endsWith(`${sep}route.ts`))
+      .filter(
+        (path) =>
+          !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')) &&
+          !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')),
+      )
+      .map((path) => ({
+        path: relative(sourceRoot, path).split(sep).join('/'),
+        exports: routeExports(readFileSync(path, 'utf8')),
+      }))
+      .sort((left, right) => left.path.localeCompare(right.path, 'en')),
+  )
 }
+
+describe('session initialization additive method guard', () => {
+  const session = {
+    path: 'conversation/session/route.ts',
+    exports: ['GET', 'POST', 'dynamic', 'runtime'],
+  }
+  test('subtracts only the approved POST and preserves every unrelated record', () => {
+    const neighbor = { path: 'neighbor/route.ts', exports: ['GET', 'runtime'] }
+    expect(priorSessionObservationRecords([session, neighbor])).toEqual([
+      { path: session.path, exports: ['GET', 'dynamic', 'runtime'] },
+      neighbor,
+    ])
+    expect(session.exports).toContain('POST')
+  })
+  test('refuses an absent, duplicated, moved or widened initialization method', () => {
+    for (const records of [
+      [],
+      [session, session],
+      [{ ...session, path: 'other/route.ts' }],
+      [{ ...session, exports: ['GET', 'dynamic', 'runtime'] }],
+      [{ ...session, exports: ['DELETE', ...session.exports] }],
+    ]) {
+      expect(() => priorSessionObservationRecords(records)).toThrow(
+        'SESSION_INITIALIZATION_EXPORTS',
+      )
+    }
+  })
+})
 
 function hashRecords(records: Array<{ path: string; exports: string[] }>) {
   const canonicalStream = records
@@ -1183,6 +1239,9 @@ describe('authoritative Mobile API source surface', () => {
         ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
       ]),
       body = bodies.get('6535') ?? ''
+    expect(body).toContain(
+      'if(await r(),null===e.epoch)throw new i.t0(409,"conversation_session_initialization_required","Conversation session initialization is required");',
+    )
     expect(() => certifyIntakeMediaBridgeR102(body)).not.toThrow()
     for (const changed of [
       body.replace('o:()=>ao,', ''),
@@ -1193,6 +1252,7 @@ describe('authoritative Mobile API source surface', () => {
       body.replace('media_temporarily_unavailable', 'media_projection_required'),
       body.replace('label_product_required', 'routing_unavailable'),
       body.replace('image_description_required', 'routing_unavailable'),
+      body.replace('conversation_session_initialization_required', 'unapproved_initialization'),
       body.replace(/n=c\((?:63867|86248)\)/, 'n=c(86249)'),
     ])
       expect(() => certifyIntakeMediaBridgeR102(changed)).toThrow()

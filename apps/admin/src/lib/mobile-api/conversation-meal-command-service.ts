@@ -385,7 +385,12 @@ export function createConversationMealCommandService(
           owner = authenticatedReevaluationOwner(who),
           authUserId = uuid.parse(who.authUserId.toLowerCase()),
           observed = await captureCurrentClinicalState(clinical, { userId: owner, mode: 'profile' })
-        if (!observed.epoch) return unavailable()
+        if (!observed.epoch)
+          throw new MobileApiError(
+            409,
+            'conversation_session_initialization_required',
+            'Conversation session initialization is required',
+          )
         return freezeInterpretation({
           schema: 'conversation.session.v1',
           auth_user_id: authUserId,

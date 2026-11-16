@@ -12,6 +12,7 @@ import {
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
+import { priorSessionObservationRecords } from '../scripts/session-initialization-surface.mjs'
 import { completionTransports } from '../scripts/training-completion-surface.mjs'
 
 const testDirectory = dirname(fileURLToPath(import.meta.url))
@@ -99,82 +100,86 @@ function sourceExports(source: string): string[] {
 }
 
 function sourceRecords(includeExecution = false, includeCompletion = false): RouteRecord[] {
-  return walkFiles(sourceRoot)
-    .filter((path) => path.endsWith(`${sep}route.ts`))
-    .filter(
-      (path) =>
-        includeCompletion ||
-        !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')),
-    )
-    .filter(
-      (path) =>
-        includeExecution ||
-        !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')),
-    )
-    .map((path) => ({
-      path: relative(sourceRoot, path).split(sep).join('/'),
-      exports: sourceExports(readFileSync(path, 'utf8')),
-    }))
-    .sort((left, right) => left.path.localeCompare(right.path, 'en'))
+  return priorSessionObservationRecords(
+    walkFiles(sourceRoot)
+      .filter((path) => path.endsWith(`${sep}route.ts`))
+      .filter(
+        (path) =>
+          includeCompletion ||
+          !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')),
+      )
+      .filter(
+        (path) =>
+          includeExecution ||
+          !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')),
+      )
+      .map((path) => ({
+        path: relative(sourceRoot, path).split(sep).join('/'),
+        exports: sourceExports(readFileSync(path, 'utf8')),
+      }))
+      .sort((left, right) => left.path.localeCompare(right.path, 'en')),
+  )
 }
 
 function wrapperRecords(includeExecution = false, includeCompletion = false): RouteRecord[] {
-  return walkFiles(wrapperRoot)
-    .filter((path) => path.endsWith(`${sep}route.ts`))
-    .filter(
-      (path) =>
-        includeCompletion ||
-        !completionTransports.has(relative(wrapperRoot, path).split(sep).join('/')),
-    )
-    .filter(
-      (path) =>
-        includeExecution ||
-        !executionRouteFiles.has(relative(wrapperRoot, path).split(sep).join('/')),
-    )
-    .map((path) => {
-      const relativePath = relative(wrapperRoot, path).split(sep).join('/')
-      const wrapper = readFileSync(path, 'utf8')
-      expect(wrapper).not.toMatch(/export\s+\*/)
-      const statements = Array.from(
-        wrapper.matchAll(/^export\s*\{\s*([^}]+?)\s*\}\s*from\s*['"]([^'"]+)['"]\s*;?\s*$/gm),
+  return priorSessionObservationRecords(
+    walkFiles(wrapperRoot)
+      .filter((path) => path.endsWith(`${sep}route.ts`))
+      .filter(
+        (path) =>
+          includeCompletion ||
+          !completionTransports.has(relative(wrapperRoot, path).split(sep).join('/')),
       )
-      expect(statements, `single named re-export required in ${path}`).toHaveLength(1)
-      const statement = statements[0]
-
-      const residue = wrapper
-        .replace(statement[0], '')
-        .replace(/^export\s+const\s+runtime\s*=\s*['"]nodejs['"]\s*;?\s*$/gm, '')
-        .replace(
-          relativePath === 'conversation/intakes/session/route.ts'
-            ? /^export\s+const\s+dynamic\s*=\s*['"]force-dynamic['"]\s*;?\s*$/gm
-            : /$^/,
-          '',
+      .filter(
+        (path) =>
+          includeExecution ||
+          !executionRouteFiles.has(relative(wrapperRoot, path).split(sep).join('/')),
+      )
+      .map((path) => {
+        const relativePath = relative(wrapperRoot, path).split(sep).join('/')
+        const wrapper = readFileSync(path, 'utf8')
+        expect(wrapper).not.toMatch(/export\s+\*/)
+        const statements = Array.from(
+          wrapper.matchAll(/^export\s*\{\s*([^}]+?)\s*\}\s*from\s*['"]([^'"]+)['"]\s*;?\s*$/gm),
         )
-        .replace(
-          relativePath === 'auth/password-recovery/route.ts'
-            ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
-            : boundedConversationRoutes.has(relativePath)
-              ? /^export\s+const\s+maxDuration\s*=\s*120\s*;?\s*$/gm
-              : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
-          '',
-        )
-        .replace(/^\s*\/\/[^\n]*$/gm, '')
-        .trim()
-      expect(residue, `only static route config may accompany ${path}`).toBe('')
+        expect(statements, `single named re-export required in ${path}`).toHaveLength(1)
+        const statement = statements[0]
 
-      return {
-        path: relative(wrapperRoot, path).split(sep).join('/'),
-        exports: [
-          ...statement[1]
-            .split(',')
-            .map((name) => name.trim())
-            .filter(Boolean),
-          ...sourceExports(wrapper),
-        ].sort(),
-        sourcePath: statement[2],
-      }
-    })
-    .sort((left, right) => left.path.localeCompare(right.path, 'en'))
+        const residue = wrapper
+          .replace(statement[0], '')
+          .replace(/^export\s+const\s+runtime\s*=\s*['"]nodejs['"]\s*;?\s*$/gm, '')
+          .replace(
+            relativePath === 'conversation/intakes/session/route.ts'
+              ? /^export\s+const\s+dynamic\s*=\s*['"]force-dynamic['"]\s*;?\s*$/gm
+              : /$^/,
+            '',
+          )
+          .replace(
+            relativePath === 'auth/password-recovery/route.ts'
+              ? /^export\s+const\s+maxDuration\s*=\s*45\s*;?\s*$/gm
+              : boundedConversationRoutes.has(relativePath)
+                ? /^export\s+const\s+maxDuration\s*=\s*120\s*;?\s*$/gm
+                : /^export\s+const\s+maxDuration\s*=\s*300\s*;?\s*$/gm,
+            '',
+          )
+          .replace(/^\s*\/\/[^\n]*$/gm, '')
+          .trim()
+        expect(residue, `only static route config may accompany ${path}`).toBe('')
+
+        return {
+          path: relative(wrapperRoot, path).split(sep).join('/'),
+          exports: [
+            ...statement[1]
+              .split(',')
+              .map((name) => name.trim())
+              .filter(Boolean),
+            ...sourceExports(wrapper),
+          ].sort(),
+          sourcePath: statement[2],
+        }
+      })
+      .sort((left, right) => left.path.localeCompare(right.path, 'en')),
+  )
 }
 
 function hashRecords(records: RouteRecord[]) {
@@ -199,6 +204,10 @@ function withUnexpectedAuthComposition<T>(
     writeFileSync(
       resolve(dirname(script), 'training-completion-surface.mjs'),
       readFileSync(resolve(testDirectory, '../scripts/training-completion-surface.mjs')),
+    )
+    writeFileSync(
+      resolve(dirname(script), 'session-initialization-surface.mjs'),
+      readFileSync(resolve(testDirectory, '../scripts/session-initialization-surface.mjs')),
     )
     for (const [from, to] of [
       [sourceRoot, resolve(root, 'apps/admin/src/app/api/mobile/v1')],
@@ -256,6 +265,10 @@ function withNutritionMutation<T>(
     writeFileSync(
       resolve(dirname(script), 'training-completion-surface.mjs'),
       readFileSync(resolve(testDirectory, '../scripts/training-completion-surface.mjs')),
+    )
+    writeFileSync(
+      resolve(dirname(script), 'session-initialization-surface.mjs'),
+      readFileSync(resolve(testDirectory, '../scripts/session-initialization-surface.mjs')),
     )
     for (const [from, to] of [
       [sourceRoot, resolve(root, 'apps/admin/src/app/api/mobile/v1')],

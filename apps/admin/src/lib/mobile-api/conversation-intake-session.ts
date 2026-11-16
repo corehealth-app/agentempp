@@ -92,12 +92,6 @@ export function createConversationIntakeSessionService(
         throw error
       }
       await authorize()
-      if (initial.epoch === null)
-        throw new MobileApiError(
-          409,
-          'conversation_session_initialization_required',
-          'Conversation session initialization is required',
-        )
       const epoch = workoutUUID.parse(initial.epoch),
         lane = createConversationCurrentScope(
           db,

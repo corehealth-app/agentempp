@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { priorSessionObservationRecords } from './session-initialization-surface.mjs'
 import { completionTransports } from './training-completion-surface.mjs'
 
 const expectedCount = 93
@@ -170,8 +169,8 @@ const executionTransports = new Map([
   ['training/execution/[sessionId]/route.ts', ['GET', 'dynamic', 'runtime']],
   ['training/execution/commands/route.ts', ['POST', 'dynamic', 'runtime']],
 ])
-const completeSources = priorSessionObservationRecords(sourceRecords()),
-  completeWrappers = priorSessionObservationRecords(wrapperRecords())
+const completeSources = sourceRecords(),
+  completeWrappers = wrapperRecords()
 for (const [label, records] of [
   ['SOURCE', completeSources],
   ['WRAPPER', completeWrappers],

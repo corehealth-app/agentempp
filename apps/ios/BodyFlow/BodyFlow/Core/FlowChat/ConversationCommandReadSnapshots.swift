@@ -1,6 +1,6 @@
 import Foundation
 
-/// Authenticated scope snapshot. It contains no command or registration.
+/// Authenticated read-only observation. It creates no command or registration.
 struct ConversationSessionSnapshot: Decodable, Sendable {
     let authUserID: UUID
     let ownerID: UUID

@@ -19,16 +19,6 @@ function setup() {
   return { ...f, enabled, authPorts: auth, capture, ports, service, db }
 }
 describe('genuine neutral existing-account session without a fake command', () => {
-  it('requests explicit initialization for an absent legacy epoch without writing on GET', async () => {
-    const f = setup()
-    f.capture.mockResolvedValue({ ...f.profile, epoch: null })
-    await expect(f.service.read(f.auth)).rejects.toMatchObject({
-      status: 409,
-      code: 'conversation_session_initialization_required',
-    })
-    expect(f.db.rpc).not.toHaveBeenCalled()
-    expect(f.db.from).not.toHaveBeenCalled()
-  })
   it('returns only current observed identity and the neutral protocol', async () => {
     const f = setup()
     expect(await f.service.read(f.auth)).toEqual({

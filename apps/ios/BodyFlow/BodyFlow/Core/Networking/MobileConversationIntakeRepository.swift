@@ -44,20 +44,6 @@ struct MobileConversationIntakeRepository: Sendable {
     try context.withCurrentAuthority {}
   }
   func session() async throws -> FlowNeutralIntakeSessionSnapshot {
-    do {
-      return try await readSession()
-    } catch MobileAPITransportError.conflict(let code, _) where code == "conversation_session_initialization_required" {
-      let initialized = try await MobileConversationCommandRepository.initializeSession(transport: transport)
-      let current = try await readSession()
-      guard current.authUserID == initialized.authUserID, current.ownerID == initialized.ownerID,
-        current.epoch == initialized.epoch,
-        let at = ConversationProtocolInstant(current.observedAt),
-        let initializedAt = ConversationProtocolInstant(initialized.observedAt), at >= initializedAt
-      else { throw MobileAPITransportError.invalidResponse }
-      return current
-    }
-  }
-  private func readSession() async throws -> FlowNeutralIntakeSessionSnapshot {
     let r = try await transport.executeHTTP(
       MobileAPIRequest<FlowNeutralIntakeSessionSnapshot>(
         method: .get, path: "/api/mobile/v1/conversation/intakes/session",

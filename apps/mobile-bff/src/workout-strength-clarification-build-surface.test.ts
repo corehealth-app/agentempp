@@ -3,7 +3,6 @@ import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { priorSessionObservationRecords } from '../scripts/session-initialization-surface.mjs'
 import {
   completionBuildPaths,
   completionTransports,
@@ -47,38 +46,36 @@ function routeFiles(root: string): string[] {
   })
 }
 function exportStream(root: string, wrapper: boolean) {
-  return priorSessionObservationRecords(
-    routeFiles(root)
-      .filter(
-        (file) =>
-          ![
-            'training/execution/route.ts',
-            'training/execution/[sessionId]/route.ts',
-            'training/execution/commands/route.ts',
-          ].includes(relative(root, file).split('\\').join('/')) &&
-          !completionTransports.has(relative(root, file).split('\\').join('/')),
+  return routeFiles(root)
+    .filter(
+      (file) =>
+        ![
+          'training/execution/route.ts',
+          'training/execution/[sessionId]/route.ts',
+          'training/execution/commands/route.ts',
+        ].includes(relative(root, file).split('\\').join('/')) &&
+        !completionTransports.has(relative(root, file).split('\\').join('/')),
+    )
+    .map((file) => {
+      const source = readFileSync(file, 'utf8')
+      const imports = wrapper
+        ? Array.from(
+            source.matchAll(/^export\s*\{\s*([^}]+?)\s*\}\s*from\s*['"][^'"]+['"]/gm),
+          ).flatMap((match) =>
+            match[1]
+              .split(',')
+              .map((name) => name.trim())
+              .filter(Boolean),
+          )
+        : []
+      const declarations = Array.from(
+        source.matchAll(/^export\s+(?:const|async\s+function|function)\s+([A-Za-z_$][\w$]*)/gm),
+        (match) => match[1],
       )
-      .map((file) => {
-        const source = readFileSync(file, 'utf8')
-        const imports = wrapper
-          ? Array.from(
-              source.matchAll(/^export\s*\{\s*([^}]+?)\s*\}\s*from\s*['"][^'"]+['"]/gm),
-            ).flatMap((match) =>
-              match[1]
-                .split(',')
-                .map((name) => name.trim())
-                .filter(Boolean),
-            )
-          : []
-        const declarations = Array.from(
-          source.matchAll(/^export\s+(?:const|async\s+function|function)\s+([A-Za-z_$][\w$]*)/gm),
-          (match) => match[1],
-        )
-        const names = [...declarations, ...imports]
-        return { path: relative(root, file), exports: names.sort() }
-      })
-      .sort((a, b) => a.path.localeCompare(b.path, 'en')),
-  )
+      const names = [...declarations, ...imports]
+      return { path: relative(root, file), exports: names.sort() }
+    })
+    .sort((a, b) => a.path.localeCompare(b.path, 'en'))
 }
 function routesReaching(marker: string) {
   return Object.entries(currentAppPaths())

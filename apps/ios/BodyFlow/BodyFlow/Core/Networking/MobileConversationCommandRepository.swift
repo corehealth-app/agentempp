@@ -14,25 +14,6 @@ struct MobileConversationCommandRepository: Sendable {
         return .init(transport: scoped, feedbackPresentation: feedbackPresentation)
     }
     func session() async throws -> ConversationSessionSnapshot {
-        do {
-            return try await readSession()
-        } catch MobileAPITransportError.conflict(let code, _) where code == "conversation_session_initialization_required" {
-            // An explicit, idempotent initialization under this same Auth lease.
-            // Never infer it from a timeout, general failure or historical row.
-            return try await Self.initializeSession(transport: transport)
-        }
-    }
-    /// Only a transport already scoped to the original Auth lease may call this.
-    static func initializeSession(transport: MobileAPITransport) async throws -> ConversationSessionSnapshot {
-        let response = try await transport.executeHTTP(MobileAPIRequest<ConversationSessionSnapshot>(method: .post,
-            path: "/api/mobile/v1/conversation/session",
-            body: MobileConversationRequestHeaders.sessionInitializationBody,
-            idempotencyKey: IdempotencyKey(validating: MobileConversationRequestHeaders.sessionInitializationKey),
-            conversation: .sessionInitialization, unauthorizedReplay: .never))
-        guard response.statusCode == 200 else { throw MobileAPITransportError.invalidResponse }
-        return response.data
-    }
-    private func readSession() async throws -> ConversationSessionSnapshot {
         let response = try await transport.executeHTTP(MobileAPIRequest<ConversationSessionSnapshot>(method: .get,
             path: "/api/mobile/v1/conversation/session", conversation: .session))
         guard response.statusCode == 200 else { throw MobileAPITransportError.invalidResponse }

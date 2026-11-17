@@ -210,13 +210,30 @@ Local tests qualify the response constructor and installed SDK with actual SQL,
 including one source on replay, the subsequent existing capture chain, and byte
 disposition with synthetic Storage/model boundaries. This does not qualify
 hosted HTTP authentication. The compiled guard confines the new RPC graph to
-the upload POST, reconstructs the exact original POST source and the unchanged
-GET/complete bodies after one loader relocation, and pins the entire factored
-issuer table. No protected source or global dependency scan is exempted.
+the upload POST in R170. R171 adds only owned GET/complete entries and
+reconstructs their exact old callback sources, pins their entire intentional
+new bodies, and retains the full issuer/shared table certificates. No protected source or global dependency scan is exempted.
 
-The remaining media GET/complete/process/discard endpoints, intake transport,
-account orchestrator and private worker still need composition before this
-opt-in can be enabled. Activation remains OFF.
+R171 composes owned GET and upload completion behind the same default-OFF
+server policy. Both require a committed version/owner/asset proof and never
+fall back after a private failure. The installed SDK reads the exact private
+object's metadata; size/MIME mismatch or an observed 404 commits independent
+source closure for the disposal worker. An uncertain Storage outage remains
+retryable and does not close the source. No unversioned removal occurs here.
+
+Downloads use only the proved private key/origin, at most 300 seconds and no
+more than the observed retention remainder. A final owned-source read refuses
+a disposed/substituted source or a withdrawn gate before returning its URL.
+Pending/deleted sources return no download. Completion replay does not create
+another upload or interpretation. Existing clinical/public callbacks and
+complete-response redaction remain byte-identical after removing the two
+reviewed wrappers. Entire current route/helper/shared compiler bodies are
+sealed; old certificates and global graph/security scans are retained.
+
+The remaining process/discard endpoints, versioned intake transport, account
+orchestrator and private worker still need composition before this opt-in can
+be enabled. Activation remains OFF. R171 SDK/route tests use synthetic HTTP
+Storage/SQL boundaries, not hosted authentication or real Storage/model proof.
 
 All five migrations remain source only. No deployed route, registered worker, rollout flag,
 provider, clinical function, native binary or TestFlight version has been

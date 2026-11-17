@@ -101,6 +101,15 @@ intake-version dispatcher is also prepared. GET/complete/process/discard,
 intake transport, account/worker composition and live Storage/native qualification
 remain necessary before activation; Task2/Task3 stay open.
 
+R171 local progress: owned GET and completion now select catalog version by
+committed proof through the existing service client. Metadata mismatch/missing
+closes independent disposal authority; a Storage outage stays retryable.
+Download signing is bound to the private path/origin, retention and final owner
+state. Both original callbacks reconstruct exactly; full compiled code and
+current consumers are sealed. Real route/installed-SDK tests use synthetic
+HTTP boundaries. Process/discard/intake/account/worker and actual hosted Storage,
+authentication/native/TestFlight qualification remain open; default is OFF.
+
 ### 4. Qualification and delivery
 
 - [ ] Inspect the complete source/compiled/schema diff and run required regression gates before any staging application.

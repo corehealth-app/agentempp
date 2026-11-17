@@ -6,6 +6,7 @@ import { deleteMediaAsset, getMediaAsset } from '@/lib/mobile-api/media-service'
 import { createOrdinaryMediaDisposal } from '@/lib/mobile-api/ordinary-media-disposal'
 import { createMobileRouteWithContext } from '@/lib/mobile-api/route'
 import { createSupabaseMediaDependencies } from '@/lib/mobile-api/supabase-media'
+import { versionedOwnedMediaResponse } from '@/lib/mobile-api/versioned-media-owned-response'
 
 export const runtime = 'nodejs'
 
@@ -19,13 +20,15 @@ async function mediaId(routeContext: MediaRouteContext): Promise<string> {
 }
 
 export const GET = createMobileRouteWithContext<MediaRouteContext>(async (context, routeContext) =>
-  mobileSuccess(
-    await getMediaAsset(
-      createSupabaseMediaDependencies(context.supabase, { reevaluationSchema: true }),
-      context.auth.userId,
-      await mediaId(routeContext),
+  versionedOwnedMediaResponse(context, await mediaId(routeContext), 'read', async () =>
+    mobileSuccess(
+      await getMediaAsset(
+        createSupabaseMediaDependencies(context.supabase, { reevaluationSchema: true }),
+        context.auth.userId,
+        await mediaId(routeContext),
+      ),
+      context.requestId,
     ),
-    context.requestId,
   ),
 )
 

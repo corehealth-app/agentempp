@@ -80,6 +80,16 @@ Files: existing neutral revocation/worker/purge adapters and additive private li
 - [ ] Ensure old user deletion cannot cascade away a live private payload without retained disposal authority. New purge must reconcile its own catalog/manifest without touching old preserved media.
 - [ ] Qualify both original immutable old queries and current scheduled worker against new synthetic paths, concurrent signing/deletion, actual late upload, saved factual history and account removal.
 
+R169 local progress: independent private discard, fair scheduled claims,
+revision-bound inspection/acknowledgement and deleted-account preparation are
+implemented. A dedicated installed-SDK adapter uses version-targeted removal
+and non-upsert empty barriers without modifying the legacy algorithm. Real SQL
+covers missing catalogs, unresolved signers, expiry, account removal and 102
+assets; original meal/workout receipts survive disposition. Four actual concurrent
+schedules and the SDK/local-SQL chain pass. The ports are not wired into running
+API/account/worker composition, and actual Storage/native qualification remains
+pending. Task3 checkboxes therefore remain open; no global legacy drain claim.
+
 ### 4. Qualification and delivery
 
 - [ ] Inspect the complete source/compiled/schema diff and run required regression gates before any staging application.

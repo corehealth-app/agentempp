@@ -1,6 +1,6 @@
 # Conversational media catalog isolation
 
-Status: **local catalog/upload/processing and versioned factual capture qualified; not activated or deployed**. The full
+Status: **local catalog/upload/processing, factual capture and independent disposal qualified; not activated or deployed**. The full
 conversational delivery and R105-REVIEW-1 remain open.
 
 Old immutable ordinary-media handlers select `public.media_assets`. Existing
@@ -148,10 +148,44 @@ processor together; only Storage and model boundaries are synthetic. It verifies
 one interpretation on replay, no public catalog mirror and no domain write.
 This is local integration evidence, not connected Storage or native QA.
 
-All three migrations remain source only. No route, registered worker, rollout flag,
+## Independent byte disposition
+
+R169 adds a separate version-2 disposal manifest bound to the existing independent
+source obligation. Explicit discard closes issuance and scrubs the catalog's
+processing result before returning an external cleanup task. Scheduled claims
+also enroll expired unsigned sources, closed sources and missing-catalog
+obligations. A missing catalog never erases an unresolved signer ticket. No
+legacy catalog, clinical source or old cleanup debt is enrolled or retagged.
+
+Claims have exclusive five-minute leases and capture the current issuance
+revision. A late signer response remains durably recorded and invalidates an
+earlier cleanup claim or sweep readiness. Inspections require the exact owner,
+asset, token, disjoint key and current private/nonversioned Storage contract.
+The installed-SDK adapter removes only the observed object version, then
+installs an empty object without upsert. It never deletes an existing barrier,
+falls back to plain removal or acknowledges an uncertain write. SQL checks the
+current empty object again when acknowledging, including an acknowledgement
+replay. The response explicitly does not claim issuance reconciliation.
+
+Deleted-account preparation respects the existing status/cutoff, enrolls bounded
+visits, and waits for matching sweep revisions plus current empty barriers.
+Only then can it detach that owner's private catalog. The independent source,
+opaque identity, tickets, disposal evidence and empty objects survive account
+removal. The ordinary registration receipts and numerical writers are unchanged.
+
+Local qualification covers 53 disposal SQL checks, 14 original-writer/history
+checks, four real signing/disposal/worker schedules and 20 installed-SDK HTTP
+boundary cases. An installed-SDK/local-SQL chain qualifies two sweeps with only
+one conditional removal and one empty write; reopening preserves the original
+typed source. Storage/model boundaries remain synthetic. The unchanged factual
+capture suite retains all 47 checks; its shared fixture functions and assertions
+are byte-identical after extraction. Actual Storage interleavings and account
+orchestration in the running app remain activation gates.
+
+All four migrations remain source only. No route, registered worker, rollout flag,
 provider, clinical function, native binary or TestFlight version has been
-changed. Before activation, integrate independent byte revocation, scheduled
-disposal, account purge and the request-specific private runtime composition. Preserve
+changed. Before activation, compose the qualified private byte disposal/account
+ports into the running app/worker and select the request-specific private runtime. Preserve
 explicit catalog-version provenance without a public mirror or fallback that
 could rebind an old receipt to a new source. Qualify the complete connected graph,
 actual Storage interleavings, native permissions and distribution afterward.

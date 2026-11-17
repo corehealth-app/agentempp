@@ -1,6 +1,6 @@
 # Conversational media catalog isolation
 
-Status: **local foundation qualified; not activated or deployed**. The full
+Status: **local catalog/upload/processing substrate qualified; not activated or deployed**. The full
 conversational delivery and R105-REVIEW-1 remain open.
 
 Old immutable ordinary-media handlers select `public.media_assets`. Existing
@@ -43,6 +43,36 @@ consistent with the approved minimal technical-marker policy. No old catalog
 data is backfilled. Account deletion cannot erase a live private source through
 a foreign-key cascade; the qualified disposal/purge integration must resolve it.
 
+## Private upload and processing
+
+`@mpp/core/conversation-media` exposes the pure namespace codecs and closed
+RPC adapter. It creates no SDK client, credentials, provider or route. The API
+constructor uses the existing server client and accepts only a trusted HTTPS
+Storage origin. The installed SDK signs the exact disjoint key without upsert;
+the issuer reuses the existing URL/expiry parser without changing its body.
+
+Before signing, `prepare_conversation_media_upload_v2` persists an independent
+obligation and ticket. `register_conversation_media_upload_v2` records the actual
+provider expiry even after the catalog or owner has disappeared. An uncertain
+signing response remains unresolved; neither elapsed time nor a missing catalog
+is evidence of successful removal. Tickets contain no URL, token or payload.
+`complete_conversation_media_upload_v2` checks registered preparation and exact
+observed size/MIME/etag. Repetition preserves the first upload timestamp.
+
+Processing uses an owner-bound request and a five-minute database claim token.
+Only one live claim is admitted. A caller receiving `busy` must defer/retry after
+`retry_at`; it must not acknowledge the job as completed. Expired claims obtain
+new tokens. Completion/failure compare the current token and refuse late results
+after discard or replacement. Uncertain completion is not followed by a failure
+write or an automatic second model request.
+
+The private processor checks the canonical key, downloaded byte count, signature
+and readable audio duration (at most 180 seconds) before a model request. It
+rechecks the current source after download. Photos retain only the existing
+nonclinical image-result contract; audio retains the bounded transcription
+fields, without raw provider diagnostics. Processing alone records no consumed
+meal, workout or reward. No default provider factory or event is activated here.
+
 ## Qualified and remaining
 
 R166 qualifies 34 namespace cases, 65 real SQL catalog/permission cases and six
@@ -58,15 +88,23 @@ The older direct-insert `signup_body_photo_origin.sql` fixture is refused by the
 existing `body_photos_unavailable` fence both before and after this change;
 it is not a passing modern sign-up integration test and was not weakened.
 
-The migration remains source only. No route, worker, rollout flag, provider,
-clinical function, native binary or TestFlight version has been changed. Before
-activation, integrate private upload preparation and signing, upload completion,
-processing, factual capture, independent disposal and account purge. Preserve
+R167 adds 58 real SQL lifecycle checks and four real concurrent schedules,
+including both completion/disposal orders and late signing after concurrent
+account removal. Installed-SDK tests exercise the private RPC/signing sequence.
+A separate local integration runs the installed SDK, issuer, real private SQL and
+processor together; only Storage and model boundaries are synthetic. It verifies
+one interpretation on replay, no public catalog mirror and no domain write.
+This is local integration evidence, not connected Storage or native QA.
+
+Both migrations remain source only. No route, registered worker, rollout flag,
+provider, clinical function, native binary or TestFlight version has been
+changed. Before activation, integrate explicit versioned factual capture,
+independent byte revocation, scheduled disposal and account purge. Preserve
 explicit catalog-version provenance without a public mirror or fallback that
 could rebind an old receipt to a new source. Qualify the complete connected graph,
 actual Storage interleavings, native permissions and distribution afterward.
-The codec is not yet exported through the closed production package surface;
-add its reviewed export together with its actual consumers during integration.
+The source/build guard seals the new pure export and reconstructs the exact old
+package manifest and URL-parser source; all old compiled certificates remain.
 
 The existing public-catalog debts, markers and frozen receipts remain governed
 by their existing obligations. This foundation does not assert that old upload

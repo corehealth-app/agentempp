@@ -85,7 +85,7 @@ function identity(a: z.infer<typeof assetSchema>) {
 }
 /** Decode only an exact Storage SDK response. Storage verifies the JWT on PUT;
  * these claims determine a private resweep deadline, never user authorization. */
-function providerExpiry(value: string, asset: z.infer<typeof assetSchema>, origin: string): string {
+export function providerExpiry(value: string, asset: z.infer<typeof assetSchema>, origin: string): string {
   if (typeof value !== 'string' || value.length > 8192) throw ordinaryMediaUploadError()
   const base = new URL(origin),
     url = new URL(value),

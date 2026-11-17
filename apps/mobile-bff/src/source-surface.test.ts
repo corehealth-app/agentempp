@@ -1793,6 +1793,61 @@ describe('authoritative Mobile API source surface', () => {
   })
 
   test('keeps photo-purpose and disposal gates on the closed media transports', () => {
+    // R167 adds one pure private-media subpath and exports one unchanged URL
+    // parser. Seal the full new sources, then reconstruct the exact historical
+    // inputs below. No legacy source assertion or compiled certificate is lost.
+    for (const [file, hash] of [
+      [
+        'packages/core/package.json',
+        'f2fa7be7329060f8aecb18b04d7d8ce90d81e5c7fc36e651c32c004fddaf72fc',
+      ],
+      [
+        'packages/core/src/conversation-media.ts',
+        '16e18d3553cdb34a0d60586a7e727d85df33c6d49661e829c9b3f8d845904237',
+      ],
+      [
+        'packages/core/src/conversation-media-namespace.ts',
+        'c53addbd89eba7f608bcf2133cf6c4db1723563d735087455e0d45db5f8a92a7',
+      ],
+      [
+        'packages/core/src/conversation-media-catalog.ts',
+        '44cef2a5d67776ab703a50160a36664a6864113aa0d58c58dae3720df0d6943b',
+      ],
+      [
+        'packages/core/src/conversation-media-lifecycle.ts',
+        'c63a71aaaf9346c4f394f34fab438023637c5e922f6691f75b7882a20fc4c79b',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/ordinary-media-upload.ts',
+        '10222c3bbce4d628118d5a0cfc00ec08eba748ba2199ca500eaa15ae9ba02aad',
+      ],
+    ])
+      expect(
+        createHash('sha256')
+          .update(readFileSync(resolve(appRoot, '../..', file ?? '')))
+          .digest('hex'),
+      ).toBe(hash)
+    const legacySource = (file: string) => {
+      const text = readFileSync(resolve(appRoot, '../..', file), 'utf8')
+      if (file === 'packages/core/package.json') {
+        const addition = '    "./conversation-media": "./src/conversation-media.ts",\n'
+        expect(text.split(addition)).toHaveLength(2)
+        return text.replace(addition, '')
+      }
+      if (file === 'apps/admin/src/lib/mobile-api/ordinary-media-upload.ts') {
+        const addition = 'export function providerExpiry('
+        expect(text.split(addition)).toHaveLength(2)
+        return text.replace(addition, 'function providerExpiry(')
+      }
+      return text
+    }
+    // The private pipeline is still inactive in every real compiled route.
+    for (const marker of [
+      'conversation-v2/',
+      'prepare_conversation_media_upload_v2',
+      'claim_conversation_media_processing_v2',
+    ])
+      expect(runtimeMarkerRoutes(marker)).toEqual([])
     // R111 shares the unchanged purpose module with the two disposal entries.
     // Whole source certificates below bind their calls to the ticket gate, not
     // photo analysis; the new privileged RPC graph is restricted separately.
@@ -1837,7 +1892,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
       expect(
         createHash('sha256')
-          .update(readFileSync(resolve(appRoot, '../..', file ?? '')))
+          .update(legacySource(file ?? ''))
           .digest('hex'),
       ).toBe(hash)
     // R106 intentionally adds the isolated issuance gate and SDK/ticket handoff.
@@ -1870,7 +1925,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
       expect(
         createHash('sha256')
-          .update(readFileSync(resolve(appRoot, '../..', file ?? '')))
+          .update(legacySource(file ?? ''))
           .digest('hex'),
       ).toBe(hash)
     const entry = currentAppPathsManifest()['/api/mobile/v1/media/route']

@@ -53,6 +53,14 @@ Files: existing `media-service.ts`, `supabase-media.ts`, ordinary upload adapter
 - [ ] Route explicitly qualified conversational sources to private readers. Preserve legacy readers and old receipts; never create a public mirror or infer clinical purpose from bytes.
 - [ ] Add real SQL/SDK boundary tests, including no domain effect on processing failure and no duplicate logical registration on technical replay.
 
+R167 local progress (not route activation): the private catalog RPC adapter,
+prepared/observed upload issuer, installed-SDK constructor and observation-only
+processor are implemented. Real SQL checks cover upload replay, exclusive claims,
+failure/reclaim and refusal of stale completion. Four real concurrent schedules
+and an installed-SDK → real SQL → processor integration pass without external
+network or provider spend. Explicit versioned factual capture and the complete
+disposal/account lifecycle remain required, so the task checkboxes stay open.
+
 ### 3. Independent disposal and account lifecycle
 
 Files: existing neutral revocation/worker/purge adapters and additive private lifecycle SQL.

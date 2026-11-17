@@ -13,7 +13,11 @@ import {
   consumedFoodDefault,
   normalizeConsumedFoodQuantity,
 } from './consumed-food-defaults.js'
-import { type EverydayFoodDefault, everydayFoodDefault } from './everyday-food-defaults.js'
+import {
+  type EverydayFoodDefault,
+  everydayFoodDefault,
+  mobileEverydayFoodDefault,
+} from './everyday-food-defaults.js'
 import {
   captureMealCalculationOptions,
   emitMealCalculationAudit,
@@ -2168,7 +2172,11 @@ export async function calcMealMacros(
       captured.consumptionPolicy === 'consumed-meal-v1'
         ? consumedFoodDefault(it.food_name, country)
         : null
-    const everyday = consumed ?? everydayFoodDefault(it.food_name)
+    const everyday =
+      consumed ??
+      (captured.consumptionPolicy === 'consumed-meal-v1'
+        ? mobileEverydayFoodDefault(it.food_name)
+        : everydayFoodDefault(it.food_name))
     if (everyday) {
       let row = everydayRows.get(everyday)
       if (row === undefined) {

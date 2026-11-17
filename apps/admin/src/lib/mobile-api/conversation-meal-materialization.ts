@@ -5,11 +5,11 @@ import { isDeepStrictEqual } from 'node:util'
 import {
   consumedFoodDefault,
   draftFromVisionItems,
-  everydayFoodDefault,
   labelCandidateId,
   type MealCalcResult,
   type MealDraftCandidate,
   type MealDraftRawItem,
+  mobileEverydayFoodDefault,
   mobileMilkWheyPortions,
   mobileMilkWheyTotalPortions,
   resolveDraftItem,
@@ -652,7 +652,7 @@ async function materializeConversationMealCore(
       if (previous !== undefined) return previous
       if (
         consumedFoodDefault(name, country) ||
-        everydayFoodDefault(name) ||
+        mobileEverydayFoodDefault(name) ||
         isRecognizedPreparedDish(name)
       ) {
         return true

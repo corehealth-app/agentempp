@@ -92,3 +92,12 @@ export function everydayFoodDefault(
   if (!name) return null
   return defaults.find((entry) => entry.said.includes(name)) ?? null
 }
+
+/** App consumption uses the existing generic powder reference for this exact
+ * spoken name too. Keep the legacy lookup and branded/composed names unchanged;
+ * the calculator still verifies the catalog row before using its nutrients. */
+export function mobileEverydayFoodDefault(foodName: string): EverydayFoodDefault | null {
+  return everydayFoodDefault(
+    normalizeEverydayFoodName(foodName) === 'whey protein' ? 'whey' : foodName,
+  )
+}

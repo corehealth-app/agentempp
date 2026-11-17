@@ -181,6 +181,51 @@ function fixture(text: string, items: Item[]) {
   }
   return { command, capture, source, model, interpretation }
 }
+function transcriptFixture(text: string, items: Item[]) {
+  const base = fixture(text, items)
+  const command = bindConversationCommand(OWNER, `cmsg1:${COMMAND}`, {
+    command_protocol: 'conversation.command.v1',
+    command_id: COMMAND,
+    kind: 'meal.report',
+    source: { channel: 'media', media_asset_id: ASSET, user_action: 'register_consumed_meal' },
+  })
+  const capture: CapturedConversationMealSource = {
+    ...base.capture,
+    context: {
+      ...base.capture.context,
+      input_hash: command.inputHash,
+      source_input: command.command,
+      source_units: ['media_transcript'],
+      source_evidence: { caption: null, transcript: text },
+      media: {
+        asset_id: ASSET,
+        kind: 'audio_note',
+        status: 'processed',
+        processed_at: '2026-11-05T01:00:00Z',
+        updated_at: '2026-11-05T01:00:00Z',
+        context_text: null,
+        processing_result: { text, duration: 6.1495, language: 'Portuguese' },
+      },
+    },
+  }
+  const source = buildConversationMealInterpretationSource(command, capture)
+  const ref = (value: ConversationMealInterpretation['foods'][number]['name']) =>
+    value ? { ...value, unit: 'media_transcript' as const } : null
+  const interpretation: ConversationMealInterpretation = {
+    ...base.interpretation,
+    input_hash: command.inputHash,
+    source_units: source.source_units,
+    foods: base.interpretation.foods.map((food) => ({
+      ...food,
+      name: ref(food.name),
+      quantity: ref(food.quantity),
+      unit: ref(food.unit),
+    })),
+    sources: base.interpretation.sources.map((value) => ({ ...value, unit: 'media_transcript' })),
+  }
+  return { command, capture, source, interpretation }
+}
+
 function visualFixture(items: Json[], caption?: string) {
   const base = fixture('arroz200g', [{ name: 'arroz', quantity: '200', unit: 'g' }])
   const command = bindConversationCommand(OWNER, `cmsg1:${COMMAND}`, {
@@ -264,6 +309,71 @@ function prepared<T extends { status: string }>(value: T): Extract<T, { status: 
 }
 
 describe('actual command interpretation materialization', () => {
+  it.each([
+    'text',
+    'audio',
+  ] as const)('materializes the actual %s milk and whey protein scoop report without manual grams', async (channel) => {
+    const f = (channel === 'audio' ? transcriptFixture : fixture)(
+      'No almoço eu consumi 200 ml de leite integral com uma medida de whey protein.',
+      [
+        { name: 'leite integral', quantity: '200', unit: 'ml' },
+        { name: 'whey protein', quantity: 'uma', unit: 'medida' },
+      ],
+    )
+    const result = prepared(await materialize(f))
+    expect(result.inputs.map((x) => x.calculation_input)).toEqual([
+      { food_name: 'leite integral', quantity_g: 206 },
+      { food_name: 'whey protein', quantity_g: 30 },
+    ])
+    expect(result.inputs[1]?.candidate).toMatchObject({
+      quantity_basis: 'portion_reference',
+      needs_review: true,
+      count: 1,
+      unit_label: 'medida',
+      quantity_display: {
+        unit: 'scoop',
+        grams_per_unit: 30,
+        estimated: true,
+        reference_id: 'app-household-whey-scoop-v1',
+      },
+    })
+  })
+  it('calculates the app whole-name whey protein alias from the existing verified powder row', async () => {
+    const state = calculationDb([
+      {
+        ...row('Beverages, Protein powder whey based'),
+        kcal_per_100g: 352,
+        protein_g: 78.13,
+        carbs_g: 6.25,
+        fat_g: 1.56,
+      },
+    ])
+    const f = fixture('whey protein30g', [{ name: 'whey protein', quantity: '30', unit: 'g' }])
+    const calc = await calcMealMacros(
+      state.client,
+      [{ food_name: 'whey protein', quantity_g: 30 }],
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items).toMatchObject([
+      {
+        food_name: 'whey protein em pó',
+        quantity_g: 30,
+        kcal: 105.6,
+        protein_g: 23.44,
+        carbs_g: 1.88,
+        fat_g: 0.47,
+        source: 'canonical_fuzzy',
+      },
+    ])
+    expect(calc.preparation_annotations ?? []).toEqual([])
+  })
+
   it('materializes nominal rice/beans and duplicate occurrences preserving original refs', async () => {
     const f = fixture('arroz200g; feija\u0303o100g; arroz50g', [
         { name: 'arroz', quantity: '200', unit: 'g' },
@@ -1926,7 +2036,6 @@ describe('stored-answer original evidence and asynchronous snapshot preservation
     }
   })
 })
-
 
 describe('ordinary-photo catalog naming: prepared farofa reference', () => {
   it('materializes the actual visual bare name without dropping the bean occurrence', async () => {

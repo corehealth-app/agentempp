@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import {
   EVERYDAY_FOOD_DEFAULTS,
   everydayFoodDefault,
+  mobileEverydayFoodDefault,
   normalizeEverydayFoodName,
 } from './everyday-food-defaults.js'
 
@@ -202,5 +203,31 @@ describe('everyday food defaults — the lookup is whole-name equality', () => {
     ]) {
       expect(everydayFoodDefault(name), JSON.stringify(name)).toBeNull()
     }
+  })
+})
+
+describe('app whole-name powder reference without changing legacy names', () => {
+  it.each([
+    'whey protein',
+    'WHEY  PROTEIN',
+    ' whey protein ',
+  ])('resolves the generic spoken name %s to the existing powder reference only in the app', (name) => {
+    expect(mobileEverydayFoodDefault(name)).toBe(everydayFoodDefault('whey'))
+    expect(mobileEverydayFoodDefault(name)?.shown_as).toBe('whey protein em pó')
+    expect(everydayFoodDefault(name)).toBeNull()
+  })
+  it.each([
+    'whey protein isolado',
+    'whey protein concentrado',
+    'whey protein Marca X',
+    'whey protein zero lactose',
+    'whey protein com leite',
+    'shake de whey protein',
+    'barra de whey protein',
+    'iogurte whey protein',
+    'whey proteins',
+    'whey protein 30g',
+  ])('does not turn the distinct whole name %s into generic powder', (name) => {
+    expect(mobileEverydayFoodDefault(name)).toBeNull()
   })
 })

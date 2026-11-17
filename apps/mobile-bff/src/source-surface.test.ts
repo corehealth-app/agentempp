@@ -184,6 +184,33 @@ function runtimeExactStringRoutes(value: string): string[] {
  * Pin every changed runtime source; no legacy provider/worker/writer capability
  * or physical graph edge is exempted by the complete body certificates. */
 function certifyOrdinaryPhotoSourcesR102(): void {
+  // R165 adds only the exact app-only whey protein alias. All377 actual module
+  // identities were compared:375 whole bodies remain byte-identical; the two
+  // changed bodies (agent export/consumer) are sealed in full, with no edge or
+  // executable-byte exemption. Legacy lookup source remains unchanged in logic.
+  for (const [name, hash] of [
+    [
+      'everyday-food-defaults.ts',
+      '6ab28a7063eba8ccd3d5a50e1c23165a62da29517883b68edd1fe3d82abb44fb',
+    ],
+    ['meal-pipeline.ts', '73c3df3f60f415a2bd718604f694304746b10bb33094ac76cd08b67f32f723a9'],
+  ])
+    expect(
+      createHash('sha256')
+        .update(readFileSync(resolve(appRoot, '../../packages/agent/src', name ?? '')))
+        .digest('hex'),
+    ).toBe(hash)
+  for (const [id, hash] of [
+    ['26432', 'a480fe25475fdd2728097553d30170e46e0595cd101f7cb6ca15eaa88c951da2'],
+    ['69702', '9ecc51ff37b728c9b9c5a0fad60663f69af28cf5f0895464ec4ab3606b9cb7da'],
+  ]) {
+    const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
+      (file) =>
+        file.endsWith('.js') && new RegExp(`(?:^|[,;{])${id}:`).test(readFileSync(file, 'utf8')),
+    )
+    expect(copies).toHaveLength(1)
+    for (const file of copies) certifyPhysicalModule(file, id ?? '', [hash ?? ''])
+  }
   for (const [name, hash] of [
     [
       'conversation-intake-contracts.ts',
@@ -203,7 +230,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-materialization.ts',
-      '88a501b17a1fa1667d868a76753138ae4941ae0db4e63e602256f00cd265ae7a',
+      '6f23187323798d4752f84c47e8cb464f6ee95d8b3eddb982bed069717ca3e4e3',
     ],
     [
       'conversation-meal-source.ts',

@@ -540,10 +540,30 @@ function certifyNutritionJournalSplitContent(text: string): void {
 /** R140 only relinks the unchanged workout facade after webpack extracts
  * the now-shared current-scope module. Full new executable bodies and original
  * source bytes are checked before restoring that ONE import for the old pins. */
+/** Exact-commit rebuild selected the existing second allocation of the same
+ * image parser. Full raw bodies prove that only one loader changes in each;
+ * the entire parser module and its physical consumers stay certified. */
+function restoreConversationParserLinkR173(body: string): string {
+  const pins: Record<string, string> = {
+    fe642a40ae21d4e12f92e31a16bf51b6a46fbc1bed6beb30067abea2cb151f62:
+      'd8d52b26943275b18cb25243a733b9b6b6689c7ba0ea77ccddca788d2f8885c4',
+    fe8eda698679f08fbd8d6ccc0abc03c8f2d8da9b594a566d291f1819294647b6:
+      'ca5389d90fb7906310441d177e724fbc5547520ca2283da641e7e9c947cf8fea',
+    be5fa17528984de08eae8d24774f443ae08de1e292e13bcdc6cb3663063142a4:
+      '7b598d18a05f0abdf8cc2670d5e4219754b6c0df263bc884ff723bdf04e9f89c',
+  }
+  const previous = pins[createHash('sha256').update(body).digest('hex')]
+  if (!previous) return body
+  expect(body.split('c(86248)')).toHaveLength(2)
+  const restored = body.replace('c(86248)', 'c(63867)')
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(previous)
+  return restored
+}
 /** R173 factors the unchanged media factory behind one new loader. Each of
  * these four WHOLE raw consumers differs only by that one link. No executable
  * delta is removed from the new processing route or shared owned helper. */
 function restoreMediaFactoryLinkR173(body: string): string {
+  body = restoreConversationParserLinkR173(body)
   const pins: Record<string, string> = {
     ca5389d90fb7906310441d177e724fbc5547520ca2283da641e7e9c947cf8fea:
       'f456e38b9523c617019f033f6a770eb2288fa43217b5a7238680b521bb595702',
@@ -3077,14 +3097,22 @@ describe('authoritative Mobile API source surface', () => {
       'prepare_conversation_media_upload_v2',
       'claim_conversation_media_processing_v2',
     ])
+    const privateParserId = readFileSync(privateCatalog, 'utf8').includes('63867:')
+      ? '63867'
+      : '86248'
     certifyExactSharedTable(privateCatalog, [
       ['18975', '19a5f8d0ee0d0ce97fdea1a8b499a8ac2993a3d7c5d19135f128dd57e779bc23'],
       ['36715', '022a8bd63f33d23df8b9f02947b3b05b8c3275dacd24f793e4228196456378f1'],
       ['61344', '4b71f9b6820568692cbe7a42d2ff7605dfcc80b962cb060b442500c85156d14d'],
-      ['63867', '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916'],
+      [privateParserId, '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916'],
       ['89164', '14f14635e834fe65206cd266f21a2b1c548b48a685e1a95dc94c16dbcf31f519'],
       ['8184', 'f0a7d67c29acabae8f1e15dd98b2b2d0296dd2c562ca4a50991f15a28e9eba72'],
-      ['77576', 'a8fd4ec43e7887b9a028cbf89ba0bc668e6119a0bfc92a8f100a2cc76a3fe27b'],
+      [
+        '77576',
+        privateParserId === '63867'
+          ? 'a8fd4ec43e7887b9a028cbf89ba0bc668e6119a0bfc92a8f100a2cc76a3fe27b'
+          : '5ce0c7686ec2b7a43dbabcdac472056addaa75460aff070783ca62e3018dd5d9',
+      ],
     ])
     expect(chunkConsumers(privateCatalog)).toEqual([
       '/api/mobile/v1/media/[id]/complete/route',

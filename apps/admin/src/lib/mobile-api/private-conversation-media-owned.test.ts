@@ -392,3 +392,96 @@ describe('private processing request on the proved source', () => {
     ).rejects.toMatchObject({ code: 'media_catalog_unavailable' })
   })
 })
+
+describe('owned private deletion', () => {
+  it('requires the scoped revocation to finish before returning deleted state', async () => {
+    const x = setup(),
+      dispose = vi.fn(async () => {
+        Object.assign(x.row, { status: 'deleted', deleted_at: at, processing_result: null })
+      })
+    expect(
+      await ownedConversationMediaOperation({ ...x.ports, dispose }, owner, id, 'delete'),
+    ).toMatchObject({
+      action: 'private',
+      value: { id, status: 'deleted', result: null },
+    })
+    expect(dispose).toHaveBeenCalledWith(
+      expect.objectContaining({ catalog_version: 2, user_id: owner, asset_id: id }),
+    )
+    expect(x.ports.signDownload).not.toHaveBeenCalled()
+    expect(x.ports.close).not.toHaveBeenCalled()
+  })
+  it('does not block a privacy deletion because the photo has expired or new photo interpretation is disabled', async () => {
+    const x = setup()
+    Object.assign(x.row, {
+      kind: 'conversation_photo',
+      bucket_id: 'meal-photos',
+      mime_type: 'image/jpeg',
+      object_path: `conversation-v2/${owner}/${id}.jpg`,
+    })
+    x.ports.resolve.mockResolvedValue({
+      schema: 'conversation.media-catalog.v2',
+      catalog_version: 2,
+      user_id: owner,
+      asset_id: id,
+      kind: 'conversation_photo',
+    })
+    const dispose = vi.fn(async () => {
+      Object.assign(x.row, { status: 'deleted', deleted_at: until, updated_at: until })
+    })
+    const result = await ownedConversationMediaOperation(
+      {
+        ...x.ports,
+        photoEnabled: () => false,
+        now: () => new Date(Date.parse(until) + 1000),
+        dispose,
+      },
+      owner,
+      id,
+      'delete',
+    )
+    expect(result).toMatchObject({ action: 'private', value: { status: 'deleted' } })
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(x.ports.signDownload).not.toHaveBeenCalled()
+  })
+  it('does not claim success if disposal returned but the source remains open', async () => {
+    const x = setup()
+    await expect(
+      ownedConversationMediaOperation({ ...x.ports, dispose: async () => {} }, owner, id, 'delete'),
+    ).rejects.toMatchObject({ code: 'media_catalog_unavailable' })
+  })
+  it('keeps an uncertain revocation as an error and never signs a download', async () => {
+    const x = setup()
+    await expect(
+      ownedConversationMediaOperation(
+        {
+          ...x.ports,
+          dispose: async () => {
+            throw Error('private details')
+          },
+        },
+        owner,
+        id,
+        'delete',
+      ),
+    ).rejects.toMatchObject({ code: 'media_catalog_unavailable' })
+    expect(x.ports.signDownload).not.toHaveBeenCalled()
+  })
+  it('checks the retained barrier even if the catalog already says deleted', async () => {
+    const x = setup()
+    Object.assign(x.row, { status: 'deleted', deleted_at: at })
+    const dispose = vi.fn(async () => {})
+    expect(
+      await ownedConversationMediaOperation({ ...x.ports, dispose }, owner, id, 'delete'),
+    ).toMatchObject({ action: 'private', value: { status: 'deleted' } })
+    expect(dispose).toHaveBeenCalledTimes(1)
+  })
+  it('leaves legacy deletion on the original callback', async () => {
+    const x = setup(1),
+      dispose = vi.fn(async () => {})
+    expect(
+      await ownedConversationMediaOperation({ ...x.ports, dispose }, owner, id, 'delete'),
+    ).toEqual({ action: 'legacy' })
+    expect(dispose).not.toHaveBeenCalled()
+  })
+})

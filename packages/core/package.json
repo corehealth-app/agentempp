@@ -13,6 +13,7 @@
     "./types": "./src/types.ts",
     "./conversation-media-revocation": "./src/conversation-media-revocation.ts",
     "./conversation-media": "./src/conversation-media.ts",
+    "./conversation-media-disposal": "./src/conversation-media-disposal.ts",
     "./conversation-photo-purpose": "./src/conversation-photo-purpose.ts",
     "./health-check": "./src/health-check-contracts.ts",
     "./reevaluation-form": "./src/reevaluation-form-contracts.ts",

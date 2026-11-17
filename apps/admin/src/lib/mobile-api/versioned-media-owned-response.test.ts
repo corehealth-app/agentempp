@@ -2,6 +2,7 @@ import type { ServiceClient } from '@mpp/db'
 import { createClient } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MobileRouteContext } from './route'
+import { versionedMediaDisposalResponse } from './versioned-media-disposal-response'
 import { versionedOwnedMediaResponse } from './versioned-media-owned-response'
 
 const origin = 'https://xitugspwfxkcluxvrdeg.supabase.co'
@@ -17,7 +18,16 @@ const env = {
   NEXT_PUBLIC_SUPABASE_URL: origin,
 }
 function setup(
-  mode: 'normal' | 'legacy' | 'missing' | 'mismatch' | 'outage' | 'withdraw' = 'normal',
+  mode:
+    | 'normal'
+    | 'legacy'
+    | 'missing'
+    | 'mismatch'
+    | 'outage'
+    | 'withdraw'
+    | 'delete'
+    | 'delete_busy'
+    | 'delete_ack_outage' = 'normal',
 ) {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(at))
@@ -55,7 +65,12 @@ function setup(
         const req = new Request(input, init),
           url = new URL(req.url)
         expect(url.origin).toBe(origin)
-        const body = req.method === 'GET' ? null : await req.json()
+        const body =
+          req.method === 'GET'
+            ? null
+            : req.headers.get('content-type')?.includes('json')
+              ? await req.json()
+              : (await req.arrayBuffer()).byteLength
         calls.push({ path: url.pathname, method: req.method, body })
         if (url.pathname.startsWith('/rest/v1/rpc/')) {
           expect(body.p_user_id).toBe(owner)
@@ -93,6 +108,57 @@ function setup(
             Object.assign(row, { status: 'deleted', deleted_at: at })
             return json(true)
           }
+          if (name === 'claim_conversation_media_owned_disposal_v2') {
+            Object.assign(row, { status: 'deleted', deleted_at: at, processing_result: null })
+            return json({
+              schema: 'conversation.media-owned-disposal.v2',
+              catalog_version: 2,
+              asset_id: id,
+              user_id: owner,
+              claim:
+                mode === 'delete_busy'
+                  ? null
+                  : {
+                      catalog_version: 2,
+                      asset_id: id,
+                      user_id: owner,
+                      kind: row.kind,
+                      bucket_id: row.bucket_id,
+                      object_path: row.object_path,
+                      mime_type: row.mime_type,
+                      declared_size_bytes: row.declared_size_bytes,
+                      claim_token: 'c1711000-0000-4000-8000-000000000004',
+                    },
+            })
+          }
+          if (name === 'inspect_conversation_media_disposal_v2')
+            return json({
+              schema: 'conversation.media-disposal-state.v2',
+              catalog_version: 2,
+              asset_id: id,
+              user_id: owner,
+              claim_token: body.p_claim_token,
+              bucket_id: row.bucket_id,
+              object_path: row.object_path,
+              bucket_private: true,
+              versioning: 'DISABLED',
+              mime_type: 'audio/mp4',
+              state: 'empty',
+              size_bytes: 0,
+              object_version: 'c1711000-0000-4000-8000-000000000005',
+            })
+          if (name === 'acknowledge_conversation_media_disposal_v2')
+            return mode === 'delete_ack_outage'
+              ? json({ code: 'unavailable' }, 503)
+              : json({
+                  schema: 'conversation.media-disposal-ack.v2',
+                  catalog_version: 2,
+                  asset_id: id,
+                  user_id: owner,
+                  claim_token: body.p_claim_token,
+                  state: 'barrier_retained',
+                  issuance_reconciled: false,
+                })
         }
         if (url.pathname === `/storage/v1/object/info/audio-notes/${path}`) {
           if (mode === 'outage')
@@ -133,6 +199,72 @@ function setup(
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
+})
+describe('private DELETE response and real route', () => {
+  it('returns a deleted public DTO only after the scoped barrier acknowledgement', async () => {
+    const x = setup('delete')
+    const response = await versionedMediaDisposalResponse(
+      x.context,
+      id,
+      async () => {
+        throw Error('Legacy fallback forbidden')
+      },
+      x.env,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data: { id, status: 'deleted', result: null } })
+    expect(
+      x.calls.some((c) => c.path.endsWith('/acknowledge_conversation_media_disposal_v2')),
+    ).toBe(true)
+    expect(x.calls.every((c) => c.path.startsWith('/rest/v1/rpc/'))).toBe(true)
+  })
+  it('keeps the identical legacy response for a proved public source', async () => {
+    const x = setup('legacy'),
+      original = Response.json({ legacy: true })
+    expect(await versionedMediaDisposalResponse(x.context, id, async () => original, x.env)).toBe(
+      original,
+    )
+    expect(x.calls).toHaveLength(1)
+  })
+  it('keeps the rollout OFF path on the old callback without any private IO', async () => {
+    const x = setup('delete'),
+      original = Response.json({ legacy: true })
+    expect(await versionedMediaDisposalResponse(x.context, id, async () => original, {})).toBe(
+      original,
+    )
+    expect(x.calls).toEqual([])
+  })
+  it.each([
+    'delete_busy',
+    'delete_ack_outage',
+  ] as const)('does not claim completion for %s', async (mode) => {
+    const x = setup(mode)
+    await expect(
+      versionedMediaDisposalResponse(
+        x.context,
+        id,
+        async () => {
+          throw Error('Legacy fallback forbidden')
+        },
+        x.env,
+      ),
+    ).rejects.toMatchObject({ code: 'media_disposal_unavailable' })
+    expect(x.calls.some((c) => c.path.includes('disposal_batch'))).toBe(false)
+  })
+  it('routes the exported DELETE to the source-proven single-source operation', async () => {
+    const x = setup('delete')
+    for (const [key, value] of Object.entries(x.env)) vi.stubEnv(key, value)
+    const route = await import('../../app/api/mobile/v1/media/[id]/route')
+    const remove = route.DELETE as unknown as (
+      context: MobileRouteContext,
+      route: { params: Promise<{ id: string }> },
+    ) => Promise<Response>
+    expect((await remove(x.context, { params: Promise.resolve({ id }) })).status).toBe(200)
+    expect(
+      x.calls.some((c) => c.path.endsWith('/claim_conversation_media_owned_disposal_v2')),
+    ).toBe(true)
+    expect(x.calls.some((c) => c.path.includes('/media_assets'))).toBe(false)
+  })
 })
 vi.mock('@/lib/mobile-api/route', () => ({
   createMobileRouteWithContext: (handler: unknown) => handler,

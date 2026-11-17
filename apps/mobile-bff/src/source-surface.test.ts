@@ -563,6 +563,21 @@ function restoreConversationParserLinkR173(body: string): string {
  * these four WHOLE raw consumers differs only by that one link. No executable
  * delta is removed from the new processing route or shared owned helper. */
 function restoreMediaFactoryLinkR173(body: string): string {
+  const linked = createHash('sha256').update(body).digest('hex')
+  if (
+    linked === 'f6eba0b2cc582c7f3afe3badd780b72178cd5e9475f975483c8e6d4a08ce080a' ||
+    linked === 'd61677cc7ff6be2275ddd822631f4ec6ff98f0356fec7857a11335ede96b00f2'
+  ) {
+    // R174 extracts the unchanged namespace from the sealed pure catalog.
+    // These two COMPLETE consumers differ only by the catalog module loader.
+    expect(body.split('c(33413)')).toHaveLength(2)
+    body = body.replace('c(33413)', 'c(8184)')
+    expect(createHash('sha256').update(body).digest('hex')).toBe(
+      linked === 'd61677cc7ff6be2275ddd822631f4ec6ff98f0356fec7857a11335ede96b00f2'
+        ? '022a8bd63f33d23df8b9f02947b3b05b8c3275dacd24f793e4228196456378f1'
+        : 'fe8eda698679f08fbd8d6ccc0abc03c8f2d8da9b594a566d291f1819294647b6',
+    )
+  }
   body = restoreConversationParserLinkR173(body)
   const pins: Record<string, string> = {
     ca5389d90fb7906310441d177e724fbc5547520ca2283da641e7e9c947cf8fea:
@@ -1195,6 +1210,89 @@ function restoreMediaFactoryLinkR170(body: string): string {
 /** Seal the complete R173 additions before removing only the explicit process
  * capability. The original GET/complete implementations and legacy processing
  * callback must reconstruct byte for byte, including idempotency and Auth. */
+function originalPrivateDeletionSourceR174(file: string, text: string): string {
+  const pins: Record<string, readonly [string, string]> = {
+    'packages/core/package.json': [
+      '54fbc47f234eb7a995c339436b07928ba9edbb9abc32bc4bf6791d0c69e5b1be',
+      'f2fa7be7329060f8aecb18b04d7d8ce90d81e5c7fc36e651c32c004fddaf72fc',
+    ],
+    'apps/admin/src/lib/mobile-api/private-conversation-media-owned.ts': [
+      '2dbd8dca6bb9a4498f07bc247cc691ff1fc1b41e360f1820f009a50b618b74c9',
+      'd054b7b5dedbec616e9136c01dd6c1b56f71e885011779612b351f7ae9a582fa',
+    ],
+    'apps/admin/src/lib/mobile-api/versioned-media-owned-response.ts': [
+      'e487c5a3a65afe191a84166dcf411dd32d19bc6f648588be0dcfbd88d75c8305',
+      '1d5cdc2cef774902393c674263154b490c6930fe4db95de53e33e114b0a20b70',
+    ],
+    'apps/admin/src/app/api/mobile/v1/media/[id]/route.ts': [
+      '4fb01b09ad1274dc9bb83448a0dbd1aca380b7950180d2e0d97e2b86645a438a',
+      '93ab2c148718d4a2381019cf41ad0aa9f7efd45e451d3a77bfa3383457bf83ae',
+    ],
+  }
+  const pin = pins[file]
+  if (!pin) return text
+  expect(createHash('sha256').update(text).digest('hex')).toBe(pin[0])
+  const replace = (from: string, to: string) => {
+    expect(text.split(from)).toHaveLength(2)
+    text = text.replace(from, to)
+  }
+  if (file === 'packages/core/package.json') {
+    replace('    "./conversation-media-disposal": "./src/conversation-media-disposal.ts",\n', '')
+  } else if (file.endsWith('/private-conversation-media-owned.ts')) {
+    replace(
+      "  /** A single committed revocation; never the worker's global sweep. */\n  dispose?(identity: ConversationMediaIdentityV2): Promise<void>\n",
+      '',
+    )
+    replace(
+      "  operation: 'read' | 'complete' | 'process' | 'delete',",
+      "  operation: 'read' | 'complete' | 'process',",
+    )
+    replace(
+      "(operation !== 'delete' && kind === 'conversation_photo' && ports.photoEnabled() !== true)",
+      "(kind === 'conversation_photo' && ports.photoEnabled() !== true)",
+    )
+    replace(
+      "      if (\n        operation !== 'delete' &&\n        row.status !== 'deleted' &&\n        Date.parse(row.retention_until) <= at\n      )",
+      "      if (row.status !== 'deleted' && Date.parse(row.retention_until) <= at)",
+    )
+    const start = text.indexOf("    if (operation === 'delete') {\n"),
+      end = text.indexOf("    if (operation === 'process') {\n", start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    text = text.slice(0, start) + text.slice(end)
+  } else if (file.endsWith('/versioned-media-owned-response.ts')) {
+    replace(
+      "import {\n  type OwnedConversationMediaPorts,\n  ownedConversationMediaOperation,\n} from './private-conversation-media-owned'",
+      "import { ownedConversationMediaOperation } from './private-conversation-media-owned'",
+    )
+    replace(
+      "  operation: 'read' | 'complete' | 'process' | 'delete',",
+      "  operation: 'read' | 'complete' | 'process',",
+    )
+    replace("  disposal?: { dispose: NonNullable<OwnedConversationMediaPorts['dispose']> },\n", '')
+    replace('        ...(disposal ? { dispose: disposal.dispose } : {}),\n', '')
+  } else {
+    replace(
+      "import { versionedMediaDisposalResponse } from '@/lib/mobile-api/versioned-media-disposal-response'\n",
+      '',
+    )
+    const prefix = '      versionedMediaDisposalResponse(context, id, async () =>\n',
+      start = text.indexOf(prefix),
+      end = text.indexOf('\n      ),\n    )', start)
+    expect(text.split(prefix)).toHaveLength(2)
+    expect(end).toBeGreaterThan(start)
+    text =
+      text.slice(0, start) +
+      text
+        .slice(start + prefix.length, end)
+        .split('\n')
+        .map((line) => line.slice(2))
+        .join('\n') +
+      text.slice(end + '\n      ),'.length)
+  }
+  expect(createHash('sha256').update(text).digest('hex')).toBe(pin[1])
+  return text
+}
 function originalProcessingSourceR173(name: string): string {
   const pins: Record<string, readonly [string, string]> = {
     'private-conversation-media-owned.ts': [
@@ -1212,14 +1310,19 @@ function originalProcessingSourceR173(name: string): string {
   }
   const pin = pins[name]
   if (!pin) throw new Error('Unreviewed processing source')
-  let text = readFileSync(
-    resolve(
-      appRoot,
-      '../admin/src',
-      name.startsWith('media/') ? 'app/api/mobile/v1' : 'lib/mobile-api',
-      name,
+  let text = originalPrivateDeletionSourceR174(
+    name.startsWith('media/')
+      ? `apps/admin/src/app/api/mobile/v1/${name}`
+      : `apps/admin/src/lib/mobile-api/${name}`,
+    readFileSync(
+      resolve(
+        appRoot,
+        '../admin/src',
+        name.startsWith('media/') ? 'app/api/mobile/v1' : 'lib/mobile-api',
+        name,
+      ),
+      'utf8',
     ),
-    'utf8',
   )
   expect(createHash('sha256').update(text).digest('hex')).toBe(pin[0])
   const replace = (from: string, to: string) => {
@@ -1285,6 +1388,12 @@ function certifyOwnedMediaBodyR171(body: string): string {
     '14150a04c5bc2a47b5ef13db44bb5b2d70381a7880681ae3f6dae09facdf6c94',
     '3f32995297bba5cb0b17ede719a874dedafe9d6fd5a2fe1805be665d8997fcf6',
   ]).toContain(createHash('sha256').update(body).digest('hex'))
+  return body
+}
+function certifyOwnedMediaBodyR174(body: string): string {
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    '9837023bab44ba7527434737f7b19d4d9f5f1acd80ab224af49470476e8fd2e7',
+  )
   return body
 }
 function certifyPhysicalModule(
@@ -1555,7 +1664,7 @@ describe('authoritative Mobile API source surface', () => {
       '7b0cddcee34fc1887c109d933b0f0ac48b815bbd7c35de35b777afb6bfef1fb7',
     ])
     certifyPhysicalModule(file, '72262', [
-      'd8d52b26943275b18cb25243a733b9b6b6689c7ba0ea77ccddca788d2f8885c4',
+      'c50d3d95cbb616ce76dd8d84d9312750bdd67047b88fdb489e12f94a8deaf1e0',
     ])
     const certify = (value: string) =>
       expect(createHash('sha256').update(value).digest('hex')).toBe(
@@ -1595,6 +1704,23 @@ describe('authoritative Mobile API source surface', () => {
   })
   test('rejects changed loader or executable bytes in the relocated legacy media routes', () => {
     const target = currentAppPathsManifest()['/api/mobile/v1/media/[id]/route']
+    const file = resolve(buildRoot, 'server', target ?? '')
+    if (readFileSync(file, 'utf8').includes('77344:')) {
+      const body = certifyPhysicalModule(file, '77344', [
+        '9837023bab44ba7527434737f7b19d4d9f5f1acd80ab224af49470476e8fd2e7',
+      ])
+      for (const changed of [
+        body.replace(
+          'claim_conversation_media_owned_disposal_v2',
+          'claim_conversation_media_disposal_batch_v2',
+        ),
+        body.replace('media_asset_id', 'unapproved_asset_id'),
+        body.replace('c(22693)', 'c(999999)'),
+        `${body};void 0`,
+      ])
+        expect(() => certifyOwnedMediaBodyR174(changed)).toThrow()
+      return
+    }
     const body = certifyPhysicalModule(resolve(buildRoot, 'server', target ?? ''), '82635', [
       '7f0d18531e2756edef8820d14e93ca67f6ca5b0696ff9747f7704bb7e05975a2',
       '2142720a3775b78022d343173a090529e6215d164c1a49051af37d889adad139',
@@ -2317,14 +2443,34 @@ describe('authoritative Mobile API source surface', () => {
         'apps/admin/src/app/api/mobile/v1/media/[id]/complete/route.ts',
         '6baabe3b095741d8c23c660c285ad59f87adc65c01d4fe4d082aaca86fbeacfa',
       ],
+      [
+        'packages/core/src/conversation-media-disposal.ts',
+        '62cd28b2c705b4bf5898a7f5653b7d00c6bb4c88361e463528e3b98e33a269a1',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/private-conversation-media-disposal.ts',
+        'e293c53fb04c15a62ea8398714a87f10021769e6c41b98847417cac5e3d7fd08',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/versioned-media-disposal-response.ts',
+        '8a1a56729c947f70d334b7a6bb7aaaa284d3d251b5a19e6929ac2f9a0965bd56',
+      ],
     ])
       expect(
         createHash('sha256')
-          .update(readFileSync(resolve(appRoot, '../..', file ?? '')))
+          .update(
+            originalPrivateDeletionSourceR174(
+              file ?? '',
+              readFileSync(resolve(appRoot, '../..', file ?? ''), 'utf8'),
+            ),
+          )
           .digest('hex'),
       ).toBe(hash)
     const legacySource = (file: string) => {
-      const text = readFileSync(resolve(appRoot, '../..', file), 'utf8')
+      const text = originalPrivateDeletionSourceR174(
+        file,
+        readFileSync(resolve(appRoot, '../..', file), 'utf8'),
+      )
       if (file === 'packages/core/package.json') {
         const addition = '    "./conversation-media": "./src/conversation-media.ts",\n'
         expect(text.split(addition)).toHaveLength(2)
@@ -2427,6 +2573,17 @@ describe('authoritative Mobile API source surface', () => {
     expect(runtimeExactStringRoutes('conversation.media-process.v2')).toEqual([
       '/api/mobile/v1/media/[id]/process/route',
     ])
+    for (const marker of [
+      'claim_conversation_media_owned_disposal_v2',
+      'inspect_conversation_media_disposal_v2',
+      'acknowledge_conversation_media_disposal_v2',
+    ])
+      expect(runtimeExactStringRoutes(marker)).toEqual(['/api/mobile/v1/media/[id]/route'])
+    for (const marker of [
+      'claim_conversation_media_disposal_batch_v2',
+      'prepare_conversation_media_account_purge_v2',
+    ])
+      expect(runtimeExactStringRoutes(marker)).toEqual([])
     // R111 shares the unchanged purpose module with the two disposal entries.
     // Whole source certificates below bind their calls to the ticket gate, not
     // photo analysis; the new privileged RPC graph is restricted separately.
@@ -2546,7 +2703,17 @@ describe('authoritative Mobile API source surface', () => {
       const target = currentAppPathsManifest()[route ?? '']
       expect(target).toBeTypeOf('string')
       const file = resolve(buildRoot, 'server', target ?? '')
-      if (readFileSync(file, 'utf8').includes('72262:')) {
+      if (readFileSync(file, 'utf8').includes('77344:')) {
+        certifyPhysicalModule(
+          file,
+          '77344',
+          ['9837023bab44ba7527434737f7b19d4d9f5f1acd80ab224af49470476e8fd2e7'],
+          certifyOwnedMediaBodyR174,
+        )
+        certifyPhysicalModule(file, '72262', [
+          'c50d3d95cbb616ce76dd8d84d9312750bdd67047b88fdb489e12f94a8deaf1e0',
+        ])
+      } else if (readFileSync(file, 'utf8').includes('72262:')) {
         certifyPhysicalModule(
           file,
           id ?? '',
@@ -2558,7 +2725,7 @@ describe('authoritative Mobile API source surface', () => {
           certifyOwnedMediaBodyR171,
         )
         certifyPhysicalModule(file, '72262', [
-          'd8d52b26943275b18cb25243a733b9b6b6689c7ba0ea77ccddca788d2f8885c4',
+          'c50d3d95cbb616ce76dd8d84d9312750bdd67047b88fdb489e12f94a8deaf1e0',
         ])
       } else certifyPhysicalModule(file, id ?? '', [hash ?? ''], restoreMediaFactoryLinkR170)
       // Complete neutral revocation primitive + real SDK adapter, with no
@@ -3100,13 +3267,22 @@ describe('authoritative Mobile API source surface', () => {
     const privateParserId = readFileSync(privateCatalog, 'utf8').includes('63867:')
       ? '63867'
       : '86248'
+    const privateCorePins: readonly (readonly [string, string])[] = readFileSync(
+      privateCatalog,
+      'utf8',
+    ).includes('33413:')
+      ? [
+          ['33413', 'f1a60695a4dd1b066bd4191c00aa127b79db5ff86d6a6ae6ffd2b6bc8fdbfa06'],
+          ['41485', '531f91864c8ccd0ee1503b3055f3e4aad94173314ee67c416ebb3c43b12f005a'],
+        ]
+      : [['8184', 'f0a7d67c29acabae8f1e15dd98b2b2d0296dd2c562ca4a50991f15a28e9eba72']]
     certifyExactSharedTable(privateCatalog, [
       ['18975', '19a5f8d0ee0d0ce97fdea1a8b499a8ac2993a3d7c5d19135f128dd57e779bc23'],
       ['36715', '022a8bd63f33d23df8b9f02947b3b05b8c3275dacd24f793e4228196456378f1'],
       ['61344', '4b71f9b6820568692cbe7a42d2ff7605dfcc80b962cb060b442500c85156d14d'],
       [privateParserId, '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916'],
       ['89164', '14f14635e834fe65206cd266f21a2b1c548b48a685e1a95dc94c16dbcf31f519'],
-      ['8184', 'f0a7d67c29acabae8f1e15dd98b2b2d0296dd2c562ca4a50991f15a28e9eba72'],
+      ...privateCorePins,
       [
         '77576',
         privateParserId === '63867'
@@ -3171,7 +3347,7 @@ describe('authoritative Mobile API source surface', () => {
       // this same whole table. Both extra bodies and exact consumers are sealed.
       ...(disposalSharedChunk === privateCatalog
         ? [
-            ['8184', 'f0a7d67c29acabae8f1e15dd98b2b2d0296dd2c562ca4a50991f15a28e9eba72'] as const,
+            ...privateCorePins,
             ['36715', '022a8bd63f33d23df8b9f02947b3b05b8c3275dacd24f793e4228196456378f1'] as const,
           ]
         : []),

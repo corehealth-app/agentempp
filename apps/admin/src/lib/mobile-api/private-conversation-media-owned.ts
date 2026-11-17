@@ -50,6 +50,8 @@ export interface OwnedConversationMediaPorts {
   close(userId: string, assetId: string): Promise<boolean>
   /** Available only to the explicit processing route; no fact writer. */
   enqueue?(input: { userId: string; assetId: string; requestId: string }): Promise<void>
+  /** A single committed revocation; never the worker's global sweep. */
+  dispose?(identity: ConversationMediaIdentityV2): Promise<void>
 }
 function unavailable() {
   return new MobileApiError(503, 'media_catalog_unavailable', 'Media operation unavailable')
@@ -86,7 +88,7 @@ export async function ownedConversationMediaOperation(
   ports: OwnedConversationMediaPorts,
   userId: string,
   assetId: string,
-  operation: 'read' | 'complete' | 'process',
+  operation: 'read' | 'complete' | 'process' | 'delete',
   requestKey?: string,
 ) {
   const owner = resourceIdSchema.parse(userId),
@@ -97,7 +99,7 @@ export async function ownedConversationMediaOperation(
     if (
       refused ||
       ports.enabled() !== true ||
-      (kind === 'conversation_photo' && ports.photoEnabled() !== true)
+      (operation !== 'delete' && kind === 'conversation_photo' && ports.photoEnabled() !== true)
     ) {
       refused = true
       throw unavailable()
@@ -134,12 +136,23 @@ export async function ownedConversationMediaOperation(
         row.retention_until !== original.retention_until
       )
         throw unavailable()
-      if (row.status !== 'deleted' && Date.parse(row.retention_until) <= at)
+      if (
+        operation !== 'delete' &&
+        row.status !== 'deleted' &&
+        Date.parse(row.retention_until) <= at
+      )
         throw new MobileApiError(410, 'media_expired', 'This media upload has expired')
       return row
     }
     let row = live(original)
     const identity = privateMediaIdentityOfV2(row)
+    if (operation === 'delete') {
+      if (!ports.dispose) throw unavailable()
+      await ports.dispose(identity)
+      const latest = live(await ports.catalog.findOwned(scope))
+      if (latest.status !== 'deleted' || latest.processing_result !== null) throw unavailable()
+      return { action: 'private' as const, value: dto(latest) }
+    }
     if (operation === 'process') {
       if (typeof requestKey !== 'string') throw unavailable()
       idempotencyKeySchema.parse(requestKey)

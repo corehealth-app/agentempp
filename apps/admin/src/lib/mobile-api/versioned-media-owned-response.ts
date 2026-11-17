@@ -3,7 +3,10 @@ import {
   conversationPhotoMobileEnabled,
 } from '@mpp/core/conversation-photo-purpose'
 import { MobileApiError, mobileSuccess } from './http'
-import { ownedConversationMediaOperation } from './private-conversation-media-owned'
+import {
+  type OwnedConversationMediaPorts,
+  ownedConversationMediaOperation,
+} from './private-conversation-media-owned'
 import type { MobileRouteContext } from './route'
 import { createSupabasePrivateConversationMedia } from './supabase-private-conversation-media'
 
@@ -12,13 +15,14 @@ import { createSupabasePrivateConversationMedia } from './supabase-private-conve
 export async function versionedOwnedMediaResponse(
   context: MobileRouteContext,
   assetId: string,
-  operation: 'read' | 'complete' | 'process',
+  operation: 'read' | 'complete' | 'process' | 'delete',
   legacy: () => Promise<Response>,
   env: Readonly<Record<string, string | undefined>> = process.env,
   processing?: {
     requestKey: string
     enqueue(input: { userId: string; assetId: string; requestId: string }): Promise<void>
   },
+  disposal?: { dispose: NonNullable<OwnedConversationMediaPorts['dispose']> },
 ): Promise<Response> {
   const enabled = () =>
     env.MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED === 'true' &&
@@ -48,6 +52,7 @@ export async function versionedOwnedMediaResponse(
         storageOrigin,
         catalog: source.catalog,
         ...(processing ? { enqueue: processing.enqueue } : {}),
+        ...(disposal ? { dispose: disposal.dispose } : {}),
         resolve: (userId, id) =>
           rpc('resolve_conversation_media_catalog_v2', {
             p_user_id: userId,

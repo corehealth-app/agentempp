@@ -179,6 +179,7 @@ export function parseConversationMealInterpretation(
 const mediaSchema = z
   .object({
     asset_id: uuid,
+    catalog_version: z.literal(2).optional(),
     kind: z.enum(['meal_photo', 'audio_note', 'conversation_photo']),
     status: z.literal('processed'),
     processed_at: z.string().datetime({ offset: true }),
@@ -200,6 +201,7 @@ export const mealInterpretationSourceSchema = z
     media_binding: z
       .object({
         asset_id: uuid,
+        catalog_version: z.literal(2).optional(),
         kind: z.enum(['meal_photo', 'audio_note', 'conversation_photo']),
         processed_at: z.string(),
         updated_at: z.string(),
@@ -408,6 +410,7 @@ export function buildConversationMealInterpretationSource(
         return interpretationUnavailable()
       media_binding = {
         asset_id: m.asset_id,
+        ...(m.catalog_version === 2 ? { catalog_version: 2 as const } : {}),
         kind: m.kind,
         processed_at: m.processed_at,
         updated_at: m.updated_at,

@@ -82,6 +82,7 @@ export type ConversationIntakeRoutingDecision = Readonly<
 const mediaSchema = z
   .object({
     asset_id: workoutUUID,
+    catalog_version: z.literal(2).optional(),
     owner_id: workoutUUID,
     kind: z.enum(['meal_photo', 'audio_note', 'gym_photo', 'conversation_photo']),
     status: z.literal('processed'),

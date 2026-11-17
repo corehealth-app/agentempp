@@ -121,6 +121,7 @@ export function pinConversationWorkoutCommand(raw: BoundConversationWorkoutComma
 const mediaSchema = z
   .object({
     asset_id: workoutUUID,
+    catalog_version: z.literal(2).optional(),
     owner_id: workoutUUID,
     kind: z.enum(['audio_note', 'gym_photo', 'conversation_photo']),
     status: z.literal('processed'),

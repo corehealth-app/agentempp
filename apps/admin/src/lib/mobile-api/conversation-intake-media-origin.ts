@@ -53,6 +53,7 @@ export const conversationIntakeMediaProjectionSchema = z
     media: z
       .object({
         asset_id: uuid,
+        catalog_version: z.literal(2).optional(),
         owner_id: uuid,
         kind: z.enum(['meal_photo', 'audio_note', 'gym_photo', 'conversation_photo']),
         processed_at: clock,
@@ -105,6 +106,7 @@ export function assertConversationIntakeMediaCapture(
     media = z
       .object({
         asset_id: uuid,
+        catalog_version: z.literal(2).optional(),
         owner_id: uuid,
         kind: z.string(),
         processed_at: clock,
@@ -130,6 +132,7 @@ export function assertConversationIntakeMediaCapture(
     projection.media.owner_id !== command.ownerId ||
     media.owner_id !== command.ownerId ||
     projection.media.kind !== media.kind ||
+    projection.media.catalog_version !== media.catalog_version ||
     !conversationPhotoDomainAllowed(
       media.kind,
       media.processing_result,

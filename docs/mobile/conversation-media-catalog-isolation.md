@@ -1,6 +1,6 @@
 # Conversational media catalog isolation
 
-Status: **local catalog/upload/processing substrate qualified; not activated or deployed**. The full
+Status: **local catalog/upload/processing and versioned factual capture qualified; not activated or deployed**. The full
 conversational delivery and R105-REVIEW-1 remain open.
 
 Old immutable ordinary-media handlers select `public.media_assets`. Existing
@@ -73,7 +73,59 @@ nonclinical image-result contract; audio retains the bounded transcription
 fields, without raw provider diagnostics. Processing alone records no consumed
 meal, workout or reward. No default provider factory or event is activated here.
 
-## Qualified and remaining
+## Explicit factual lineage
+
+`admit_conversation_private_media_intake_v2` creates an immutable version-2
+binding in the same transaction as a genuinely new intake. It retains the
+existing owner/epoch lane, input protocol/hash, quota and reserved-child logic.
+An existing admission without this binding remains version 1. It cannot be
+upgraded, including after a legacy catalog row is removed and its opaque ID
+is used by a new private source. No request probes one catalog and falls back
+to the other. Reset/account input scrubbing cascades to this intake binding;
+independent upload/disposal obligations retain their separate lifecycle.
+
+Five fingerprinted source/projection/continuation readers receive narrowly
+bound read substitutions. The common record is reconstructed only in memory
+for the existing SQL readers; there is no public row or purpose retag. Private
+reads refuse expired sources and closed independent obligations even if their
+catalog status still says `processed`. The captured source and selection never
+contain the private Storage key. Existing atomic domain writers and numerical
+rules remain unchanged.
+
+Only new private sources carry `catalog_version: 2` through neutral capture,
+selection, typed source and interpretation. Legacy payloads omit the field
+unchanged. Server codecs require matching source/projection versions and reject
+missing/mismatched/unknown versions. They remain decoders, not permission gates.
+The new private intake port is an explicit trusted composition option; it keeps
+the existing per-call Auth/owner/epoch observer and never retries/falls back to
+legacy admission. It is **not wired into the default runtime**. Activation must
+select it only for a proved version-2 source; existing public-media drafts and
+receipts keep their original admission path.
+
+R168 qualifies 47 real SQL checks, including the original meal/workout atomic
+writers and receipt replay. Meal resolution in that writer test uses the
+existing synthetic resolved-result fixture; this is not automatic nutritional
+resolution evidence. Five real concurrent admission schedules preserve the
+first committed catalog version through commit/rollback and old/new callers.
+Actual local SQL goldens exercise server codecs. The installed-SDK integration
+continues from upload/processing through the scoped intake store, sealed typed
+child and interpretation/writer source decoders, refusing a withdrawn epoch
+before another physical RPC. Storage/model boundaries are synthetic; personal
+Auth, connected Storage and native delivery remain separate gates.
+
+Seven current SQL neighboring suites pass. Two older expiry/account-purge
+fixtures still expect unenrolled legacy media to be deleted; both fail exactly
+the same with the pre-R168 reader hashes restored. The approved retention-cutover
+suite, which preserves those old rows, passes. Neither legacy fixture nor the
+retention policy is weakened to make that mismatch green.
+
+The source/build guards pin the whole new codec bodies and reverse only the
+declared version additions. All five historical source hashes and four complete
+compiled-body hashes are reconstructed exactly, with executable-tampering and
+version-substitution refusal retained. Unknown SQL reader source is refused
+before migration; its local rollback preserves the complete function fingerprint.
+
+## Foundation qualification and remaining integration
 
 R166 qualifies 34 namespace cases, 65 real SQL catalog/permission cases and six
 real concurrent schedules. A repeatable-snapshot collision was first reproduced
@@ -96,10 +148,10 @@ processor together; only Storage and model boundaries are synthetic. It verifies
 one interpretation on replay, no public catalog mirror and no domain write.
 This is local integration evidence, not connected Storage or native QA.
 
-Both migrations remain source only. No route, registered worker, rollout flag,
+All three migrations remain source only. No route, registered worker, rollout flag,
 provider, clinical function, native binary or TestFlight version has been
-changed. Before activation, integrate explicit versioned factual capture,
-independent byte revocation, scheduled disposal and account purge. Preserve
+changed. Before activation, integrate independent byte revocation, scheduled
+disposal, account purge and the request-specific private runtime composition. Preserve
 explicit catalog-version provenance without a public mirror or fallback that
 could rebind an old receipt to a new source. Qualify the complete connected graph,
 actual Storage interleavings, native permissions and distribution afterward.

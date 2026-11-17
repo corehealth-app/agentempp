@@ -183,6 +183,99 @@ function runtimeExactStringRoutes(value: string): string[] {
 /** R102 intentionally extends the closed ordinary-purpose observation seam.
  * Pin every changed runtime source; no legacy provider/worker/writer capability
  * or physical graph edge is exempted by the complete body certificates. */
+/** R168 admits only the explicit private-version field and its pairing check.
+ * Pin the whole new source before reversing those exact additions. */
+function legacyPrivateMediaSourceR168(name: string, text: string): string {
+  const pins: Record<string, { hash: string; additions: readonly (readonly [string, number])[] }> =
+    {
+      'conversation-intake-contracts.ts': {
+        hash: '109337a08ea493451154ff2ab1664cbe88b8bcaf067b6a23fad0c06974a79c37',
+        additions: [['    catalog_version: z.literal(2).optional(),\n', 1]],
+      },
+      'conversation-intake-media-origin.ts': {
+        hash: '1144988dc4826d4f8fcef7da6efd11ac3f653466c8cfde85ee3f0a6ba138efc9',
+        additions: [
+          ['        catalog_version: z.literal(2).optional(),\n', 2],
+          ['    projection.media.catalog_version !== media.catalog_version ||\n', 1],
+        ],
+      },
+      'conversation-meal-interpretation-contracts.ts': {
+        hash: 'c7395069566844e764eed2bc5b212e490e9e831710d9a20a1184e1cd28b57013',
+        additions: [
+          ['        catalog_version: z.literal(2).optional(),\n', 1],
+          ['    catalog_version: z.literal(2).optional(),\n', 1],
+          ['        ...(m.catalog_version === 2 ? { catalog_version: 2 as const } : {}),\n', 1],
+        ],
+      },
+      'conversation-meal-writer-contracts.ts': {
+        hash: 'd20b68f55ed3a0e6b623c9f12f5add1fee7c9ddbc4f8c6a2abe9018709b937fb',
+        additions: [['    catalog_version: z.literal(2).optional(),\n', 1]],
+      },
+      'conversation-workout-contracts.ts': {
+        hash: 'eb2806dc5fa361f63c36e939ae2ebde8500ce23279bbb93aeb575efbc32cef8a',
+        additions: [['    catalog_version: z.literal(2).optional(),\n', 1]],
+      },
+    }
+  const pin = pins[name]
+  if (!pin) return text
+  expect(createHash('sha256').update(text).digest('hex')).toBe(pin.hash)
+  let restored = text
+  for (const [addition, count] of pin.additions) {
+    expect(restored.split(addition)).toHaveLength(count + 1)
+    restored = restored.split(addition).join('')
+  }
+  return restored
+}
+
+/** Whole fresh compiled bodies were compared. The declared literal additions
+ * reverse to all four historical body hashes; no module/export is excluded. */
+function restorePrivateMediaContractR168(id: string, body: string): string {
+  const pins: Record<
+    string,
+    { hash: string; previous: string; additions: readonly (readonly [string, number])[] }
+  > = {
+    '50522': {
+      hash: '0039979f25f5e30108abbe1d31a3d4a07b3ffabd719dc826bedc78469faf349f',
+      previous: 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633',
+      additions: [['catalog_version:f.eu(2).optional(),', 1]],
+    },
+    '13300': {
+      hash: '23c99d32164b96a9017a02630f0856e118cc2237c314440a876c2e01ad5fc4c8',
+      previous: '6447848bbd6a737c168e7027e61dc5c57a12e9881a8104ffbc9829810b07122c',
+      additions: [
+        ['catalog_version:f.eu(2).optional(),', 2],
+        ['...2===a.catalog_version?{catalog_version:2}:{},', 1],
+      ],
+    },
+    '36693': {
+      hash: 'ca39947b0c6c40c0cc6f8341db3c453bd02d3e833c635dfe97dd83f957eb837f',
+      previous: 'a67fde03374f03e52ce2cc12031cb0be06174e20443bb57226f2ef986828389c',
+      additions: [['catalog_version:e.eu(2).optional(),', 1]],
+    },
+    '61104': {
+      hash: '2b991e02d5f7c042c60dfd16fac08ae6a3eb0bd4417714ec4c8f3f7413c748c0',
+      previous: 'a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
+      additions: [
+        ['catalog_version:f.eu(2).optional(),', 2],
+        ['||i.media.catalog_version!==k.catalog_version', 1],
+      ],
+    },
+  }
+  const pin = pins[id]
+  if (!pin) return body
+  expect(
+    createHash('sha256').update(body).digest('hex'),
+    'exact private media compiled delta',
+  ).toBe(pin.hash)
+  let restored = body
+  for (const [addition, count] of pin.additions) {
+    expect(restored.split(addition)).toHaveLength(count + 1)
+    restored = restored.split(addition).join('')
+  }
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(pin.previous)
+  return restored
+}
+
 function certifyOrdinaryPhotoSourcesR102(): void {
   // R165 adds only the exact app-only whey protein alias. All377 actual module
   // identities were compared:375 whole bodies remain byte-identical; the two
@@ -251,7 +344,12 @@ function certifyOrdinaryPhotoSourcesR102(): void {
   ])
     expect(
       createHash('sha256')
-        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name ?? '')))
+        .update(
+          legacyPrivateMediaSourceR168(
+            name ?? '',
+            readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name ?? ''), 'utf8'),
+          ),
+        )
         .digest('hex'),
     ).toBe(hash)
 }
@@ -398,7 +496,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
                 ? restoreImageParserLinkR106('67584', body)
                 : id === '65556'
                   ? certifyPhotoReportR163(body)
-                  : body,
+                  : restorePrivateMediaContractR168(id, body),
             )
             .digest('hex')}`,
       )
@@ -505,6 +603,7 @@ function certifyStructuredIntakeRouterR128(body: string): string {
 function certifyExactSharedTable(
   file: string,
   pins: readonly (readonly [string, string])[],
+  restore?: (id: string, body: string) => string,
 ): ReadonlyMap<string, string> {
   const source = ts.createSourceFile(
     file,
@@ -534,13 +633,14 @@ function certifyExactSharedTable(
       const id = property.name.getText(source)
       const body = property.initializer.getText(source)
       bodies.set(id, body)
+      const certifiedBody = restore ? restore(id, body) : body
       return [
         id,
         createHash('sha256')
           .update(
             id === '6535'
-              ? certifyStructuredIntakeRouterR128(body)
-              : restoreWorkoutFacadeLinkR140(body),
+              ? certifyStructuredIntakeRouterR128(certifiedBody)
+              : restoreWorkoutFacadeLinkR140(certifiedBody),
           )
           .digest('hex'),
       ].join(':')
@@ -1205,12 +1305,16 @@ describe('authoritative Mobile API source surface', () => {
       'reconcile_conversation_intake_routing',
     ])
     expect(chunks).toHaveLength(1)
-    const bodies = certifyExactSharedTable(chunks[0] ?? '', [
-        ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
-        ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-        ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-        ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
-      ]),
+    const bodies = certifyExactSharedTable(
+        chunks[0] ?? '',
+        [
+          ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
+          ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
+          ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
+          ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
+        ],
+        restorePrivateMediaContractR168,
+      ),
       body = bodies.get('6535') ?? ''
     expect(() => certifyIntakeMediaBridgeR102(body)).not.toThrow()
     for (const changed of [
@@ -1225,6 +1329,28 @@ describe('authoritative Mobile API source surface', () => {
       body.replace(/n=c\((?:63867|86248)\)/, 'n=c(86249)'),
     ])
       expect(() => certifyIntakeMediaBridgeR102(changed)).toThrow()
+  })
+  test('refuses removal or substitution of the exact private media version checks', () => {
+    const chunks = semanticChunks([
+      'conversation.meal-interpreter.v1',
+      'read_mobile_registration_feedback',
+      'seal_conversation_meal_decision',
+      'commit_conversation_meal_feedback_v2',
+    ])
+    expect(chunks).toHaveLength(1)
+    const body = certifyPhysicalModule(chunks[0] ?? '', '61104', [
+      '2b991e02d5f7c042c60dfd16fac08ae6a3eb0bd4417714ec4c8f3f7413c748c0',
+    ])
+    for (const changed of [
+      body.replace('catalog_version:f.eu(2).optional(),', ''),
+      body.replace('catalog_version:f.eu(2).optional(),', 'catalog_version:f.eu(1).optional(),'),
+      body.replace('||i.media.catalog_version!==k.catalog_version', ''),
+      body.replace(
+        '||i.media.catalog_version!==k.catalog_version',
+        '||i.media.catalog_version===k.catalog_version',
+      ),
+    ])
+      expect(() => restorePrivateMediaContractR168('61104', changed)).toThrow()
   })
   test('distinguishes an exact legacy RPC from its v3 successor and invalidates changed-file cache', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'performe-exact-rpc-')),
@@ -2698,12 +2824,16 @@ describe('authoritative Mobile API source surface', () => {
         )
         .digest('hex'),
     ).toBe('d4a62d927c1f3fc8006f4c0701fff0163fb812a422a5833f64ccafb527a5faae')
-    const intakeBodies = certifyExactSharedTable(intakeChunk, [
-      ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
-      ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-      ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-      ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
-    ])
+    const intakeBodies = certifyExactSharedTable(
+      intakeChunk,
+      [
+        ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
+        ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
+        ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
+        ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
+      ],
+      restorePrivateMediaContractR168,
+    )
     certifyIntakeMediaBridgeR102(intakeBodies.get('6535') ?? '')
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.

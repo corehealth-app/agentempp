@@ -61,6 +61,17 @@ and an installed-SDK → real SQL → processor integration pass without externa
 network or provider spend. Explicit versioned factual capture and the complete
 disposal/account lifecycle remain required, so the task checkboxes stay open.
 
+R168 local progress: explicit version-2 intake admission is immutable and atomic;
+old admissions cannot be upgraded or rebound after an asset-ID reuse. Five
+fingerprinted read/projection hooks carry the selected version into neutral,
+typed and linked-clarification source captures without a public row. Original
+atomic meal/workout writers and replay pass against those captures. The trusted
+private intake port and server codecs are qualified with actual SQL goldens and
+an installed-SDK/local-SQL chain; default runtime remains unchanged. Five real
+admission races preserve first-commit provenance. Private byte disposition,
+account purge, default composition/activation and connected/native release gates
+remain required before Task2/Task3 are complete.
+
 ### 3. Independent disposal and account lifecycle
 
 Files: existing neutral revocation/worker/purge adapters and additive private lifecycle SQL.

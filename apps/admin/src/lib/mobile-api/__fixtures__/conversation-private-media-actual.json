@@ -1,0 +1,1876 @@
+{
+  "rows": [
+    {
+      "kind": "audio_note",
+      "typed": {
+        "action": "captured",
+        "context": {
+          "day": {
+            "date": "2026-11-17",
+            "day_closed": false,
+            "calorie_origin": null,
+            "protein_target": null,
+            "calories_target": null,
+            "target_revision": "0",
+            "current_protocol": null
+          },
+          "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+          "media": {
+            "kind": "audio_note",
+            "status": "processed",
+            "asset_id": "03596ddc-9f82-4441-855f-83de24ac76d4",
+            "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+            "updated_at": "2026-11-17T18:08:38.00123+00:00",
+            "context_text": null,
+            "processed_at": "2026-11-17T18:08:38.00123+00:00",
+            "catalog_version": 2,
+            "processing_result": {
+              "text": "Comi arroz 100 g"
+            }
+          },
+          "owner": {
+            "locale": "pt-BR",
+            "country": "BR",
+            "timezone": "UTC",
+            "country_confirmed": true
+          },
+          "schema": "conversation.meal-source.v2",
+          "catalog": {
+            "epoch": "245f5336-6a4a-4e00-ba51-d1e30da736d0",
+            "revision": "0"
+          },
+          "clinical": {
+            "body": {
+              "sex": null,
+              "locale": "pt-BR",
+              "timezone": "UTC",
+              "height_cm": null,
+              "weight_kg": null,
+              "birth_date": null,
+              "body_fat_percent": null,
+              "training_frequency": null
+            },
+            "date": "2026-11-17",
+            "mode": "profile",
+            "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+            "safety": null,
+            "missing": ["birth_date", "height_cm", "weight_kg"],
+            "user_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+            "version": 1,
+            "timezone": "UTC",
+            "assessment": "incomplete",
+            "health_state": {
+              "items": [],
+              "user_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+              "version": 1,
+              "hold_active": false,
+              "hide_protein": false,
+              "safety_revision": "0",
+              "declared_no_plan": false,
+              "last_declared_at": null
+            },
+            "phase_origin": {
+              "kind": "not_completed"
+            },
+            "profile_hash": "8f7e490fd47b9b1db1beff2c5eabe6dfc88cb39116145a2b4c97e4d802d6380d",
+            "profile_present": false,
+            "first_completion": true,
+            "generation_token": null,
+            "signup_generation": null,
+            "calculation_config": [
+              {
+                "key": "calc.activity_factors",
+                "value": {
+                  "alto": 1.725,
+                  "leve": 1.375,
+                  "atleta": 1.9,
+                  "moderado": 1.55,
+                  "sedentario": 1.2
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.badges",
+                "value": [
+                  {
+                    "key": "Primeira Semana",
+                    "type": "streak",
+                    "threshold": 7
+                  },
+                  {
+                    "key": "Mês de Ferro",
+                    "type": "streak",
+                    "threshold": 30
+                  },
+                  {
+                    "key": "Atleta Real",
+                    "type": "streak",
+                    "threshold": 90
+                  },
+                  {
+                    "key": "Primeiro Bloco",
+                    "type": "blocks",
+                    "threshold": 1
+                  },
+                  {
+                    "key": "XP Master",
+                    "type": "xp",
+                    "threshold": 1000
+                  },
+                  {
+                    "key": "Elite",
+                    "type": "xp",
+                    "threshold": 3500
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bf_goal_rules",
+                "value": [
+                  {
+                    "above": 30,
+                    "subtract": 10
+                  },
+                  {
+                    "above": 20,
+                    "target": 20
+                  },
+                  {
+                    "above": 18,
+                    "target": 18
+                  },
+                  {
+                    "above": 15,
+                    "target": 15
+                  },
+                  {
+                    "above": 0,
+                    "target": 10
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bf_limits",
+                "value": {
+                  "feminino": {
+                    "gain": 27,
+                    "recomp": 28
+                  },
+                  "masculino": {
+                    "gain": 19,
+                    "recomp": 20
+                  }
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bmr_katch",
+                "value": {
+                  "base": 370,
+                  "lbm_coef": 21.6
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bmr_mifflin",
+                "value": {
+                  "age_coef": 5,
+                  "height_coef": 6.25,
+                  "male_offset": 5,
+                  "weight_coef": 10,
+                  "female_offset": -161
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.imc_goal_steps",
+                "value": [30, 25, 23, 22, 21],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.imc_limit_recomp",
+                "value": 25,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.kcal_block",
+                "value": 7700,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.levels",
+                "value": [
+                  {
+                    "max": 99,
+                    "min": 0,
+                    "name": "Início",
+                    "level": 1
+                  },
+                  {
+                    "max": 299,
+                    "min": 100,
+                    "name": "Constância",
+                    "level": 2
+                  },
+                  {
+                    "max": 599,
+                    "min": 300,
+                    "name": "Foco",
+                    "level": 3
+                  },
+                  {
+                    "max": 999,
+                    "min": 600,
+                    "name": "Disciplina",
+                    "level": 4
+                  },
+                  {
+                    "max": 1499,
+                    "min": 1000,
+                    "name": "Performance",
+                    "level": 5
+                  },
+                  {
+                    "max": 2199,
+                    "min": 1500,
+                    "name": "Domínio",
+                    "level": 6
+                  },
+                  {
+                    "max": 2999,
+                    "min": 2200,
+                    "name": "Elite MPP",
+                    "level": 7
+                  },
+                  {
+                    "max": null,
+                    "min": 3000,
+                    "name": "Lenda MPP",
+                    "level": 8
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.protein_factors",
+                "value": {
+                  "muita": 1.6,
+                  "pouca": 1.8,
+                  "moderada": 1.8,
+                  "training_low": 1.7,
+                  "optimal_mid_training": 1.9,
+                  "optimal_high_training": 2.0
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.sleep_min_hours",
+                "value": 6.5,
+                "updated_at": "2026-11-03T13:44:53.028403Z"
+              },
+              {
+                "key": "calc.training_min",
+                "value": 3,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.xp_rules",
+                "value": {
+                  "base": 10,
+                  "protein_bonus": 5,
+                  "training_bonus": 5,
+                  "protein_threshold_g": 100
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              }
+            ]
+          },
+          "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+          "command_id": "8613ddbb-533e-4731-a32b-495755dbd401",
+          "input_hash": "033fa57bc7f1023989c342e25c7f14065784fbc633ce9e4396d70581464eb852",
+          "source_input": {
+            "kind": "meal.report",
+            "source": {
+              "caption": "Comi arroz 100 g",
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "03596ddc-9f82-4441-855f-83de24ac76d4"
+            },
+            "command_id": "8613ddbb-533e-4731-a32b-495755dbd401",
+            "intake_origin": {
+              "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "b423b60c-758b-4b29-be45-45871f220e2b",
+              "intake_id": "504ae340-0010-4318-95dd-e52a96bd6e5c",
+              "input_hash": "852266e25bb318c02a203f82de049780050c74b1131794db9f57608e880f44fa",
+              "source_hash": "5b0b5b4db791922546da658ed786067393b691a81e13a0423291903bf12f0170",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "command_protocol": "conversation.command.v1"
+          },
+          "source_units": ["media_caption", "media_transcript"],
+          "source_evidence": {
+            "caption": "Comi arroz 100 g",
+            "transcript": "Comi arroz 100 g",
+            "context_text": null
+          },
+          "intake_projection": {
+            "media": {
+              "kind": "audio_note",
+              "asset_id": "03596ddc-9f82-4441-855f-83de24ac76d4",
+              "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+              "updated_at": "2026-11-17T18:08:38.001230Z",
+              "processed_at": "2026-11-17T18:08:38.001230Z",
+              "catalog_version": 2,
+              "processing_hash": "b45b9b7076775057b690c41a0f251f9570926930691f2b1d5c455f78426b0713"
+            },
+            "origin": {
+              "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "b423b60c-758b-4b29-be45-45871f220e2b",
+              "intake_id": "504ae340-0010-4318-95dd-e52a96bd6e5c",
+              "input_hash": "852266e25bb318c02a203f82de049780050c74b1131794db9f57608e880f44fa",
+              "source_hash": "5b0b5b4db791922546da658ed786067393b691a81e13a0423291903bf12f0170",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "033fa57bc7f1023989c342e25c7f14065784fbc633ce9e4396d70581464eb852"
+          }
+        },
+        "captured_at": "2026-11-17T18:08:38.104142+00:00",
+        "source_hash": "bef843b1be85599b7aa444cac75169924eccc2f52aabe314dd26cc5250b1e753"
+      },
+      "neutral": {
+        "action": "captured",
+        "context": {
+          "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+          "media": {
+            "kind": "audio_note",
+            "status": "processed",
+            "asset_id": "03596ddc-9f82-4441-855f-83de24ac76d4",
+            "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+            "updated_at": "2026-11-17T18:08:38.001230Z",
+            "context_text": null,
+            "processed_at": "2026-11-17T18:08:38.001230Z",
+            "catalog_version": 2,
+            "processing_result": {
+              "text": "Comi arroz 100 g"
+            }
+          },
+          "schema": "conversation.intake-source.v1",
+          "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+          "intake_id": "504ae340-0010-4318-95dd-e52a96bd6e5c",
+          "time_zone": "UTC",
+          "input_hash": "852266e25bb318c02a203f82de049780050c74b1131794db9f57608e880f44fa",
+          "local_date": "2026-11-17",
+          "admitted_at": "2026-11-17T18:08:38.001638Z",
+          "captured_at": "2026-11-17T18:08:38.012391Z",
+          "source_input": {
+            "source": {
+              "caption": "Comi arroz 100 g",
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "03596ddc-9f82-4441-855f-83de24ac76d4"
+            },
+            "intake_id": "504ae340-0010-4318-95dd-e52a96bd6e5c",
+            "intake_protocol": "conversation.intake.v1"
+          }
+        },
+        "source_hash": "5b0b5b4db791922546da658ed786067393b691a81e13a0423291903bf12f0170"
+      },
+      "selection": {
+        "intake": {
+          "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+          "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+          "intake_id": "504ae340-0010-4318-95dd-e52a96bd6e5c",
+          "input_hash": "852266e25bb318c02a203f82de049780050c74b1131794db9f57608e880f44fa",
+          "admitted_at": "2026-11-17T18:08:38.001638Z"
+        },
+        "schema": "conversation.intake-selection.v2",
+        "command": {
+          "kind": "meal.report",
+          "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+          "input": {
+            "kind": "meal.report",
+            "source": {
+              "caption": "Comi arroz 100 g",
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "03596ddc-9f82-4441-855f-83de24ac76d4"
+            },
+            "command_id": "8613ddbb-533e-4731-a32b-495755dbd401",
+            "intake_origin": {
+              "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "b423b60c-758b-4b29-be45-45871f220e2b",
+              "intake_id": "504ae340-0010-4318-95dd-e52a96bd6e5c",
+              "input_hash": "852266e25bb318c02a203f82de049780050c74b1131794db9f57608e880f44fa",
+              "source_hash": "5b0b5b4db791922546da658ed786067393b691a81e13a0423291903bf12f0170",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "command_protocol": "conversation.command.v1"
+          },
+          "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+          "command_id": "8613ddbb-533e-4731-a32b-495755dbd401",
+          "input_hash": "033fa57bc7f1023989c342e25c7f14065784fbc633ce9e4396d70581464eb852",
+          "admitted_at": "2026-11-17T18:08:38.057062Z"
+        },
+        "decision": {
+          "kind": "meal.report",
+          "reason": "processed_media_report",
+          "schema": "conversation.intake-routing.v1"
+        },
+        "selected_at": "2026-11-17T18:08:38.068101Z",
+        "source_hash": "5b0b5b4db791922546da658ed786067393b691a81e13a0423291903bf12f0170",
+        "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7",
+        "media_projection": {
+          "media": {
+            "kind": "audio_note",
+            "asset_id": "03596ddc-9f82-4441-855f-83de24ac76d4",
+            "owner_id": "1419ce17-1fda-4bb5-b42a-da8cdd63aa69",
+            "updated_at": "2026-11-17T18:08:38.001230Z",
+            "processed_at": "2026-11-17T18:08:38.001230Z",
+            "catalog_version": 2,
+            "processing_hash": "b45b9b7076775057b690c41a0f251f9570926930691f2b1d5c455f78426b0713"
+          },
+          "origin": {
+            "epoch": "9e563734-a804-4ef5-bfe2-bf4563493c73",
+            "schema": "conversation.intake-media-origin.v1",
+            "claim_id": "b423b60c-758b-4b29-be45-45871f220e2b",
+            "intake_id": "504ae340-0010-4318-95dd-e52a96bd6e5c",
+            "input_hash": "852266e25bb318c02a203f82de049780050c74b1131794db9f57608e880f44fa",
+            "source_hash": "5b0b5b4db791922546da658ed786067393b691a81e13a0423291903bf12f0170",
+            "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+          },
+          "schema": "conversation.intake-media-projection.v1",
+          "child_input_hash": "033fa57bc7f1023989c342e25c7f14065784fbc633ce9e4396d70581464eb852"
+        }
+      }
+    },
+    {
+      "kind": "audio_workout",
+      "typed": {
+        "context": {
+          "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+          "media": {
+            "kind": "audio_note",
+            "status": "processed",
+            "asset_id": "8c6a1ffc-40f0-4516-b047-520bd6dad5c1",
+            "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+            "updated_at": "2026-11-17T18:08:38.128797Z",
+            "context_text": null,
+            "processed_at": "2026-11-17T18:08:38.128797Z",
+            "catalog_version": 2,
+            "processing_result": {
+              "text": "Caminhei por 12 minutos"
+            }
+          },
+          "schema": "conversation.workout-source.v2",
+          "clinical": {
+            "body": {
+              "sex": null,
+              "locale": "pt-BR",
+              "timezone": "UTC",
+              "height_cm": null,
+              "weight_kg": null,
+              "birth_date": null,
+              "body_fat_percent": null,
+              "training_frequency": null
+            },
+            "date": "2026-11-17",
+            "mode": "profile",
+            "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+            "safety": null,
+            "missing": ["birth_date", "height_cm", "weight_kg"],
+            "user_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+            "version": 1,
+            "timezone": "UTC",
+            "assessment": "incomplete",
+            "observed_at": "2026-11-17T18:08:38.208857Z",
+            "context_hash": "55d984fe283c69c95eeb39a14d70305cde682bbdb28137382486a80df94989ad",
+            "health_state": {
+              "items": [],
+              "user_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+              "version": 1,
+              "hold_active": false,
+              "hide_protein": false,
+              "safety_revision": "0",
+              "declared_no_plan": false,
+              "last_declared_at": null
+            },
+            "phase_origin": {
+              "kind": "not_completed"
+            },
+            "profile_hash": "8f7e490fd47b9b1db1beff2c5eabe6dfc88cb39116145a2b4c97e4d802d6380d",
+            "profile_present": false,
+            "first_completion": true,
+            "generation_token": null,
+            "signup_generation": null,
+            "calculation_config": [
+              {
+                "key": "calc.activity_factors",
+                "value": {
+                  "alto": 1.725,
+                  "leve": 1.375,
+                  "atleta": 1.9,
+                  "moderado": 1.55,
+                  "sedentario": 1.2
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.badges",
+                "value": [
+                  {
+                    "key": "Primeira Semana",
+                    "type": "streak",
+                    "threshold": 7
+                  },
+                  {
+                    "key": "Mês de Ferro",
+                    "type": "streak",
+                    "threshold": 30
+                  },
+                  {
+                    "key": "Atleta Real",
+                    "type": "streak",
+                    "threshold": 90
+                  },
+                  {
+                    "key": "Primeiro Bloco",
+                    "type": "blocks",
+                    "threshold": 1
+                  },
+                  {
+                    "key": "XP Master",
+                    "type": "xp",
+                    "threshold": 1000
+                  },
+                  {
+                    "key": "Elite",
+                    "type": "xp",
+                    "threshold": 3500
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bf_goal_rules",
+                "value": [
+                  {
+                    "above": 30,
+                    "subtract": 10
+                  },
+                  {
+                    "above": 20,
+                    "target": 20
+                  },
+                  {
+                    "above": 18,
+                    "target": 18
+                  },
+                  {
+                    "above": 15,
+                    "target": 15
+                  },
+                  {
+                    "above": 0,
+                    "target": 10
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bf_limits",
+                "value": {
+                  "feminino": {
+                    "gain": 27,
+                    "recomp": 28
+                  },
+                  "masculino": {
+                    "gain": 19,
+                    "recomp": 20
+                  }
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bmr_katch",
+                "value": {
+                  "base": 370,
+                  "lbm_coef": 21.6
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bmr_mifflin",
+                "value": {
+                  "age_coef": 5,
+                  "height_coef": 6.25,
+                  "male_offset": 5,
+                  "weight_coef": 10,
+                  "female_offset": -161
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.imc_goal_steps",
+                "value": [30, 25, 23, 22, 21],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.imc_limit_recomp",
+                "value": 25,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.kcal_block",
+                "value": 7700,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.levels",
+                "value": [
+                  {
+                    "max": 99,
+                    "min": 0,
+                    "name": "Início",
+                    "level": 1
+                  },
+                  {
+                    "max": 299,
+                    "min": 100,
+                    "name": "Constância",
+                    "level": 2
+                  },
+                  {
+                    "max": 599,
+                    "min": 300,
+                    "name": "Foco",
+                    "level": 3
+                  },
+                  {
+                    "max": 999,
+                    "min": 600,
+                    "name": "Disciplina",
+                    "level": 4
+                  },
+                  {
+                    "max": 1499,
+                    "min": 1000,
+                    "name": "Performance",
+                    "level": 5
+                  },
+                  {
+                    "max": 2199,
+                    "min": 1500,
+                    "name": "Domínio",
+                    "level": 6
+                  },
+                  {
+                    "max": 2999,
+                    "min": 2200,
+                    "name": "Elite MPP",
+                    "level": 7
+                  },
+                  {
+                    "max": null,
+                    "min": 3000,
+                    "name": "Lenda MPP",
+                    "level": 8
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.protein_factors",
+                "value": {
+                  "muita": 1.6,
+                  "pouca": 1.8,
+                  "moderada": 1.8,
+                  "training_low": 1.7,
+                  "optimal_mid_training": 1.9,
+                  "optimal_high_training": 2.0
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.sleep_min_hours",
+                "value": 6.5,
+                "updated_at": "2026-11-03T13:44:53.028403Z"
+              },
+              {
+                "key": "calc.training_min",
+                "value": 3,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.xp_rules",
+                "value": {
+                  "base": 10,
+                  "protein_bonus": 5,
+                  "training_bonus": 5,
+                  "protein_threshold_g": 100
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              }
+            ]
+          },
+          "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+          "catalogue": [
+            {
+              "id": "066f4453-52f0-49fc-8fc8-d3bb5caf2c3f",
+              "slug": "abdominal",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Abdominal (alias)",
+              "kcal_per_min": 4.5
+            },
+            {
+              "id": "07a4a350-1dd4-4cf5-94c6-da66670af534",
+              "slug": "escada",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Escada / Stair",
+              "kcal_per_min": 10.0
+            },
+            {
+              "id": "1413d7e3-d0ac-48de-be1b-9a850b800034",
+              "slug": "treino_a",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Treino A",
+              "kcal_per_min": 6.0
+            },
+            {
+              "id": "1c75bc51-d1a4-4c38-a13a-e5a4bd106c7e",
+              "slug": "pilates_solo",
+              "category": "mobilidade",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Pilates solo (alias)",
+              "kcal_per_min": 4.0
+            },
+            {
+              "id": "1fba0c33-fe24-4c3d-8761-0c3da7f890bd",
+              "slug": "corrida_leve",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Corrida leve",
+              "kcal_per_min": 8.0
+            },
+            {
+              "id": "20ebae76-91b8-47db-9c98-c96b000c0242",
+              "slug": "musculacao",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Musculação (genérico)",
+              "kcal_per_min": 6.0
+            },
+            {
+              "id": "2101aefb-c6a3-45bc-9b51-5ae690e08061",
+              "slug": "peito",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Peito (alias)",
+              "kcal_per_min": 5.5
+            },
+            {
+              "id": "21470c53-5204-4c05-ab54-1078b78c2160",
+              "slug": "cardio",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Cardio (genérico)",
+              "kcal_per_min": 8.0
+            },
+            {
+              "id": "21fd2430-5765-4b41-80fe-5a2bdaef83ce",
+              "slug": "yoga",
+              "category": "mobilidade",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Yoga",
+              "kcal_per_min": 3.0
+            },
+            {
+              "id": "2222b43b-1217-4f73-a218-b9c01c2acb87",
+              "slug": "corrida_intensa",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Corrida intensa",
+              "kcal_per_min": 13.0
+            },
+            {
+              "id": "24875cda-b1b7-4a94-af59-698708bd7a64",
+              "slug": "volei",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Vôlei",
+              "kcal_per_min": 6.5
+            },
+            {
+              "id": "258e980a-7d8b-4b8f-ae70-d92752971476",
+              "slug": "jiu_jitsu",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Jiu-jitsu (alias)",
+              "kcal_per_min": 10.5
+            },
+            {
+              "id": "2ad6941f-acc8-454e-b907-565b65c5afb5",
+              "slug": "treino_b",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Treino B",
+              "kcal_per_min": 6.0
+            },
+            {
+              "id": "387508e8-fb8e-49dd-afbb-6485e7a9af64",
+              "slug": "bjj",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "BJJ (alias)",
+              "kcal_per_min": 10.5
+            },
+            {
+              "id": "38ac2519-ba6e-43f7-b60d-382a3a22c6a3",
+              "slug": "jumping_jacks",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Polichinelos",
+              "kcal_per_min": 8.0
+            },
+            {
+              "id": "3c72c746-3df2-4c99-8980-99600823d46c",
+              "slug": "caminhada",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Caminhada",
+              "kcal_per_min": 4.5
+            },
+            {
+              "id": "3fec146b-10cc-43d1-85ed-dec2e4b73451",
+              "slug": "muay_thai",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Muay Thai",
+              "kcal_per_min": 11.0
+            },
+            {
+              "id": "488243ec-ba84-4285-8d7d-42ba9052623b",
+              "slug": "bicicleta",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Bicicleta",
+              "kcal_per_min": 8.0
+            },
+            {
+              "id": "518fedab-37ca-495b-9d86-29fc94a6731d",
+              "slug": "futebol",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Futebol",
+              "kcal_per_min": 8.0
+            },
+            {
+              "id": "5414cd44-8695-4eac-b5ba-4d2f46227869",
+              "slug": "ombro_trapezio",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Ombro e trapézio",
+              "kcal_per_min": 5.0
+            },
+            {
+              "id": "552871e9-0737-49a9-ab52-bb7b85203c5a",
+              "slug": "outro",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Outro",
+              "kcal_per_min": 6.0
+            },
+            {
+              "id": "581817fd-b6ea-4db3-a19c-ed205d25ed63",
+              "slug": "escalada",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Escalada",
+              "kcal_per_min": 9.5
+            },
+            {
+              "id": "5babf87e-1736-4be7-8994-bc13c1a4c907",
+              "slug": "corrida",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Corrida",
+              "kcal_per_min": 11.0
+            },
+            {
+              "id": "636a3a74-e8e9-462d-bec8-23433caa4217",
+              "slug": "zumba",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Zumba",
+              "kcal_per_min": 7.5
+            },
+            {
+              "id": "648bd3eb-2ae0-485a-a409-f1e74f09ae77",
+              "slug": "costas_biceps",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Costas e bíceps",
+              "kcal_per_min": 5.5
+            },
+            {
+              "id": "6525bc81-a68b-47b8-b6c5-e298f9eacbe4",
+              "slug": "basquete",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Basquete",
+              "kcal_per_min": 8.5
+            },
+            {
+              "id": "670f11e2-e2ae-4bb7-8c91-475840585726",
+              "slug": "calistenia",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Calistenia",
+              "kcal_per_min": 6.5
+            },
+            {
+              "id": "6a5481c0-7f25-4836-b60f-b7c48a9a2d00",
+              "slug": "mobility",
+              "category": "mobilidade",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Mobility / mobilidade",
+              "kcal_per_min": 3.0
+            },
+            {
+              "id": "6aa16018-98db-4922-a05c-508970aea833",
+              "slug": "full_body",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Full body",
+              "kcal_per_min": 6.5
+            },
+            {
+              "id": "78e22ade-d734-43bd-950b-b4c3e7958a24",
+              "slug": "ombros",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Ombros (alias)",
+              "kcal_per_min": 5.0
+            },
+            {
+              "id": "79583ef5-ac79-4a7e-bd68-fd0bab32bd4d",
+              "slug": "funcional",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Treino funcional (alias)",
+              "kcal_per_min": 9.0
+            },
+            {
+              "id": "8115015a-6387-4e0b-98d1-dfa10459405d",
+              "slug": "alongamento",
+              "category": "mobilidade",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Alongamento",
+              "kcal_per_min": 2.5
+            },
+            {
+              "id": "8b86054b-c26c-46d2-bf33-f7941370ab45",
+              "slug": "spinning",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Spinning",
+              "kcal_per_min": 9.0
+            },
+            {
+              "id": "8cfaaac1-ea3f-4ab8-a5c4-3b56c85d5ddf",
+              "slug": "boxe",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Boxe (alias)",
+              "kcal_per_min": 10.5
+            },
+            {
+              "id": "9290fd60-a4a0-451a-a2cd-1fc19611a888",
+              "slug": "pilates",
+              "category": "mobilidade",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Pilates",
+              "kcal_per_min": 4.0
+            },
+            {
+              "id": "93f02d20-aed0-4f6d-a809-1f22dfc00c7e",
+              "slug": "tenis",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Tênis",
+              "kcal_per_min": 7.5
+            },
+            {
+              "id": "95ddad52-df8d-49fd-afb3-c718bb0bc14c",
+              "slug": "remo",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Remo / Remoergômetro",
+              "kcal_per_min": 9.0
+            },
+            {
+              "id": "981d21fa-7118-4714-829c-f5ef709844cc",
+              "slug": "peito_triceps",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Peito e tríceps",
+              "kcal_per_min": 5.5
+            },
+            {
+              "id": "a1231a2d-9674-415d-bbaf-a4f85a1b944c",
+              "slug": "costas",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Costas (alias)",
+              "kcal_per_min": 5.5
+            },
+            {
+              "id": "aff80759-8e65-4bab-af8e-6d7fd4a2f623",
+              "slug": "caminhada_rapida",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Caminhada rápida",
+              "kcal_per_min": 6.0
+            },
+            {
+              "id": "b17d0e88-72f0-47a7-85b7-990d8714d3a9",
+              "slug": "beach_tennis",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Beach tennis",
+              "kcal_per_min": 7.0
+            },
+            {
+              "id": "b5b1aedd-52a0-4f82-b35d-eab1eb30da9e",
+              "slug": "flex",
+              "category": "mobilidade",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Flexibilidade (alias)",
+              "kcal_per_min": 2.5
+            },
+            {
+              "id": "b6bc3430-b4d1-4e12-9f14-e2f8e99f073f",
+              "slug": "pernas",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Pernas (alias)",
+              "kcal_per_min": 7.0
+            },
+            {
+              "id": "b871b601-9938-4137-bea0-4d30f778ed9b",
+              "slug": "luta",
+              "category": "esporte",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Luta / Jiu-jitsu / Boxe",
+              "kcal_per_min": 10.5
+            },
+            {
+              "id": "b901dad6-df08-4d76-82ee-f08234b261c5",
+              "slug": "perna_completa",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Perna completa",
+              "kcal_per_min": 7.0
+            },
+            {
+              "id": "bb7eaa69-f5b8-4360-bc38-9484a6a94fbe",
+              "slug": "natacao",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Natação",
+              "kcal_per_min": 10.0
+            },
+            {
+              "id": "bdccb304-1365-45e4-ae83-4f373a055585",
+              "slug": "biceps_triceps",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Bíceps e tríceps",
+              "kcal_per_min": 5.0
+            },
+            {
+              "id": "c5400d93-def6-472c-91d4-bc221f88c888",
+              "slug": "eliptico",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Elíptico",
+              "kcal_per_min": 8.5
+            },
+            {
+              "id": "c556565b-377b-4a07-9875-31c5f0e08c6d",
+              "slug": "hiit",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "HIIT",
+              "kcal_per_min": 12.0
+            },
+            {
+              "id": "ca85dcd3-7cd7-4d1f-94f6-e787a8cd5c9b",
+              "slug": "esteira",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Esteira",
+              "kcal_per_min": 8.0
+            },
+            {
+              "id": "d4979ad7-13f6-434a-8ea8-01a484017f79",
+              "slug": "crossfit",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "CrossFit / Funcional",
+              "kcal_per_min": 9.0
+            },
+            {
+              "id": "d97d676b-4d14-4f48-a265-b0765bb22fe5",
+              "slug": "aerobico",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Aeróbico (alias)",
+              "kcal_per_min": 8.0
+            },
+            {
+              "id": "db7e86c0-ea91-4814-9a99-25f7ca66f4da",
+              "slug": "crossfit_wod",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "CrossFit WOD (alias)",
+              "kcal_per_min": 9.0
+            },
+            {
+              "id": "e5217e6d-0499-4b31-b4c6-98a0df8bfd02",
+              "slug": "danca",
+              "category": "cardio",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Dança",
+              "kcal_per_min": 6.5
+            },
+            {
+              "id": "e63ae545-eefd-4299-a8a3-c91290cff471",
+              "slug": "handstand",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Handstand / parada de mão",
+              "kcal_per_min": 6.0
+            },
+            {
+              "id": "e6b7967c-5f86-4a15-a5f0-792ea7801e9d",
+              "slug": "abdomen",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:51.889890Z",
+              "display_name": "Abdômen",
+              "kcal_per_min": 4.5
+            },
+            {
+              "id": "f4813a3d-dcef-4703-b0b3-fa858ab8f34e",
+              "slug": "treino_c",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Treino C",
+              "kcal_per_min": 6.0
+            },
+            {
+              "id": "f8f08f21-a13b-4787-b1c0-ecf65e0c5c3e",
+              "slug": "gluteos",
+              "category": "musculacao",
+              "is_active": true,
+              "updated_at": "2026-11-03T13:44:52.039353Z",
+              "display_name": "Glúteos",
+              "kcal_per_min": 6.5
+            }
+          ],
+          "command_id": "47b7ac57-dccd-4b3e-b228-17bb1ae1e540",
+          "day_closed": false,
+          "input_hash": "c9a6a2c575bbc22fbf31353ea9bb277bfc87a24dc6f21e1049db4001562590eb",
+          "admitted_at": "2026-11-17T18:08:38.185566Z",
+          "captured_at": "2026-11-17T18:08:38.208857Z",
+          "source_input": {
+            "kind": "workout.report",
+            "source": {
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "8c6a1ffc-40f0-4516-b047-520bd6dad5c1"
+            },
+            "command_id": "47b7ac57-dccd-4b3e-b228-17bb1ae1e540",
+            "intake_origin": {
+              "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "ded011c0-ba6e-44d1-aaa0-ef289a8634ca",
+              "intake_id": "32b42021-5b91-46a6-b834-6964003f3738",
+              "input_hash": "e38c54decf26d0736ec26cf83cea78370ad49402d5c445b2af03ad43c277a6c8",
+              "source_hash": "5ab71f98b36cf707f59a242a3f37d71855e94862fda4315928ff34d67b233d7e",
+              "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+            },
+            "command_protocol": "conversation.command.v1"
+          },
+          "intake_projection": {
+            "media": {
+              "kind": "audio_note",
+              "asset_id": "8c6a1ffc-40f0-4516-b047-520bd6dad5c1",
+              "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+              "updated_at": "2026-11-17T18:08:38.128797Z",
+              "processed_at": "2026-11-17T18:08:38.128797Z",
+              "catalog_version": 2,
+              "processing_hash": "79e31fd8d4096d3b364addcd6a280ab6c7c7a179db1c663522f7a020429beab5"
+            },
+            "origin": {
+              "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "ded011c0-ba6e-44d1-aaa0-ef289a8634ca",
+              "intake_id": "32b42021-5b91-46a6-b834-6964003f3738",
+              "input_hash": "e38c54decf26d0736ec26cf83cea78370ad49402d5c445b2af03ad43c277a6c8",
+              "source_hash": "5ab71f98b36cf707f59a242a3f37d71855e94862fda4315928ff34d67b233d7e",
+              "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "c9a6a2c575bbc22fbf31353ea9bb277bfc87a24dc6f21e1049db4001562590eb"
+          }
+        },
+        "source_hash": "26efb3627ffc5bd5efa3ccad0d75c8346893c4f3a6942eb5af3c3fd4c3decc7e"
+      },
+      "neutral": {
+        "action": "captured",
+        "context": {
+          "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+          "media": {
+            "kind": "audio_note",
+            "status": "processed",
+            "asset_id": "8c6a1ffc-40f0-4516-b047-520bd6dad5c1",
+            "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+            "updated_at": "2026-11-17T18:08:38.128797Z",
+            "context_text": null,
+            "processed_at": "2026-11-17T18:08:38.128797Z",
+            "catalog_version": 2,
+            "processing_result": {
+              "text": "Caminhei por 12 minutos"
+            }
+          },
+          "schema": "conversation.intake-source.v1",
+          "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+          "intake_id": "32b42021-5b91-46a6-b834-6964003f3738",
+          "time_zone": "UTC",
+          "input_hash": "e38c54decf26d0736ec26cf83cea78370ad49402d5c445b2af03ad43c277a6c8",
+          "local_date": "2026-11-17",
+          "admitted_at": "2026-11-17T18:08:38.129187Z",
+          "captured_at": "2026-11-17T18:08:38.140110Z",
+          "source_input": {
+            "source": {
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "8c6a1ffc-40f0-4516-b047-520bd6dad5c1"
+            },
+            "intake_id": "32b42021-5b91-46a6-b834-6964003f3738",
+            "intake_protocol": "conversation.intake.v1"
+          }
+        },
+        "source_hash": "5ab71f98b36cf707f59a242a3f37d71855e94862fda4315928ff34d67b233d7e"
+      },
+      "selection": {
+        "intake": {
+          "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+          "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+          "intake_id": "32b42021-5b91-46a6-b834-6964003f3738",
+          "input_hash": "e38c54decf26d0736ec26cf83cea78370ad49402d5c445b2af03ad43c277a6c8",
+          "admitted_at": "2026-11-17T18:08:38.129187Z"
+        },
+        "schema": "conversation.intake-selection.v2",
+        "command": {
+          "kind": "workout.report",
+          "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+          "input": {
+            "kind": "workout.report",
+            "source": {
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "8c6a1ffc-40f0-4516-b047-520bd6dad5c1"
+            },
+            "command_id": "47b7ac57-dccd-4b3e-b228-17bb1ae1e540",
+            "intake_origin": {
+              "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "ded011c0-ba6e-44d1-aaa0-ef289a8634ca",
+              "intake_id": "32b42021-5b91-46a6-b834-6964003f3738",
+              "input_hash": "e38c54decf26d0736ec26cf83cea78370ad49402d5c445b2af03ad43c277a6c8",
+              "source_hash": "5ab71f98b36cf707f59a242a3f37d71855e94862fda4315928ff34d67b233d7e",
+              "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+            },
+            "command_protocol": "conversation.command.v1"
+          },
+          "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+          "command_id": "47b7ac57-dccd-4b3e-b228-17bb1ae1e540",
+          "input_hash": "c9a6a2c575bbc22fbf31353ea9bb277bfc87a24dc6f21e1049db4001562590eb",
+          "admitted_at": "2026-11-17T18:08:38.185566Z"
+        },
+        "decision": {
+          "kind": "workout.report",
+          "reason": "processed_media_report",
+          "schema": "conversation.intake-routing.v1"
+        },
+        "selected_at": "2026-11-17T18:08:38.197034Z",
+        "source_hash": "5ab71f98b36cf707f59a242a3f37d71855e94862fda4315928ff34d67b233d7e",
+        "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a",
+        "media_projection": {
+          "media": {
+            "kind": "audio_note",
+            "asset_id": "8c6a1ffc-40f0-4516-b047-520bd6dad5c1",
+            "owner_id": "8b7e5dfe-df1d-4b40-8ec8-2da26d3ab642",
+            "updated_at": "2026-11-17T18:08:38.128797Z",
+            "processed_at": "2026-11-17T18:08:38.128797Z",
+            "catalog_version": 2,
+            "processing_hash": "79e31fd8d4096d3b364addcd6a280ab6c7c7a179db1c663522f7a020429beab5"
+          },
+          "origin": {
+            "epoch": "26fce1be-93b8-44a5-9109-8217df993d29",
+            "schema": "conversation.intake-media-origin.v1",
+            "claim_id": "ded011c0-ba6e-44d1-aaa0-ef289a8634ca",
+            "intake_id": "32b42021-5b91-46a6-b834-6964003f3738",
+            "input_hash": "e38c54decf26d0736ec26cf83cea78370ad49402d5c445b2af03ad43c277a6c8",
+            "source_hash": "5ab71f98b36cf707f59a242a3f37d71855e94862fda4315928ff34d67b233d7e",
+            "decision_hash": "df1702fa0a06d0a14f1eac6ec5018a3988d40bf82d3e8cf234a86873d8fd3d6a"
+          },
+          "schema": "conversation.intake-media-projection.v1",
+          "child_input_hash": "c9a6a2c575bbc22fbf31353ea9bb277bfc87a24dc6f21e1049db4001562590eb"
+        }
+      }
+    },
+    {
+      "kind": "conversation_photo",
+      "typed": {
+        "action": "captured",
+        "context": {
+          "day": {
+            "date": "2026-11-17",
+            "day_closed": false,
+            "calorie_origin": null,
+            "protein_target": null,
+            "calories_target": null,
+            "target_revision": "0",
+            "current_protocol": null
+          },
+          "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+          "media": {
+            "kind": "conversation_photo",
+            "status": "processed",
+            "asset_id": "482ff8b3-3013-437a-ade9-9ef168a4773e",
+            "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+            "updated_at": "2026-11-17T18:08:37.806201+00:00",
+            "context_text": null,
+            "processed_at": "2026-11-17T18:08:37.806201+00:00",
+            "catalog_version": 2,
+            "processing_result": {
+              "schema": "conversation.image-result.v1",
+              "status": "ready",
+              "analysis": {
+                "type": "meal",
+                "items": [
+                  {
+                    "name": "arroz",
+                    "confidence": 0.9,
+                    "quantity_g_estimate": 100
+                  }
+                ]
+              },
+              "classification": "meal"
+            }
+          },
+          "owner": {
+            "locale": "pt-BR",
+            "country": "BR",
+            "timezone": "UTC",
+            "country_confirmed": true
+          },
+          "schema": "conversation.meal-source.v2",
+          "catalog": {
+            "epoch": "245f5336-6a4a-4e00-ba51-d1e30da736d0",
+            "revision": "0"
+          },
+          "clinical": {
+            "body": {
+              "sex": null,
+              "locale": "pt-BR",
+              "timezone": "UTC",
+              "height_cm": null,
+              "weight_kg": null,
+              "birth_date": null,
+              "body_fat_percent": null,
+              "training_frequency": null
+            },
+            "date": "2026-11-17",
+            "mode": "profile",
+            "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+            "safety": null,
+            "missing": ["birth_date", "height_cm", "weight_kg"],
+            "user_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+            "version": 1,
+            "timezone": "UTC",
+            "assessment": "incomplete",
+            "health_state": {
+              "items": [],
+              "user_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+              "version": 1,
+              "hold_active": false,
+              "hide_protein": false,
+              "safety_revision": "0",
+              "declared_no_plan": false,
+              "last_declared_at": null
+            },
+            "phase_origin": {
+              "kind": "not_completed"
+            },
+            "profile_hash": "8f7e490fd47b9b1db1beff2c5eabe6dfc88cb39116145a2b4c97e4d802d6380d",
+            "profile_present": false,
+            "first_completion": true,
+            "generation_token": null,
+            "signup_generation": null,
+            "calculation_config": [
+              {
+                "key": "calc.activity_factors",
+                "value": {
+                  "alto": 1.725,
+                  "leve": 1.375,
+                  "atleta": 1.9,
+                  "moderado": 1.55,
+                  "sedentario": 1.2
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.badges",
+                "value": [
+                  {
+                    "key": "Primeira Semana",
+                    "type": "streak",
+                    "threshold": 7
+                  },
+                  {
+                    "key": "Mês de Ferro",
+                    "type": "streak",
+                    "threshold": 30
+                  },
+                  {
+                    "key": "Atleta Real",
+                    "type": "streak",
+                    "threshold": 90
+                  },
+                  {
+                    "key": "Primeiro Bloco",
+                    "type": "blocks",
+                    "threshold": 1
+                  },
+                  {
+                    "key": "XP Master",
+                    "type": "xp",
+                    "threshold": 1000
+                  },
+                  {
+                    "key": "Elite",
+                    "type": "xp",
+                    "threshold": 3500
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bf_goal_rules",
+                "value": [
+                  {
+                    "above": 30,
+                    "subtract": 10
+                  },
+                  {
+                    "above": 20,
+                    "target": 20
+                  },
+                  {
+                    "above": 18,
+                    "target": 18
+                  },
+                  {
+                    "above": 15,
+                    "target": 15
+                  },
+                  {
+                    "above": 0,
+                    "target": 10
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bf_limits",
+                "value": {
+                  "feminino": {
+                    "gain": 27,
+                    "recomp": 28
+                  },
+                  "masculino": {
+                    "gain": 19,
+                    "recomp": 20
+                  }
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bmr_katch",
+                "value": {
+                  "base": 370,
+                  "lbm_coef": 21.6
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.bmr_mifflin",
+                "value": {
+                  "age_coef": 5,
+                  "height_coef": 6.25,
+                  "male_offset": 5,
+                  "weight_coef": 10,
+                  "female_offset": -161
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.imc_goal_steps",
+                "value": [30, 25, 23, 22, 21],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.imc_limit_recomp",
+                "value": 25,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.kcal_block",
+                "value": 7700,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.levels",
+                "value": [
+                  {
+                    "max": 99,
+                    "min": 0,
+                    "name": "Início",
+                    "level": 1
+                  },
+                  {
+                    "max": 299,
+                    "min": 100,
+                    "name": "Constância",
+                    "level": 2
+                  },
+                  {
+                    "max": 599,
+                    "min": 300,
+                    "name": "Foco",
+                    "level": 3
+                  },
+                  {
+                    "max": 999,
+                    "min": 600,
+                    "name": "Disciplina",
+                    "level": 4
+                  },
+                  {
+                    "max": 1499,
+                    "min": 1000,
+                    "name": "Performance",
+                    "level": 5
+                  },
+                  {
+                    "max": 2199,
+                    "min": 1500,
+                    "name": "Domínio",
+                    "level": 6
+                  },
+                  {
+                    "max": 2999,
+                    "min": 2200,
+                    "name": "Elite MPP",
+                    "level": 7
+                  },
+                  {
+                    "max": null,
+                    "min": 3000,
+                    "name": "Lenda MPP",
+                    "level": 8
+                  }
+                ],
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.protein_factors",
+                "value": {
+                  "muita": 1.6,
+                  "pouca": 1.8,
+                  "moderada": 1.8,
+                  "training_low": 1.7,
+                  "optimal_mid_training": 1.9,
+                  "optimal_high_training": 2.0
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.sleep_min_hours",
+                "value": 6.5,
+                "updated_at": "2026-11-03T13:44:53.028403Z"
+              },
+              {
+                "key": "calc.training_min",
+                "value": 3,
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              },
+              {
+                "key": "calc.xp_rules",
+                "value": {
+                  "base": 10,
+                  "protein_bonus": 5,
+                  "training_bonus": 5,
+                  "protein_threshold_g": 100
+                },
+                "updated_at": "2026-11-03T13:44:51.580242Z"
+              }
+            ]
+          },
+          "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+          "command_id": "e20868b8-b428-4f33-a5e2-590660049bf1",
+          "input_hash": "f5b34cd4e9612c2d06d001f6d1d8929a3df65d74a37d00dfa9cbe7f3add6a61b",
+          "source_input": {
+            "kind": "meal.report",
+            "source": {
+              "caption": "Comi arroz 100 g",
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "482ff8b3-3013-437a-ade9-9ef168a4773e"
+            },
+            "command_id": "e20868b8-b428-4f33-a5e2-590660049bf1",
+            "intake_origin": {
+              "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "ade60f3f-c16c-4577-9ea1-b5463660132c",
+              "intake_id": "d61b53e5-8927-4b60-926f-1e1d0761bd4c",
+              "input_hash": "a74d0f94769f3b441d2debce8f76725088bb5e77029a9ff3080401de9c48e827",
+              "source_hash": "082cf2e61063485dbd97021c71cab01f2376a92859c275a19ea25f3009bedcd1",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "command_protocol": "conversation.command.v1"
+          },
+          "source_units": ["media_caption", "vision_items"],
+          "source_evidence": {
+            "caption": "Comi arroz 100 g",
+            "transcript": null,
+            "context_text": null
+          },
+          "intake_projection": {
+            "media": {
+              "kind": "conversation_photo",
+              "asset_id": "482ff8b3-3013-437a-ade9-9ef168a4773e",
+              "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+              "updated_at": "2026-11-17T18:08:37.806201Z",
+              "processed_at": "2026-11-17T18:08:37.806201Z",
+              "catalog_version": 2,
+              "processing_hash": "f06f3c07cecaa2ecdc8238cc53172c3a071b3535f67bfa74aa60fcf2cdcc7657"
+            },
+            "origin": {
+              "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "ade60f3f-c16c-4577-9ea1-b5463660132c",
+              "intake_id": "d61b53e5-8927-4b60-926f-1e1d0761bd4c",
+              "input_hash": "a74d0f94769f3b441d2debce8f76725088bb5e77029a9ff3080401de9c48e827",
+              "source_hash": "082cf2e61063485dbd97021c71cab01f2376a92859c275a19ea25f3009bedcd1",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "schema": "conversation.intake-media-projection.v1",
+            "child_input_hash": "f5b34cd4e9612c2d06d001f6d1d8929a3df65d74a37d00dfa9cbe7f3add6a61b"
+          }
+        },
+        "captured_at": "2026-11-17T18:08:37.975029+00:00",
+        "source_hash": "508d70cbdd0ce4668cc8f023b80b6b11530838ab3c1f8be6313e4eef990ad97a"
+      },
+      "neutral": {
+        "action": "captured",
+        "context": {
+          "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+          "media": {
+            "kind": "conversation_photo",
+            "status": "processed",
+            "asset_id": "482ff8b3-3013-437a-ade9-9ef168a4773e",
+            "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+            "updated_at": "2026-11-17T18:08:37.806201Z",
+            "context_text": null,
+            "processed_at": "2026-11-17T18:08:37.806201Z",
+            "catalog_version": 2,
+            "processing_result": {
+              "schema": "conversation.image-result.v1",
+              "status": "ready",
+              "analysis": {
+                "type": "meal",
+                "items": [
+                  {
+                    "name": "arroz",
+                    "confidence": 0.9,
+                    "quantity_g_estimate": 100
+                  }
+                ]
+              },
+              "classification": "meal"
+            }
+          },
+          "schema": "conversation.intake-source.v1",
+          "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+          "intake_id": "d61b53e5-8927-4b60-926f-1e1d0761bd4c",
+          "time_zone": "UTC",
+          "input_hash": "a74d0f94769f3b441d2debce8f76725088bb5e77029a9ff3080401de9c48e827",
+          "local_date": "2026-11-17",
+          "admitted_at": "2026-11-17T18:08:37.808245Z",
+          "captured_at": "2026-11-17T18:08:37.869849Z",
+          "source_input": {
+            "source": {
+              "caption": "Comi arroz 100 g",
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "482ff8b3-3013-437a-ade9-9ef168a4773e"
+            },
+            "intake_id": "d61b53e5-8927-4b60-926f-1e1d0761bd4c",
+            "intake_protocol": "conversation.intake.v1"
+          }
+        },
+        "source_hash": "082cf2e61063485dbd97021c71cab01f2376a92859c275a19ea25f3009bedcd1"
+      },
+      "selection": {
+        "intake": {
+          "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+          "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+          "intake_id": "d61b53e5-8927-4b60-926f-1e1d0761bd4c",
+          "input_hash": "a74d0f94769f3b441d2debce8f76725088bb5e77029a9ff3080401de9c48e827",
+          "admitted_at": "2026-11-17T18:08:37.808245Z"
+        },
+        "schema": "conversation.intake-selection.v2",
+        "command": {
+          "kind": "meal.report",
+          "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+          "input": {
+            "kind": "meal.report",
+            "source": {
+              "caption": "Comi arroz 100 g",
+              "channel": "media",
+              "user_action": "report_actual_record",
+              "media_asset_id": "482ff8b3-3013-437a-ade9-9ef168a4773e"
+            },
+            "command_id": "e20868b8-b428-4f33-a5e2-590660049bf1",
+            "intake_origin": {
+              "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+              "schema": "conversation.intake-media-origin.v1",
+              "claim_id": "ade60f3f-c16c-4577-9ea1-b5463660132c",
+              "intake_id": "d61b53e5-8927-4b60-926f-1e1d0761bd4c",
+              "input_hash": "a74d0f94769f3b441d2debce8f76725088bb5e77029a9ff3080401de9c48e827",
+              "source_hash": "082cf2e61063485dbd97021c71cab01f2376a92859c275a19ea25f3009bedcd1",
+              "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+            },
+            "command_protocol": "conversation.command.v1"
+          },
+          "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+          "command_id": "e20868b8-b428-4f33-a5e2-590660049bf1",
+          "input_hash": "f5b34cd4e9612c2d06d001f6d1d8929a3df65d74a37d00dfa9cbe7f3add6a61b",
+          "admitted_at": "2026-11-17T18:08:37.919907Z"
+        },
+        "decision": {
+          "kind": "meal.report",
+          "reason": "processed_media_report",
+          "schema": "conversation.intake-routing.v1"
+        },
+        "selected_at": "2026-11-17T18:08:37.931723Z",
+        "source_hash": "082cf2e61063485dbd97021c71cab01f2376a92859c275a19ea25f3009bedcd1",
+        "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7",
+        "media_projection": {
+          "media": {
+            "kind": "conversation_photo",
+            "asset_id": "482ff8b3-3013-437a-ade9-9ef168a4773e",
+            "owner_id": "97bc18ed-9909-442f-8f9d-4375a2434b04",
+            "updated_at": "2026-11-17T18:08:37.806201Z",
+            "processed_at": "2026-11-17T18:08:37.806201Z",
+            "catalog_version": 2,
+            "processing_hash": "f06f3c07cecaa2ecdc8238cc53172c3a071b3535f67bfa74aa60fcf2cdcc7657"
+          },
+          "origin": {
+            "epoch": "d8c67a01-4314-4cd6-9c29-fbeb30ff2590",
+            "schema": "conversation.intake-media-origin.v1",
+            "claim_id": "ade60f3f-c16c-4577-9ea1-b5463660132c",
+            "intake_id": "d61b53e5-8927-4b60-926f-1e1d0761bd4c",
+            "input_hash": "a74d0f94769f3b441d2debce8f76725088bb5e77029a9ff3080401de9c48e827",
+            "source_hash": "082cf2e61063485dbd97021c71cab01f2376a92859c275a19ea25f3009bedcd1",
+            "decision_hash": "49d20d16d344a654a2f81ff7e273e05ac83ba8662cf701a88057ada9b52b18e7"
+          },
+          "schema": "conversation.intake-media-projection.v1",
+          "child_input_hash": "f5b34cd4e9612c2d06d001f6d1d8929a3df65d74a37d00dfa9cbe7f3add6a61b"
+        }
+      }
+    }
+  ],
+  "schema": "conversation.private-capture-local-goldens.v2",
+  "provenance": "Actual owned local Postgres R168 qualified rollback; exclusively synthetic users/media/processing. No model or Storage call. Original clinical/catalog/writer functions retained."
+}

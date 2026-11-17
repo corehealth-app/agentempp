@@ -57,6 +57,7 @@ const sourceUnit = z.enum(['command_text', 'media_caption', 'media_transcript', 
 const mediaSchema = z
   .object({
     asset_id: uuid,
+    catalog_version: z.literal(2).optional(),
     kind: z.enum(['meal_photo', 'audio_note', 'conversation_photo']),
     status: z.literal('processed'),
     processed_at: conversationWriterClock,

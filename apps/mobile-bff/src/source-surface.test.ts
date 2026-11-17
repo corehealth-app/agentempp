@@ -540,7 +540,29 @@ function certifyNutritionJournalSplitContent(text: string): void {
 /** R140 only relinks the unchanged workout facade after webpack extracts
  * the now-shared current-scope module. Full new executable bodies and original
  * source bytes are checked before restoring that ONE import for the old pins. */
+/** R173 factors the unchanged media factory behind one new loader. Each of
+ * these four WHOLE raw consumers differs only by that one link. No executable
+ * delta is removed from the new processing route or shared owned helper. */
+function restoreMediaFactoryLinkR173(body: string): string {
+  const pins: Record<string, string> = {
+    ca5389d90fb7906310441d177e724fbc5547520ca2283da641e7e9c947cf8fea:
+      'f456e38b9523c617019f033f6a770eb2288fa43217b5a7238680b521bb595702',
+    b4eba16d2b1b66e6ad96cf99b426fef6b7e12e3a5852f463d3cdeb77641d5fab:
+      'cbdd3c53fddf88403fda23bd63c48c38b13d69a83955edf471a1a9130e23c9f0',
+    '7c54e57dbc315c9e1e31192e79633fea869f505a31eb8b326e55f1942457c3ca':
+      '14150a04c5bc2a47b5ef13db44bb5b2d70381a7880681ae3f6dae09facdf6c94',
+    f996a5ba7ec71870baa069e5b896bc8d78d51aca41c5de5bf65100e0bde33fa3:
+      '3f32995297bba5cb0b17ede719a874dedafe9d6fd5a2fe1805be665d8997fcf6',
+  }
+  const previous = pins[createHash('sha256').update(body).digest('hex')]
+  if (!previous) return body
+  expect(body.split('c(22693)')).toHaveLength(2)
+  const restored = body.replace('c(22693)', 'c(97281)')
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(previous)
+  return restored
+}
 function restoreWorkoutFacadeLinkR140(body: string): string {
+  body = restoreMediaFactoryLinkR173(body)
   if (!body.includes('c(93498)')) return body
   for (const [name, hash] of [
     [
@@ -1150,6 +1172,91 @@ function restoreMediaFactoryLinkR170(body: string): string {
   expect(createHash('sha256').update(restored).digest('hex')).toBe(pair?.[1])
   return restored
 }
+/** Seal the complete R173 additions before removing only the explicit process
+ * capability. The original GET/complete implementations and legacy processing
+ * callback must reconstruct byte for byte, including idempotency and Auth. */
+function originalProcessingSourceR173(name: string): string {
+  const pins: Record<string, readonly [string, string]> = {
+    'private-conversation-media-owned.ts': [
+      'd054b7b5dedbec616e9136c01dd6c1b56f71e885011779612b351f7ae9a582fa',
+      '8d1702c2f5c8bc791086993a837b6074183b5d825680a960efcc2f8b5a7593f7',
+    ],
+    'versioned-media-owned-response.ts': [
+      '1d5cdc2cef774902393c674263154b490c6930fe4db95de53e33e114b0a20b70',
+      'd24b3c0dae9f824ad3438c7c75f8d33da176975e931dd0c0275fa9c9a40e438e',
+    ],
+    'media/[id]/process/route.ts': [
+      '61ad1de472370c7446cf4a0f94ce24826b6b4b62f411c1ad4b575a0e92a4955a',
+      '2d87df63df3c983c52b6378529ea83a79f5699f3a00868cb59f6824a4c09c697',
+    ],
+  }
+  const pin = pins[name]
+  if (!pin) throw new Error('Unreviewed processing source')
+  let text = readFileSync(
+    resolve(
+      appRoot,
+      '../admin/src',
+      name.startsWith('media/') ? 'app/api/mobile/v1' : 'lib/mobile-api',
+      name,
+    ),
+    'utf8',
+  )
+  expect(createHash('sha256').update(text).digest('hex')).toBe(pin[0])
+  const replace = (from: string, to: string) => {
+    expect(text.split(from)).toHaveLength(2)
+    text = text.replace(from, to)
+  }
+  if (name === 'private-conversation-media-owned.ts') {
+    replace("import { createHash } from 'node:crypto'\n", '')
+    replace(
+      "import { idempotencyKeySchema, resourceIdSchema } from './contracts'",
+      "import { resourceIdSchema } from './contracts'",
+    )
+    replace(
+      '  /** Available only to the explicit processing route; no fact writer. */\n  enqueue?(input: { userId: string; assetId: string; requestId: string }): Promise<void>\n',
+      '',
+    )
+    replace(
+      "  operation: 'read' | 'complete' | 'process',\n  requestKey?: string,",
+      "  operation: 'read' | 'complete',",
+    )
+    const start = text.indexOf("    if (operation === 'process') {\n"),
+      end = text.indexOf("    if (operation === 'complete') {\n", start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    text = text.slice(0, start) + text.slice(end)
+  } else if (name === 'versioned-media-owned-response.ts') {
+    replace("  operation: 'read' | 'complete' | 'process',", "  operation: 'read' | 'complete',")
+    replace(
+      '  processing?: {\n    requestKey: string\n    enqueue(input: { userId: string; assetId: string; requestId: string }): Promise<void>\n  },\n',
+      '',
+    )
+    replace('        ...(processing ? { enqueue: processing.enqueue } : {}),\n', '')
+    replace('      processing?.requestKey,\n', '')
+    replace(
+      "mobileSuccess(result.value, context.requestId, operation === 'process' ? 202 : 200)",
+      'mobileSuccess(result.value, context.requestId)',
+    )
+  } else {
+    replace(
+      "import { versionedMediaProcessingResponse } from '@/lib/mobile-api/versioned-media-processing-response'\n",
+      '',
+    )
+    const prefix = '      versionedMediaProcessingResponse(context, id, async () =>\n',
+      start = text.indexOf(prefix),
+      end = text.indexOf('\n      ),\n    )', start)
+    expect(text.split(prefix)).toHaveLength(2)
+    expect(end).toBeGreaterThan(start)
+    const inner = text
+      .slice(start + prefix.length, end)
+      .split('\n')
+      .map((line) => line.slice(2))
+      .join('\n')
+    text = text.slice(0, start) + inner + text.slice(end + '\n      ),'.length)
+  }
+  expect(createHash('sha256').update(text).digest('hex')).toBe(pin[1])
+  return text
+}
 /** R171 intentionally changes only GET/complete composition. Pin each whole
  * new route body; the unchanged old source/callback is reconstructed below.
  * Historical R170 loader certificates remain available for their old bodies. */
@@ -1180,7 +1287,7 @@ function certifyPhysicalModule(
   }
   visit(source)
   expect(found, `one physical reviewed module ${id}`).toHaveLength(1)
-  const raw = found[0]?.getText(source) ?? ''
+  const raw = restoreMediaFactoryLinkR173(found[0]?.getText(source) ?? '')
   const body = restoreWorkoutFacadeLinkR140(restore ? restore(raw) : raw)
   expect(allowedHashes).toContain(createHash('sha256').update(body).digest('hex'))
   expect(text.startsWith('"use strict";') || body.startsWith('(a,b,c)=>{"use strict";')).toBe(true)
@@ -1415,6 +1522,33 @@ function withSyntheticBuild<T>(
 }
 
 describe('authoritative Mobile API source surface', () => {
+  test('preserves exact old owned operations and processing callback under the private capability', () => {
+    for (const name of [
+      'private-conversation-media-owned.ts',
+      'versioned-media-owned-response.ts',
+      'media/[id]/process/route.ts',
+    ])
+      expect(originalProcessingSourceR173(name)).toBeTypeOf('string')
+    const entry = currentAppPathsManifest()['/api/mobile/v1/media/[id]/process/route']
+    const file = resolve(buildRoot, 'server', entry ?? '')
+    const body = certifyPhysicalModule(file, '40550', [
+      '7b0cddcee34fc1887c109d933b0f0ac48b815bbd7c35de35b777afb6bfef1fb7',
+    ])
+    certifyPhysicalModule(file, '72262', [
+      'd8d52b26943275b18cb25243a733b9b6b6689c7ba0ea77ccddca788d2f8885c4',
+    ])
+    const certify = (value: string) =>
+      expect(createHash('sha256').update(value).digest('hex')).toBe(
+        '7b0cddcee34fc1887c109d933b0f0ac48b815bbd7c35de35b777afb6bfef1fb7',
+      )
+    for (const mutation of [
+      body.replace('conversation.media.private.process.requested', 'media.asset.process.requested'),
+      body.replace('catalogVersion:2', 'catalogVersion:1'),
+      body.replace('c(46337)', 'c(999999)'),
+      `${body};void 0`,
+    ])
+      expect(() => certify(mutation)).toThrow()
+  })
   test('rejects changed or additional modules in the T48 shared read-page extraction', () => {
     const chunks = semanticChunks([
       'read_conversation_journal_page_v3',
@@ -2141,11 +2275,19 @@ describe('authoritative Mobile API source surface', () => {
       ],
       [
         'apps/admin/src/lib/mobile-api/private-conversation-media-owned.ts',
-        '8d1702c2f5c8bc791086993a837b6074183b5d825680a960efcc2f8b5a7593f7',
+        'd054b7b5dedbec616e9136c01dd6c1b56f71e885011779612b351f7ae9a582fa',
       ],
       [
         'apps/admin/src/lib/mobile-api/versioned-media-owned-response.ts',
-        'd24b3c0dae9f824ad3438c7c75f8d33da176975e931dd0c0275fa9c9a40e438e',
+        '1d5cdc2cef774902393c674263154b490c6930fe4db95de53e33e114b0a20b70',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/versioned-media-processing-response.ts',
+        'ee59ae33a664677b3df4b7f5c61eb39adec5a03417d2bf9915922306983fecb6',
+      ],
+      [
+        'apps/admin/src/app/api/mobile/v1/media/[id]/process/route.ts',
+        '61ad1de472370c7446cf4a0f94ce24826b6b4b62f411c1ad4b575a0e92a4955a',
       ],
       [
         'apps/admin/src/app/api/mobile/v1/media/[id]/route.ts',
@@ -2227,8 +2369,9 @@ describe('authoritative Mobile API source surface', () => {
       }
       return text
     }
-    // R171 adds only owned GET/upload completion to the default-OFF graph.
-    // Process, DELETE behavior, clinical and all unrelated entries stay unchanged.
+    // R173 adds processing only to the existing default-OFF versioned graph.
+    // The event producer is confined to process; no worker/model factory is
+    // imported. DELETE behavior, clinical and unrelated entries stay unchanged.
     for (const marker of [
       'conversation-v2/',
       'prepare_conversation_media_upload_v2',
@@ -2237,6 +2380,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
       expect(runtimeMarkerRoutes(marker)).toEqual([
         '/api/mobile/v1/media/[id]/complete/route',
+        '/api/mobile/v1/media/[id]/process/route',
         '/api/mobile/v1/media/[id]/route',
         '/api/mobile/v1/media/route',
       ])
@@ -2244,6 +2388,7 @@ describe('authoritative Mobile API source surface', () => {
       [
         ...conversationIntakeAppPaths,
         '/api/mobile/v1/media/[id]/complete/route',
+        '/api/mobile/v1/media/[id]/process/route',
         '/api/mobile/v1/media/[id]/route',
         '/api/mobile/v1/media/route',
       ].sort(),
@@ -2253,7 +2398,14 @@ describe('authoritative Mobile API source surface', () => {
     )
     expect(runtimeMarkerRoutes('close_conversation_media_v2')).toEqual([
       '/api/mobile/v1/media/[id]/complete/route',
+      '/api/mobile/v1/media/[id]/process/route',
       '/api/mobile/v1/media/[id]/route',
+    ])
+    expect(runtimeExactStringRoutes('conversation.media.private.process.requested')).toEqual([
+      '/api/mobile/v1/media/[id]/process/route',
+    ])
+    expect(runtimeExactStringRoutes('conversation.media-process.v2')).toEqual([
+      '/api/mobile/v1/media/[id]/process/route',
     ])
     // R111 shares the unchanged purpose module with the two disposal entries.
     // Whole source certificates below bind their calls to the ticket gate, not
@@ -2263,7 +2415,11 @@ describe('authoritative Mobile API source surface', () => {
       '/api/mobile/v1/media/[id]/route',
     ]
     expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_PHOTOS_ENABLED')).toEqual(
-      [...disposalRoutes, '/api/mobile/v1/media/route'].sort(),
+      [
+        ...disposalRoutes,
+        '/api/mobile/v1/media/[id]/process/route',
+        '/api/mobile/v1/media/route',
+      ].sort(),
     )
     for (const marker of [
       'claim_conversation_media_disposal',
@@ -2272,7 +2428,12 @@ describe('authoritative Mobile API source surface', () => {
     ])
       expect(runtimeMarkerRoutes(marker)).toEqual(disposalRoutes.slice().sort())
     expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_INTAKES_ENABLED')).toEqual(
-      [...conversationIntakeAppPaths, ...disposalRoutes, '/api/mobile/v1/media/route'].sort(),
+      [
+        ...conversationIntakeAppPaths,
+        ...disposalRoutes,
+        '/api/mobile/v1/media/[id]/process/route',
+        '/api/mobile/v1/media/route',
+      ].sort(),
     )
     // Exact reviewed R111 sources; no broad source/hash exemptions.
     for (const [file, hash] of [
@@ -2377,7 +2538,7 @@ describe('authoritative Mobile API source surface', () => {
           certifyOwnedMediaBodyR171,
         )
         certifyPhysicalModule(file, '72262', [
-          '16f5720cc45ac32fb3dabb39ee715c3cc4c79b0969bdf9f220119a06cbb30cba',
+          'd8d52b26943275b18cb25243a733b9b6b6689c7ba0ea77ccddca788d2f8885c4',
         ])
       } else certifyPhysicalModule(file, id ?? '', [hash ?? ''], restoreMediaFactoryLinkR170)
       // Complete neutral revocation primitive + real SDK adapter, with no
@@ -2894,6 +3055,15 @@ describe('authoritative Mobile API source surface', () => {
       expect(createHash('sha256').update(factory.replace(addition, '')).digest('hex')).toBe(
         '48a22f1ec3e0a816eb14e62793c70d5719a040bccd022583021dbb6c28577811',
       )
+    } else if (readFileSync(ordinaryIssuerChunk, 'utf8').includes('22693:')) {
+      // R173 extracts the same Inngest client constructor for the new event
+      // producer. All three full modules and exact physical consumers are
+      // certified; original factory/issuer source remains pinned above.
+      certifyExactSharedTable(ordinaryIssuerChunk, [
+        ['75005', '506e25555771cfc370edf36ab8b58b839b4f165f006f112660e639417314377a'],
+        ['22693', 'a162d8f173a0244855f0651272172e33d64f462e343097a9cd97982065509bb1'],
+        ['46337', 'a72746cec4b0cfb0daaf01e7bd495699990b7daeab0ff0ae36c630c382aa2496'],
+      ])
     } else {
       // R170's second URL-parser consumer factors the SAME sealed issuer and
       // public factory into two modules. Pin the entire table, not a prefix or
@@ -2918,6 +3088,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
     expect(chunkConsumers(privateCatalog)).toEqual([
       '/api/mobile/v1/media/[id]/complete/route',
+      '/api/mobile/v1/media/[id]/process/route',
       '/api/mobile/v1/media/[id]/route',
       '/api/mobile/v1/media/route',
     ])
@@ -2984,6 +3155,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
     expect(chunkConsumers(disposalSharedChunk)).toEqual([
       '/api/mobile/v1/media/[id]/complete/route',
+      '/api/mobile/v1/media/[id]/process/route',
       '/api/mobile/v1/media/[id]/route',
       '/api/mobile/v1/media/route',
     ])
@@ -3057,10 +3229,12 @@ describe('authoritative Mobile API source surface', () => {
     // still216 logical identities; the webhook adds only its own manifest.
     const webhookRoute = '/api/webhooks/revenuecat/route'
     const mobileTargets = new Set(allRoutes.flatMap((route) => tracedTargets(route)))
+    // R173 adds precisely the existing private-catalog chunk to process; its
+    // exact four consumers and all seven complete modules are bound above.
     expect(
       allRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0) +
         absorbedReferences(allRoutes),
-    ).toBe(8202 + 16 + 11 + 3)
+    ).toBe(8202 + 16 + 11 + 4)
     expect(mobileTargets.size + 1).toBe(219)
     expect(repositoryUniqueSize([...mobileTargets]) + 1).toBe(218)
     expect(tracedTargets(webhookRoute)).toHaveLength(104)
@@ -3365,7 +3539,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(
       [...allRoutes, webhookRoute].reduce((sum, route) => sum + tracedTargets(route).length, 0) +
         absorbedReferences(allRoutes),
-    ).toBe(8202 + 16 + 104 + 11 + 3)
+    ).toBe(8202 + 16 + 104 + 11 + 4)
     expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(116)
     expect(tracedTargets('/api/mobile/v1/training/window/route')).toHaveLength(116)
     // T48 extracts the three unchanged read-page modules certified above into
@@ -3391,6 +3565,7 @@ describe('authoritative Mobile API source surface', () => {
         123 + // R93: exactly the new read-only origin route NFT edges.
         11 + // R106: exact newly factored issuer edges, independently pinned above.
         3 + // R111: closed five-module shared table, exact three media consumers.
+        1 + // R173: same sealed private-catalog chunk, process is its fourth consumer.
         116 + // R118: exactly the new read-only training entry, independently bounded above.
         3 * 114 + // R136: original execution route traces remain exact.
         5 * 120, // R140: five explicit completion traces; all included in scans.
@@ -3710,6 +3885,8 @@ describe('authoritative Mobile API source surface', () => {
             // R111: same exact project flag gates only these two disposal entries;
             // their clinical-reader graph is unchanged and checked separately.
             '/api/mobile/v1/media/[id]/complete/route',
+            // R173: same trusted upload policy now also bounds processing.
+            '/api/mobile/v1/media/[id]/process/route',
             '/api/mobile/v1/media/[id]/route',
             '/api/mobile/v1/media/route',
           ].sort(),

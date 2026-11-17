@@ -58,6 +58,39 @@ describe('functionsForSet', () => {
     vi.stubEnv('INNGEST_FUNCTION_SET', 'media-clinical-staging')
     expect(() => functionsForSet('media-conversation-staging')).toThrow()
   })
+  it('serves private processing only in its explicitly enabled conversational staging roster', () => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED', 'true')
+    expect(ids(functionsForSet('media-conversation-staging'))).toEqual([
+      'media-asset-processing',
+      'reevaluation-photo-disposition-cleanup',
+      'conversation-media-retention-cleanup',
+      'user-deletion-purger',
+      'conversation-private-media-processing',
+    ])
+    expect(ids(functionsForSet('media-staging'))).toEqual(['media-asset-processing'])
+    expect(functionsForSet(undefined)).toBe(allFunctions)
+    expect(ids(allFunctions)).not.toContain('conversation-private-media-processing')
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-clinical-staging')
+    expect(ids(functionsForSet('media-clinical-staging'))).toEqual([
+      'media-asset-processing',
+      'reevaluation-photo-disposition-cleanup',
+    ])
+  })
+  it.each([
+    undefined,
+    '',
+    'false',
+    'TRUE',
+  ])('keeps private processing unserved for flag %s', (flag) => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED', flag)
+    expect(ids(functionsForSet('media-conversation-staging'))).not.toContain(
+      'conversation-private-media-processing',
+    )
+  })
   it('an unknown set name is refused, never widened to all functions', () => {
     expect(() => functionsForSet('media')).toThrow(/unknown Inngest function set/)
     expect(() => functionsForSet('all')).toThrow(/unknown Inngest function set/)

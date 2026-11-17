@@ -12,9 +12,13 @@ import { createSupabasePrivateConversationMedia } from './supabase-private-conve
 export async function versionedOwnedMediaResponse(
   context: MobileRouteContext,
   assetId: string,
-  operation: 'read' | 'complete',
+  operation: 'read' | 'complete' | 'process',
   legacy: () => Promise<Response>,
   env: Readonly<Record<string, string | undefined>> = process.env,
+  processing?: {
+    requestKey: string
+    enqueue(input: { userId: string; assetId: string; requestId: string }): Promise<void>
+  },
 ): Promise<Response> {
   const enabled = () =>
     env.MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED === 'true' &&
@@ -43,6 +47,7 @@ export async function versionedOwnedMediaResponse(
         now: () => new Date(),
         storageOrigin,
         catalog: source.catalog,
+        ...(processing ? { enqueue: processing.enqueue } : {}),
         resolve: (userId, id) =>
           rpc('resolve_conversation_media_catalog_v2', {
             p_user_id: userId,
@@ -83,9 +88,10 @@ export async function versionedOwnedMediaResponse(
       context.auth.userId,
       assetId,
       operation,
+      processing?.requestKey,
     )
     if (result.action === 'legacy') return legacy()
-    return mobileSuccess(result.value, context.requestId)
+    return mobileSuccess(result.value, context.requestId, operation === 'process' ? 202 : 200)
   } catch (error) {
     if (error instanceof MobileApiError) throw error
     throw new MobileApiError(503, 'media_catalog_unavailable', 'Media operation unavailable')

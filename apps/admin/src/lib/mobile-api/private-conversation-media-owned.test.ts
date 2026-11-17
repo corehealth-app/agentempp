@@ -277,3 +277,118 @@ describe('owned private media read and completion', () => {
     ).rejects.toMatchObject({ code: 'media_catalog_unavailable' })
   })
 })
+
+describe('private processing request on the proved source', () => {
+  it('queues only the owner/asset and original technical request hash, without a download or factual write', async () => {
+    const x = setup()
+    Object.assign(x.row, { status: 'uploaded', actual_size_bytes: 8, uploaded_at: at })
+    const events: unknown[] = []
+    const ports = {
+      ...x.ports,
+      enqueue: async (input: unknown) => {
+        events.push(input)
+      },
+    }
+    expect(
+      await ownedConversationMediaOperation(ports, owner, id, 'process', 'r173-process-1'),
+    ).toMatchObject({ action: 'private', value: { id, status: 'uploaded' } })
+    expect(events).toEqual([
+      {
+        userId: owner,
+        assetId: id,
+        requestId: '704f13eb7b377fb377951e87fe8b728396a8668e78e028990c8616e5a6e28ced',
+      },
+    ])
+    expect(x.ports.signDownload).not.toHaveBeenCalled()
+    expect(x.ports.catalog.completeUpload).not.toHaveBeenCalled()
+  })
+  it('returns processed source state without queueing a second interpretation', async () => {
+    const x = setup()
+    Object.assign(x.row, {
+      status: 'processed',
+      actual_size_bytes: 8,
+      uploaded_at: at,
+      processed_at: at,
+      processing_request_id: 'a'.repeat(64),
+      processing_result: { text: 'Leite com whey' },
+    })
+    let queued = 0
+    const result = await ownedConversationMediaOperation(
+      {
+        ...x.ports,
+        enqueue: async () => {
+          queued++
+        },
+      },
+      owner,
+      id,
+      'process',
+      'r173-process-1',
+    )
+    expect(result).toMatchObject({
+      action: 'private',
+      value: { status: 'processed', result: { text: 'Leite com whey' } },
+    })
+    expect(queued).toBe(0)
+    expect(x.ports.signDownload).not.toHaveBeenCalled()
+  })
+  it('refuses a pending source without queueing or issuing another upload', async () => {
+    const x = setup()
+    let queued = 0
+    await expect(
+      ownedConversationMediaOperation(
+        {
+          ...x.ports,
+          enqueue: async () => {
+            queued++
+          },
+        },
+        owner,
+        id,
+        'process',
+        'r173-process-1',
+      ),
+    ).rejects.toMatchObject({ code: 'media_not_processable' })
+    expect(queued).toBe(0)
+  })
+  it('keeps a proved legacy processing request on the original callback', async () => {
+    const x = setup(1)
+    let queued = 0
+    expect(
+      await ownedConversationMediaOperation(
+        {
+          ...x.ports,
+          enqueue: async () => {
+            queued++
+          },
+        },
+        owner,
+        id,
+        'process',
+        'r173-process-1',
+      ),
+    ).toEqual({ action: 'legacy' })
+    expect(queued).toBe(0)
+  })
+  it('requires a valid technical key and queue capability for private processing', async () => {
+    const x = setup()
+    Object.assign(x.row, { status: 'uploaded', actual_size_bytes: 8, uploaded_at: at })
+    await expect(
+      ownedConversationMediaOperation(x.ports, owner, id, 'process', 'r173-process-1'),
+    ).rejects.toMatchObject({ code: 'media_catalog_unavailable' })
+    expect(x.ports.signDownload).not.toHaveBeenCalled()
+  })
+  it('refuses a disposed source after queueing, leaving the worker to recheck the source', async () => {
+    const x = setup()
+    Object.assign(x.row, { status: 'uploaded', actual_size_bytes: 8, uploaded_at: at })
+    const ports = {
+      ...x.ports,
+      enqueue: async () => {
+        Object.assign(x.row, { status: 'deleted', deleted_at: at })
+      },
+    }
+    await expect(
+      ownedConversationMediaOperation(ports, owner, id, 'process', 'r173-process-1'),
+    ).rejects.toMatchObject({ code: 'media_catalog_unavailable' })
+  })
+})

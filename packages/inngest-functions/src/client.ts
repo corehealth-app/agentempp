@@ -60,6 +60,16 @@ type Events = {
       raw: unknown
     }
   }
+  /** New private catalog only. Legacy event/worker cannot resolve these IDs. */
+  'conversation.media.private.process.requested': {
+    data: {
+      schema: 'conversation.media-process.v2'
+      catalogVersion: 2
+      assetId: string
+      userId: string
+      requestId: string
+    }
+  }
   'media.asset.process.requested': {
     data: {
       assetId: string

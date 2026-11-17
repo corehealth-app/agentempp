@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   type ConversationMediaIdentityV2,
   type PrivateMediaAssetV2,
@@ -7,7 +8,7 @@ import {
 } from '@mpp/core/conversation-media'
 import { parseConversationImageResult } from '@mpp/providers/vision/conversation-image-result'
 import { z } from 'zod'
-import { resourceIdSchema } from './contracts'
+import { idempotencyKeySchema, resourceIdSchema } from './contracts'
 import { MobileApiError } from './http'
 
 const proofSchema = z
@@ -47,6 +48,8 @@ export interface OwnedConversationMediaPorts {
     seconds: number,
   ): Promise<{ signedUrl: string }>
   close(userId: string, assetId: string): Promise<boolean>
+  /** Available only to the explicit processing route; no fact writer. */
+  enqueue?(input: { userId: string; assetId: string; requestId: string }): Promise<void>
 }
 function unavailable() {
   return new MobileApiError(503, 'media_catalog_unavailable', 'Media operation unavailable')
@@ -83,7 +86,8 @@ export async function ownedConversationMediaOperation(
   ports: OwnedConversationMediaPorts,
   userId: string,
   assetId: string,
-  operation: 'read' | 'complete',
+  operation: 'read' | 'complete' | 'process',
+  requestKey?: string,
 ) {
   const owner = resourceIdSchema.parse(userId),
     id = resourceIdSchema.parse(assetId)
@@ -136,6 +140,25 @@ export async function ownedConversationMediaOperation(
     }
     let row = live(original)
     const identity = privateMediaIdentityOfV2(row)
+    if (operation === 'process') {
+      if (typeof requestKey !== 'string') throw unavailable()
+      idempotencyKeySchema.parse(requestKey)
+      if (row.status === 'processed') return { action: 'private' as const, value: dto(row) }
+      if (
+        !['uploaded', 'processing'].includes(row.status) &&
+        !(row.status === 'failed' && row.failure_stage === 'processing')
+      )
+        throw new MobileApiError(409, 'media_not_processable', 'Media asset is not processable')
+      if (!ports.enqueue) throw unavailable()
+      await ports.enqueue({
+        userId: owner,
+        assetId: id,
+        requestId: createHash('sha256').update(requestKey).digest('hex'),
+      })
+      const latest = live(await ports.catalog.findOwned(scope))
+      if (latest.status === 'deleted' || latest.status === 'pending_upload') throw unavailable()
+      return { action: 'private' as const, value: dto(latest) }
+    }
     if (operation === 'complete') {
       if (row.status === 'pending_upload') {
         const raw = await ports.info(identity)

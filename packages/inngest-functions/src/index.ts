@@ -17,6 +17,10 @@ import { mediaRetentionCleanupFn } from './functions/media-retention-cleanup.js'
 import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.js'
 import { pendingCleanupFn } from './functions/pending-cleanup.js'
 import { pipelineHealthFn } from './functions/pipeline-health.js'
+import {
+  privateConversationMediaProcessingFn,
+  privateConversationMediaWorkerEnabled,
+} from './functions/private-conversation-media-worker.js'
 import { processMessageFn } from './functions/process-message.js'
 import { reevaluationPhotoDispositionCleanupFn } from './functions/reevaluation-photo-disposition-cleanup.js'
 import { regressionBeaconFn } from './functions/regression-beacon.js'
@@ -84,12 +88,15 @@ type ServedFunction =
   | typeof reevaluationPhotoDispositionCleanupFn
   | typeof conversationMediaRetentionCleanupFn
   | typeof conversationUserDeletionPurgerFn
+  | typeof privateConversationMediaProcessingFn
 export function functionsForSet(name: string | undefined): readonly ServedFunction[] {
   if (name === undefined || name === '') return allFunctions
   const selected = (FUNCTION_SETS as Record<string, readonly ServedFunction[]>)[name]
   if (!selected) throw new Error(`unknown Inngest function set: ${name}`)
   if (name === 'media-clinical-staging' || name === 'media-conversation-staging')
     assertClinicalStagingWorkerTarget(process.env, name)
+  if (name === 'media-conversation-staging' && privateConversationMediaWorkerEnabled())
+    return [...selected, privateConversationMediaProcessingFn]
   return selected
 }
 
@@ -110,6 +117,7 @@ export {
   openrouterBalanceCheckFn,
   pendingCleanupFn,
   pipelineHealthFn,
+  privateConversationMediaProcessingFn,
   processMessageFn,
   reevaluationPhotoDispositionCleanupFn,
   reminderClaimFn,

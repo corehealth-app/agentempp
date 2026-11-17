@@ -95,6 +95,8 @@ export function createConversationIntakeRoutes(
         createConversationIntakeRuntime(db, auth, original, {
           enabled,
           mediaEnabled,
+          privateMediaCatalogEnabled: () =>
+            process.env.MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED === 'true',
           // Construction is lazy and synchronous. Provider work occurs only after
           // the actual intake driver's durable routing claim, never on GET/session.
           createRouter: () =>

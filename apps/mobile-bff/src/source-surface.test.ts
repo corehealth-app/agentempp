@@ -648,6 +648,107 @@ function certifyExactSharedTable(
   expect(observed.sort()).toEqual(pins.map(([id, hash]) => `${id}:${hash}`).sort())
   return bodies
 }
+/** R172 adds only atomic versioned admission and its sticky request policy.
+ * Seal the full new body and every source; reconstruct the exact original
+ * runtime/routes/store below. Historical R128/R168 certificates stay intact. */
+function originalIntakeSourceR172(name: string): string {
+  let text = readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name), 'utf8')
+  const pins: Record<string, string> = {
+    'conversation-intake-routes.ts':
+      '749ead1f22675a3b1ec88e20e74284461683ec2a2b08d5f1ca4fc7bfb4664804',
+    'conversation-intake-store.ts':
+      '5c7badf31dc9b71a2fe362cbd258f2458f8b6453d353bf606663f5dc1a35086f',
+    'conversation-intake-runtime.ts':
+      '0f2b74c31332e637c711e42feb2ec77f0db907f3681810c10b3f441716a13a36',
+    'versioned-conversation-intake-port.ts':
+      '53cec7b8ce91a41968a0f39425fee966c0885ab0d123a9a40402d903bb83a60e',
+  }
+  const deltas: Record<string, readonly (readonly [string, string])[]> = {
+    'conversation-intake-routes.ts': [
+      [
+        "          privateMediaCatalogEnabled: () =>\n            process.env.MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED === 'true',\n",
+        '',
+      ],
+    ],
+    'conversation-intake-store.ts': [
+      [
+        "refusal(['stale_epoch', 'input_conflict', 'rate_limited', 'media_unavailable'])",
+        "refusal(['stale_epoch', 'input_conflict', 'rate_limited'])",
+      ],
+    ],
+    'conversation-intake-runtime.ts': [
+      [
+        "import { createVersionedConversationIntakePort } from './versioned-conversation-intake-port'\n",
+        '',
+      ],
+      [
+        '  /** Atomic catalog dispatcher capability, selected by server policy only. */\n  readonly privateMediaCatalogEnabled?: () => boolean\n',
+        '',
+      ],
+      [
+        '    trustedMediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false),\n    trustedPrivateCatalogEnabled = ports.privateMediaCatalogEnabled?.bind(ports) ?? (() => false),\n    privateCatalogBound = trustedPrivateCatalogEnabled() === true',
+        '    trustedMediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false)',
+      ],
+      [
+        '      if (mediaAuthorityRequired && privateCatalogBound && trustedPrivateCatalogEnabled() !== true)\n        throw unavailable()\n',
+        '',
+      ],
+      [
+        '    store = createConversationIntakeStore(\n      createVersionedConversationIntakePort(\n        { rpc },\n        {\n          enabled: trustedPrivateCatalogEnabled,\n          beforeAdmission: () => {\n            // A private media write requires this same sticky policy on every\n            // original Auth/owner/epoch observation, including recovery.\n            mediaAuthorityRequired = true\n            available()\n          },\n        },\n      ),\n      scopePort,\n    ),\n',
+        '    store = createConversationIntakeStore({ rpc }, scopePort),\n',
+      ],
+    ],
+  }
+  if (pins[name]) expect(createHash('sha256').update(text).digest('hex')).toBe(pins[name])
+  for (const [old, replacement] of deltas[name] ?? []) {
+    expect(text.split(old)).toHaveLength(2)
+    text = text.replace(old, replacement)
+  }
+  return text
+}
+function certifyVersionedIntakeBridgeR172(body: string): void {
+  body = restoreWorkoutFacadeLinkR140(body)
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    '921228c6a39061e494283bd41e527304958de5a19654e998855fd9d567adfe1f',
+  )
+  certifyOrdinaryPhotoSourcesR102()
+  for (const [name, hash] of [
+    [
+      'conversation-intake-runtime.ts',
+      '673be3b703dd77d4ed98f5201e0a003dd55c2b829149554241a46b1cfe88958f',
+    ],
+    [
+      'conversation-intake-routes.ts',
+      '0a51079f077e44a40915e874c6da3321e0773397be1bbb37bff1a5bae86f2e7c',
+    ],
+    [
+      'conversation-intake-store.ts',
+      '41da3706c059a0c7c96696be35052364a2f28aac001d999ef9add79224436527',
+    ],
+    [
+      'conversation-intake-driver.ts',
+      '4ccd96a847ab7cff5c0b659239576f3e52d5cc96939c7e6d7610950a0d0ec4f7',
+    ],
+    [
+      'conversation-intake-router.ts',
+      'd4a62d927c1f3fc8006f4c0701fff0163fb812a422a5833f64ccafb527a5faae',
+    ],
+  ])
+    expect(
+      createHash('sha256')
+        .update(originalIntakeSourceR172(name ?? ''))
+        .digest('hex'),
+    ).toBe(hash)
+  originalIntakeSourceR172('versioned-conversation-intake-port.ts')
+  for (const marker of [
+    'admit_conversation_versioned_media_intake_v2',
+    'X-Conversation-Media-Provenance',
+    'MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED',
+    'conversation.intake-result.v2',
+    'media_temporarily_unavailable',
+  ])
+    expect(body).toContain(marker)
+}
 /** R99 adds opt-in media projection and request-owned fencing. R101 corrects
  * temporary-capability/unselected-original recovery; GET remains read-only.
  * Certify the complete reviewed sources and current executable body. The other
@@ -655,6 +756,10 @@ function certifyExactSharedTable(
  * recertifies the ordinary-kind workout codec in full. No global scan or
  * physical consumer assertion is exempted by this certificate. */
 function certifyIntakeMediaBridgeR102(body: string): void {
+  if (body.includes('admit_conversation_versioned_media_intake_v2')) {
+    certifyVersionedIntakeBridgeR172(body)
+    return
+  }
   body = certifyStructuredIntakeRouterR128(body)
   certifyOrdinaryPhotoSourcesR102()
   for (const [name, hash] of [
@@ -1366,11 +1471,23 @@ describe('authoritative Mobile API source surface', () => {
           ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
           ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
           ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-          ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
+          ...(readFileSync(chunks[0] ?? '', 'utf8').includes('32978:')
+            ? [
+                [
+                  '32978',
+                  '921228c6a39061e494283bd41e527304958de5a19654e998855fd9d567adfe1f',
+                ] as const,
+              ]
+            : [
+                [
+                  '6535',
+                  '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3',
+                ] as const,
+              ]),
         ],
         restorePrivateMediaContractR168,
       ),
-      body = bodies.get('6535') ?? ''
+      body = bodies.get('32978') ?? bodies.get('6535') ?? ''
     expect(() => certifyIntakeMediaBridgeR102(body)).not.toThrow()
     for (const changed of [
       body.replace('o:()=>ao,', ''),
@@ -2117,13 +2234,23 @@ describe('authoritative Mobile API source surface', () => {
       'prepare_conversation_media_upload_v2',
       'claim_conversation_media_processing_v2',
       'resolve_conversation_media_catalog_v2',
-      'MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED',
     ])
       expect(runtimeMarkerRoutes(marker)).toEqual([
         '/api/mobile/v1/media/[id]/complete/route',
         '/api/mobile/v1/media/[id]/route',
         '/api/mobile/v1/media/route',
       ])
+    expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED')).toEqual(
+      [
+        ...conversationIntakeAppPaths,
+        '/api/mobile/v1/media/[id]/complete/route',
+        '/api/mobile/v1/media/[id]/route',
+        '/api/mobile/v1/media/route',
+      ].sort(),
+    )
+    expect(runtimeExactStringRoutes('admit_conversation_versioned_media_intake_v2')).toEqual(
+      [...conversationIntakeAppPaths].sort(),
+    )
     expect(runtimeMarkerRoutes('close_conversation_media_v2')).toEqual([
       '/api/mobile/v1/media/[id]/complete/route',
       '/api/mobile/v1/media/[id]/route',
@@ -3042,11 +3169,15 @@ describe('authoritative Mobile API source surface', () => {
         ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
         ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-        ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'],
+        ...(readFileSync(intakeChunk, 'utf8').includes('32978:')
+          ? [['32978', '921228c6a39061e494283bd41e527304958de5a19654e998855fd9d567adfe1f'] as const]
+          : [
+              ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'] as const,
+            ]),
       ],
       restorePrivateMediaContractR168,
     )
-    certifyIntakeMediaBridgeR102(intakeBodies.get('6535') ?? '')
+    certifyIntakeMediaBridgeR102(intakeBodies.get('32978') ?? intakeBodies.get('6535') ?? '')
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.
     certifySharedModule(

@@ -35,7 +35,7 @@ def run(config):
     def admission(private, intake):
         raw = {'intake_protocol': 'conversation.intake.v1', 'intake_id': intake,
             'source': {'channel': 'media', 'media_asset_id': asset, 'user_action': 'report_actual_record'}}
-        name = 'admit_conversation_private_media_intake_v2' if private else 'admit_conversation_intake'
+        name = 'admit_conversation_versioned_media_intake_v2' if private else 'admit_conversation_intake'
         return 'public.' + name + '(' + lit(owner) + '::uuid,' + lit(epoch) + '::uuid,' + lit(json.dumps(raw)) + '::jsonb)'
 
     def blocked(blocker, waiter):
@@ -59,14 +59,20 @@ def run(config):
             intake = str(uuid.uuid4())
             a.command('BEGIN')
             first = a.query(admission(private_first, intake))
-            require(first['action'] == 'admitted', 'holder admitted one original input')
+            require(first['action'] == ('admitted' if private_first else 'input_conflict'), 'old new-private-source caller cannot reserve a legacy intake')
             marker = b.send(admission(private_second, intake))
             blocked(a, b)
             a.command('ROLLBACK' if rollback else 'COMMIT')
             second = b.receive(marker)
-            expected = 'admitted' if rollback else 'input_conflict' if not private_first and private_second else 'replay'
+            expected = ('replay' if private_first and not rollback else 'admitted') if private_second else ('replay' if private_first and not rollback else 'input_conflict')
             require(second['action'] == expected, 'waiter respects the original admission version')
-            version2 = private_second if rollback else private_first
+            # A refused old caller leaves no immutable stub. A current retry
+            # can still admit this same ID, including after a private rollback.
+            expected_rows = 0 if expected == 'input_conflict' else 1
+            require(admin.query('(SELECT count(*) FROM private.conversation_intake_ids WHERE user_id=' + lit(owner) + '::uuid AND intake_id=' + lit(intake) + '::uuid)') == expected_rows, 'refused old request leaves no intake row')
+            if expected_rows == 0:
+                require(admin.query(admission(True, intake))['action'] == 'admitted', 'current dispatcher resumes the exact refused intake ID')
+            version2 = True
             count = admin.query('(SELECT count(*) FROM private.conversation_private_media_intakes_v2 WHERE user_id=' + lit(owner) + '::uuid AND intake_id=' + lit(intake) + '::uuid AND asset_id=' + lit(asset) + '::uuid)')
             require(count == (1 if version2 else 0), 'exact one immutable binding or permanent legacy admission')
             require(admin.query('(SELECT count(*) FROM private.conversation_intake_ids WHERE user_id=' + lit(owner) + '::uuid AND intake_id=' + lit(intake) + '::uuid)') == 1, 'one logical intake')

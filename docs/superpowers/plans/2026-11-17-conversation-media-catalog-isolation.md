@@ -110,6 +110,16 @@ current consumers are sealed. Real route/installed-SDK tests use synthetic
 HTTP boundaries. Process/discard/intake/account/worker and actual hosted Storage,
 authentication/native/TestFlight qualification remain open; default is OFF.
 
+R172 local progress: the scoped intake runtime now calls the atomic versioned
+media admission dispatcher under trusted policy, preserving real per-RPC scope
+observations and sticky withdrawal. A reproduced old-caller transition is
+fenced at the public admission RPC without changing its OID or original legacy
+implementation body: a new private source cannot become an immutable legacy
+stub, and the same intake ID can resume correctly. Original admitted receipts
+stay frozen. The temporary `media_unavailable` refusal is explicitly decoded.
+Process/discard/account/worker composition and actual hosted/native delivery
+remain required; Task2/Task3 remain open and activation stays OFF.
+
 ### 4. Qualification and delivery
 
 - [ ] Inspect the complete source/compiled/schema diff and run required regression gates before any staging application.

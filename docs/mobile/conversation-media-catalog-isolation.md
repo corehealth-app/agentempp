@@ -235,7 +235,39 @@ orchestrator and private worker still need composition before this opt-in can
 be enabled. Activation remains OFF. R171 SDK/route tests use synthetic HTTP
 Storage/SQL boundaries, not hosted authentication or real Storage/model proof.
 
-All five migrations remain source only. No deployed route, registered worker, rollout flag,
+## Versioned intake transport and old-caller fence
+
+R172 binds the actual request runtime's existing scoped store to the atomic
+versioned admission dispatcher when the trusted private policy is on. Original
+Auth/admin/patient/epoch observations still bracket each physical call; there
+is no extra unobserved catalog probe. Policy withdrawal is sticky across the
+admission, current-scope checks and read-only recovery. Text and the default-OFF
+path retain the original transport. Explicit `media_unavailable` is decoded as
+a temporary refusal, without inventing calories or a different intake.
+
+A reproduced transition bug allowed an old caller to create a version1 intake
+for a source that was already private/version2, permanently blocking the same
+intake ID's later resumption. The new additive guard refuses that new legacy
+admission before it creates any row. A current retry may then admit the same
+ID with its actual private provenance. Already admitted public intakes remain
+version1 through genuine later asset-ID reuse; already admitted private intakes
+remain replayable. Their original receipts and domain writers are untouched.
+
+The exact original admission body is copied into a closed private implementation;
+the public function is updated in place, retaining its OID/signature. Actual
+already-prepared service-role text requests continue working across the DDL,
+while already-prepared old calls cannot reserve a new private source. Both
+wrappers preserve the original owner lane, epoch, hashing and replay rules.
+There is no direct service/client EXECUTE grant on the raw implementation.
+
+The historical private-capture fixture now seeds a genuine public source before
+its legacy admission and only then reuses the ID privately, matching its
+original stated test scenario. All47 assertions remain. Five actual admission
+races additionally prove refused old requests leave no stub and can resume;
+this intentionally supersedes the pre-guard allowance for new v2 inputs on old
+callers. Hosted activation and actual Storage/native qualification remain open.
+
+All six migrations remain source only. No deployed route, registered worker, rollout flag,
 provider, clinical function, native binary or TestFlight version has been
 changed. Before activation, compose the qualified private byte disposal/account
 ports into the running app/worker and select the request-specific private runtime. Preserve

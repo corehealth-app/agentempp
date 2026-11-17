@@ -50,7 +50,7 @@ const admitSchema = z.union([
   z
     .object({ action: z.enum(['admitted', 'replay']), intake: conversationIntakeBindingSchema })
     .strict(),
-  refusal(['stale_epoch', 'input_conflict', 'rate_limited']),
+  refusal(['stale_epoch', 'input_conflict', 'rate_limited', 'media_unavailable']),
 ])
 const captureSchema = z.union([
   z

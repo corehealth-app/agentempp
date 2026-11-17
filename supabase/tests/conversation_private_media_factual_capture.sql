@@ -103,7 +103,16 @@ BEGIN
  -- A legacy admission is permanently version1 even if its opaque asset ID is
  -- later used by a new private source after the legacy row is gone.
  s:=pg_temp.private_seed('audio_note',NULL,'{"text":"Comi arroz"}');u:=(s->>'owner')::uuid;e:=(s->>'epoch')::uuid;i:=(s->>'intake')::uuid;
- a:=public.admit_conversation_intake(u,e,s->'input');
+ -- This legacy admission must precede private creation. The previous seed
+ -- already created v2 first, contrary to this case's ID-reuse comment.
+ DECLARE prior_a uuid:=gen_random_uuid();BEGIN
+  INSERT INTO public.media_assets(id,user_id,kind,bucket_id,object_path,mime_type,declared_size_bytes,status,source_request_hash,retention_until)
+  VALUES(prior_a,u,'audio_note','audio-notes',u||'/'||prior_a||'.m4a','audio/mp4',8,'pending_upload',repeat('f',64),clock_timestamp()+interval '30days');
+  s:=jsonb_set(s,'{input,source,media_asset_id}',to_jsonb(prior_a::text));
+  a:=public.admit_conversation_intake(u,e,s->'input');
+  DELETE FROM public.media_assets WHERE id=prior_a;
+  PERFORM public.create_conversation_media_asset_v2(u,prior_a,'audio_note','audio/mp4',8,NULL,repeat('f',64));
+ END;
  PERFORM pg_temp.capture_ok(a->>'action'='admitted','legacy admission accepts its unchanged input protocol');
  PERFORM pg_temp.capture_ok(public.admit_conversation_private_media_intake_v2(u,e,s->'input')->>'action'='input_conflict','existing legacy intake cannot be upgraded to private');
  PERFORM pg_temp.capture_ok(public.capture_conversation_intake_source(u,i,a#>>'{intake,input_hash}',e)->>'action'='media_unavailable','legacy capture never probes the private catalog');

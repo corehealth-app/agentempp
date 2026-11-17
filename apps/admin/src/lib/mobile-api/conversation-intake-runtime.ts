@@ -39,6 +39,7 @@ import { captureCurrentClinicalState } from './current-clinical-state'
 import { MobileApiError } from './http'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 import { createSupabaseCurrentClinicalStateSource } from './supabase-current-clinical-state'
+import { createVersionedConversationIntakePort } from './versioned-conversation-intake-port'
 
 export interface ConversationIntakeRuntimePorts extends ConversationCurrentScopeDependencies {
   readonly createRouter: ConversationIntakeDriverPorts['createRouter']
@@ -47,6 +48,8 @@ export interface ConversationIntakeRuntimePorts extends ConversationCurrentScope
   readonly mealEnabled?: () => boolean
   readonly workoutEnabled?: () => boolean
   readonly mediaEnabled?: () => boolean
+  /** Atomic catalog dispatcher capability, selected by server policy only. */
+  readonly privateMediaCatalogEnabled?: () => boolean
 }
 function unavailable() {
   return new MobileApiError(503, 'conversation_intake_unavailable', 'Intake is unavailable')
@@ -85,7 +88,9 @@ export function createConversationIntakeRuntime(
   const enabled = ports.enabled?.bind(ports) ?? (() => false),
     mealEnabled = ports.mealEnabled?.bind(ports) ?? conversationMealCommandsEnabled,
     workoutEnabled = ports.workoutEnabled?.bind(ports) ?? conversationWorkoutCommandsEnabled,
-    trustedMediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false)
+    trustedMediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false),
+    trustedPrivateCatalogEnabled = ports.privateMediaCatalogEnabled?.bind(ports) ?? (() => false),
+    privateCatalogBound = trustedPrivateCatalogEnabled() === true
   let closed: MobileApiError | null = null,
     mediaAuthorityRequired = false
   function available() {
@@ -94,6 +99,8 @@ export function createConversationIntakeRuntime(
       if (enabled() !== true || mealEnabled() !== true || workoutEnabled() !== true)
         throw unavailable()
       if (mediaAuthorityRequired && trustedMediaEnabled() !== true) throw unavailable()
+      if (mediaAuthorityRequired && privateCatalogBound && trustedPrivateCatalogEnabled() !== true)
+        throw unavailable()
     } catch {
       closed = unavailable()
       throw closed
@@ -235,7 +242,21 @@ export function createConversationIntakeRuntime(
         return true
       },
     }),
-    store = createConversationIntakeStore({ rpc }, scopePort),
+    store = createConversationIntakeStore(
+      createVersionedConversationIntakePort(
+        { rpc },
+        {
+          enabled: trustedPrivateCatalogEnabled,
+          beforeAdmission: () => {
+            // A private media write requires this same sticky policy on every
+            // original Auth/owner/epoch observation, including recovery.
+            mediaAuthorityRequired = true
+            available()
+          },
+        },
+      ),
+      scopePort,
+    ),
     recoveryRPC = db.rpc.bind(db) as unknown as ConversationIntakeRecoveryRPCPort['rpc'],
     recovery = createConversationIntakeRecoveryStore({ rpc: recoveryRPC }, scopePort),
     // The existing meal facade resumes prepared effects through several RPCs.

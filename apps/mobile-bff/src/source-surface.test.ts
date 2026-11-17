@@ -1025,7 +1025,32 @@ const absorbedSelectorRoutes = new Set([
   ...reviewRoutes,
   '/api/mobile/v1/workouts/[id]/strength-clarification/route',
 ])
-function certifyPhysicalModule(file: string, id: string, allowedHashes: readonly string[]): string {
+function restoreMediaFactoryLinkR170(body: string): string {
+  const pins = [
+    [
+      '7f0d18531e2756edef8820d14e93ca67f6ca5b0696ff9747f7704bb7e05975a2',
+      '2142720a3775b78022d343173a090529e6215d164c1a49051af37d889adad139',
+    ],
+    [
+      '25e50a979249c1b64541c8e45fdd72a529d02d0b6506d8e63ed10b4e6efdb682',
+      '8dc0e654afd13a863be5a9bddb9fb0a7b61c1a29254208c428c3f10feeb4a7e6',
+    ],
+  ]
+  const hash = createHash('sha256').update(body).digest('hex')
+  if (pins.some((pair) => pair[1] === hash)) return body
+  const pair = pins.find((pair) => pair[0] === hash)
+  expect(pair, 'complete old GET/complete body with one relocated factory loader').toBeDefined()
+  expect(body.split('c(97281)')).toHaveLength(2)
+  const restored = body.replace('c(97281)', 'c(83201)')
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(pair?.[1])
+  return restored
+}
+function certifyPhysicalModule(
+  file: string,
+  id: string,
+  allowedHashes: readonly string[],
+  restore?: (body: string) => string,
+): string {
   const text = readFileSync(file, 'utf8'),
     source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   const found: ts.ArrowFunction[] = []
@@ -1040,7 +1065,8 @@ function certifyPhysicalModule(file: string, id: string, allowedHashes: readonly
   }
   visit(source)
   expect(found, `one physical reviewed module ${id}`).toHaveLength(1)
-  const body = restoreWorkoutFacadeLinkR140(found[0]?.getText(source) ?? '')
+  const raw = found[0]?.getText(source) ?? ''
+  const body = restoreWorkoutFacadeLinkR140(restore ? restore(raw) : raw)
   expect(allowedHashes).toContain(createHash('sha256').update(body).digest('hex'))
   expect(text.startsWith('"use strict";') || body.startsWith('(a,b,c)=>{"use strict";')).toBe(true)
   return body
@@ -1297,6 +1323,21 @@ describe('authoritative Mobile API source surface', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+  test('rejects changed loader or executable bytes in the relocated legacy media routes', () => {
+    const target = currentAppPathsManifest()['/api/mobile/v1/media/[id]/route']
+    const body = certifyPhysicalModule(resolve(buildRoot, 'server', target ?? ''), '82635', [
+      '7f0d18531e2756edef8820d14e93ca67f6ca5b0696ff9747f7704bb7e05975a2',
+      '2142720a3775b78022d343173a090529e6215d164c1a49051af37d889adad139',
+    ])
+    expect(() => restoreMediaFactoryLinkR170(body)).not.toThrow()
+    const loader = body.includes('c(97281)') ? 'c(97281)' : 'c(83201)'
+    for (const changed of [
+      body.replace(loader, 'c(999999)'),
+      body.replace('media_asset_id', 'unapproved_asset_id'),
+      `${body};void 0`,
+    ])
+      expect(() => restoreMediaFactoryLinkR170(changed)).toThrow()
   })
   test('rejects changed exports or executable bytes in the exact negotiated media bridge', () => {
     const chunks = semanticChunks([
@@ -1947,6 +1988,26 @@ describe('authoritative Mobile API source surface', () => {
         'apps/admin/src/lib/mobile-api/ordinary-media-upload.ts',
         '10222c3bbce4d628118d5a0cfc00ec08eba748ba2199ca500eaa15ae9ba02aad',
       ],
+      [
+        'apps/admin/src/app/api/mobile/v1/media/route.ts',
+        '62b5b20738e5cc7c35fd5b65183d54a7e8b8222c7bb1beffdfabd6527d698de3',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/private-conversation-media-api.ts',
+        'faa2bbccd78c08628829b360632b7025d7854eccc7b5e0bd76f79edfd102ef84',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/versioned-media-upload-response.ts',
+        '5b6edbc324a4a747007a819dd599afcb73660ac2ee2c7cf6f9923ccff01dc8e2',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/private-conversation-media-upload.ts',
+        'da31de004fd23ff406a18330c4d118c944cd563f933aa7547065bc44e5b52550',
+      ],
+      [
+        'apps/admin/src/lib/mobile-api/supabase-private-conversation-media.ts',
+        '703bbf815853aac41720dcbc6ec1730c9c525f2236b6c249a61ea0a28a7e68d3',
+      ],
     ])
       expect(
         createHash('sha256')
@@ -1965,15 +2026,34 @@ describe('authoritative Mobile API source surface', () => {
         expect(text.split(addition)).toHaveLength(2)
         return text.replace(addition, 'function providerExpiry(')
       }
+      if (file === 'apps/admin/src/app/api/mobile/v1/media/route.ts') {
+        const imports =
+          "import { versionedMediaUploadResponse } from '@/lib/mobile-api/versioned-media-upload-response'\n"
+        const binding =
+          '  const configuredResponse = () => versionedMediaUploadResponse(context, input, createResponse)\n'
+        expect(text.split(imports)).toHaveLength(2)
+        expect(text.split(binding)).toHaveLength(2)
+        return text
+          .replace(imports, '')
+          .replace(binding, '')
+          .replace(
+            'executeSupabaseIdempotent(context, input, configuredResponse,',
+            'executeSupabaseIdempotent(context, input, createResponse,',
+          )
+          .replace('refreshReplay: configuredResponse,', 'refreshReplay: createResponse,')
+      }
       return text
     }
-    // The private pipeline is still inactive in every real compiled route.
+    // R170's trusted, default-OFF private creation branch is reachable only
+    // through the existing POST. Every other transport keeps its old graph.
     for (const marker of [
       'conversation-v2/',
       'prepare_conversation_media_upload_v2',
       'claim_conversation_media_processing_v2',
+      'resolve_conversation_media_catalog_v2',
+      'MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED',
     ])
-      expect(runtimeMarkerRoutes(marker)).toEqual([])
+      expect(runtimeMarkerRoutes(marker)).toEqual(['/api/mobile/v1/media/route'])
     // R111 shares the unchanged purpose module with the two disposal entries.
     // Whole source certificates below bind their calls to the ticket gate, not
     // photo analysis; the new privileged RPC graph is restricted separately.
@@ -2056,11 +2136,15 @@ describe('authoritative Mobile API source surface', () => {
       ).toBe(hash)
     const entry = currentAppPathsManifest()['/api/mobile/v1/media/route']
     expect(entry).toBeTypeOf('string')
-    // The upload source is unchanged. Extracting its two pure purpose helpers
-    // into the closed shared table below relocates the full framework module.
-    certifyPhysicalModule(resolve(buildRoot, 'server', entry ?? ''), '49777', [
-      '8ca9a3e581e81d73eb2d620974c424df5333fc088d0ef345315aa19d467e0112',
-    ])
+    const uploadEntry = resolve(buildRoot, 'server', entry ?? '')
+    if (readFileSync(uploadEntry, 'utf8').includes('19414:'))
+      certifyPhysicalModule(uploadEntry, '19414', [
+        '358f40b48ec781b778bb9ccffb002886326e472692a7c596dd5227664823680b',
+      ])
+    else
+      certifyPhysicalModule(uploadEntry, '49777', [
+        '8ca9a3e581e81d73eb2d620974c424df5333fc088d0ef345315aa19d467e0112',
+      ])
     for (const [route, id, hash] of [
       [
         '/api/mobile/v1/media/[id]/route',
@@ -2076,7 +2160,7 @@ describe('authoritative Mobile API source surface', () => {
       const target = currentAppPathsManifest()[route ?? '']
       expect(target).toBeTypeOf('string')
       const file = resolve(buildRoot, 'server', target ?? '')
-      certifyPhysicalModule(file, id ?? '', [hash ?? ''])
+      certifyPhysicalModule(file, id ?? '', [hash ?? ''], restoreMediaFactoryLinkR170)
       // Complete neutral revocation primitive + real SDK adapter, with no
       // worker import, is the same closed body in these two entries only.
       certifyPhysicalModule(file, '2464', [
@@ -2577,19 +2661,28 @@ describe('authoritative Mobile API source surface', () => {
       'prepare_conversation_media_upload',
       'register_conversation_media_upload',
     ])
-    certifyExactSharedTable(ordinaryIssuerChunk, [
-      ['83201', '0ed6623bafb670f6e71c132424f9807fe6f7ea0f30e562976cfa6613a3e3581a'],
-    ])
-    // Removing this single optional-port spread reconstructs every byte of
-    // the previously certified factory. No old body is admitted by prefix.
-    const factory = certifyPhysicalModule(ordinaryIssuerChunk, '83201', [
-      '0ed6623bafb670f6e71c132424f9807fe6f7ea0f30e562976cfa6613a3e3581a',
-    ])
-    const addition = '...b.ordinaryDisposals?{ordinaryDisposals:b.ordinaryDisposals}:{},'
-    expect(factory.split(addition)).toHaveLength(2)
-    expect(createHash('sha256').update(factory.replace(addition, '')).digest('hex')).toBe(
-      '48a22f1ec3e0a816eb14e62793c70d5719a040bccd022583021dbb6c28577811',
-    )
+    if (readFileSync(ordinaryIssuerChunk, 'utf8').includes('83201:')) {
+      certifyExactSharedTable(ordinaryIssuerChunk, [
+        ['83201', '0ed6623bafb670f6e71c132424f9807fe6f7ea0f30e562976cfa6613a3e3581a'],
+      ])
+      // Retain the full old compiler certificate and its exact reconstruction.
+      const factory = certifyPhysicalModule(ordinaryIssuerChunk, '83201', [
+        '0ed6623bafb670f6e71c132424f9807fe6f7ea0f30e562976cfa6613a3e3581a',
+      ])
+      const addition = '...b.ordinaryDisposals?{ordinaryDisposals:b.ordinaryDisposals}:{},'
+      expect(factory.split(addition)).toHaveLength(2)
+      expect(createHash('sha256').update(factory.replace(addition, '')).digest('hex')).toBe(
+        '48a22f1ec3e0a816eb14e62793c70d5719a040bccd022583021dbb6c28577811',
+      )
+    } else {
+      // R170's second URL-parser consumer factors the SAME sealed issuer and
+      // public factory into two modules. Pin the entire table, not a prefix or
+      // module exemption. Their source hashes above remain the original ones.
+      certifyExactSharedTable(ordinaryIssuerChunk, [
+        ['75005', '506e25555771cfc370edf36ab8b58b839b4f165f006f112660e639417314377a'],
+        ['97281', 'fb25c188fd7607bbddd51345ff737c21cd8596451cb8e00b6e07641540b141f6'],
+      ])
+    }
     const issuerReplacementRoutes = new Set([
       '/api/mobile/v1/me/route',
       '/api/mobile/v1/meal-drafts/route',

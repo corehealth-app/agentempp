@@ -8,6 +8,7 @@ import { executeSupabaseIdempotent } from '@/lib/mobile-api/idempotency'
 import { createMediaAsset } from '@/lib/mobile-api/media-service'
 import { createMobileRoute } from '@/lib/mobile-api/route'
 import { createSupabaseMediaDependencies } from '@/lib/mobile-api/supabase-media'
+import { versionedMediaUploadResponse } from '@/lib/mobile-api/versioned-media-upload-response'
 
 export const runtime = 'nodejs'
 
@@ -49,8 +50,9 @@ export const POST = createMobileRoute(async (context) => {
       context.requestId,
       201,
     )
-  return executeSupabaseIdempotent(context, input, createResponse, {
-    refreshReplay: createResponse,
+  const configuredResponse = () => versionedMediaUploadResponse(context, input, createResponse)
+  return executeSupabaseIdempotent(context, input, configuredResponse, {
+    refreshReplay: configuredResponse,
     responseBodyForStorage: () => ({ temporary_capability_redacted: true }),
   })
 })

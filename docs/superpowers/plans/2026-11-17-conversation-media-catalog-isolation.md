@@ -90,6 +90,17 @@ schedules and the SDK/local-SQL chain pass. The ports are not wired into running
 API/account/worker composition, and actual Storage/native qualification remains
 pending. Task3 checkboxes therefore remain open; no global legacy drain claim.
 
+R170 local progress: upload POST has a default-OFF private creation branch,
+selected by committed catalog proof. Old technical requests delegate to the
+unchanged public handler without private fallback. A transient live-request
+unique index prevents parallel old/new callers creating two assets for one
+technical key; it adds no source-row rewrite or extra retention after deletion.
+Six real cross-catalog request races, 23 routing SQL checks, response/limit/gate
+tests and the installed-SDK/local-SQL creation/replay chain pass. The immutable
+intake-version dispatcher is also prepared. GET/complete/process/discard,
+intake transport, account/worker composition and live Storage/native qualification
+remain necessary before activation; Task2/Task3 stay open.
+
 ### 4. Qualification and delivery
 
 - [ ] Inspect the complete source/compiled/schema diff and run required regression gates before any staging application.

@@ -182,7 +182,43 @@ capture suite retains all 47 checks; its shared fixture functions and assertions
 are byte-identical after extraction. Actual Storage interleavings and account
 orchestration in the running app remain activation gates.
 
-All four migrations remain source only. No route, registered worker, rollout flag,
+## Request routing and upload API composition
+
+R170 adds a backend-only catalog resolver that returns committed owner/asset/
+purpose/version proof without a Storage key. A transient unique request index
+covers live catalog rows in both versions. It carries no payload or result,
+imports nothing into the private catalog, and is removed with its source row.
+The existing permanent opaque-ID fence remains separate. Six actual concurrent
+commit/rollback and repeatable-snapshot schedules prove that one technical
+request cannot create an asset in each catalog. Existing source rows are not
+rewritten, and valid old identity updates retain their existing behavior.
+
+An atomic versioned intake admission dispatcher preserves the first admission's
+provenance: absence of a private binding on an existing intake means legacy
+forever. It does not infer a new version from a later reused asset ID. This
+dispatcher is qualified locally but is not yet the default intake transport.
+
+The existing upload POST now composes a default-OFF private creation branch.
+It requires `MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED=true` plus the existing
+qualified staging/protocol gates. A proved old request calls the unchanged old
+handler; errors in the private branch never fall back to it. New uploads retain
+the public DTO, limits and key hashing. Inputs are pinned across asynchronous
+waits, and a withdrawn gate or invalid final clock cannot return a capability.
+Clinical/document creation and the feature-OFF path keep their old handler.
+
+Local tests qualify the response constructor and installed SDK with actual SQL,
+including one source on replay, the subsequent existing capture chain, and byte
+disposition with synthetic Storage/model boundaries. This does not qualify
+hosted HTTP authentication. The compiled guard confines the new RPC graph to
+the upload POST, reconstructs the exact original POST source and the unchanged
+GET/complete bodies after one loader relocation, and pins the entire factored
+issuer table. No protected source or global dependency scan is exempted.
+
+The remaining media GET/complete/process/discard endpoints, intake transport,
+account orchestrator and private worker still need composition before this
+opt-in can be enabled. Activation remains OFF.
+
+All five migrations remain source only. No deployed route, registered worker, rollout flag,
 provider, clinical function, native binary or TestFlight version has been
 changed. Before activation, compose the qualified private byte disposal/account
 ports into the running app/worker and select the request-specific private runtime. Preserve

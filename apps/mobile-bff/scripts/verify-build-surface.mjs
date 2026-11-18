@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'nod
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { completionBuildPaths } from './training-completion-surface.mjs'
+import { withoutJourneySocialBuild } from './journey-social-surface.mjs'
 
 const expectedMobileRouteCount = 93
 const expectedMobileRouteHash = '22926ab33b91fc36dde1834843c56d38fb6b06fe00de0294fe79e54529ba3013'
@@ -523,7 +524,7 @@ function verifyBuildSurface() {
   const buildRoot = resolve(scriptDirectory, '../.next')
   let surface
   try {
-    surface = inspectBuildSurface(buildRoot)
+    surface = withoutJourneySocialBuild(inspectBuildSurface(buildRoot), sha256, fail)
     console.info(
       `BUILD_COMPLETION_CURRENT_MOBILE_ROUTE_PATH_COUNT=${surface.mobileRoutePaths.length}`,
     )

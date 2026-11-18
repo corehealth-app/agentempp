@@ -21,6 +21,7 @@ import {
   completionTransports,
 } from '../scripts/training-completion-surface.mjs'
 import { inspectBuildSurface } from '../scripts/verify-build-surface.mjs'
+import { journeySocialTransports, journeySocialBuildPaths } from '../scripts/journey-social-surface.mjs'
 import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
 const sourceRoot = resolve(
@@ -121,6 +122,7 @@ function semanticChunks(markers: string[]): string[] {
         ).some(
           ([route]) =>
             !completionBuildPaths.has(route.replace(/\/route$/, '')) &&
+            !journeySocialBuildPaths.has(route.replace(/\/route$/, '')) &&
             route.endsWith('/route') &&
             tracedTargets(route, true).includes(physical),
         ),
@@ -1951,7 +1953,8 @@ function sourceRecords(): Array<{ path: string; exports: string[] }> {
     .filter(
       (path) =>
         !executionRouteFiles.has(relative(sourceRoot, path).split(sep).join('/')) &&
-        !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')),
+        !completionTransports.has(relative(sourceRoot, path).split(sep).join('/')) &&
+        !journeySocialTransports.has(relative(sourceRoot, path).split(sep).join('/')),
     )
     .map((path) => ({
       path: relative(sourceRoot, path).split(sep).join('/'),
@@ -1974,7 +1977,8 @@ function currentAppPathsManifest(): Record<string, string> {
     ).filter(
       ([path]) =>
         !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '.ts') &&
-        !completionTransports.has(path.replace('/api/mobile/v1/', '') + '.ts'),
+        !completionTransports.has(path.replace('/api/mobile/v1/', '') + '.ts') &&
+        !journeySocialTransports.has(path.replace('/api/mobile/v1/', '') + '.ts'),
     ),
   )
 }
@@ -2506,12 +2510,12 @@ describe('authoritative Mobile API source surface', () => {
     const paths = currentSurface.routePaths.filter(
       (path) =>
         !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
-        !completionBuildPaths.has(path),
+        !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path),
     )
     const mobile = currentSurface.mobileRoutePaths.filter(
       (path) =>
         !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
-        !completionBuildPaths.has(path),
+        !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path),
     )
     const digest = (values: string[]) =>
       createHash('sha256')
@@ -3272,7 +3276,7 @@ describe('authoritative Mobile API source surface', () => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
         return [appPath, `app${appPath}.js`]
       }),
-      ...[...executionRouteFiles, ...completionTransports.keys()].map((path) => {
+      ...[...executionRouteFiles, ...completionTransports.keys(), ...journeySocialTransports.keys()].map((path) => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
         return [appPath, `app${appPath}.js`]
       }),
@@ -3296,6 +3300,7 @@ describe('authoritative Mobile API source surface', () => {
           resolve(dirname(script), 'training-completion-surface.mjs'),
           readFileSync(resolve(appRoot, 'scripts/training-completion-surface.mjs')),
         )
+        writeFileSync(resolve(dirname(script), 'journey-social-surface.mjs'), readFileSync(resolve(appRoot, 'scripts/journey-social-surface.mjs')))
         symlinkSync(syntheticBuild, resolve(root, '.next'), 'dir')
         const result = spawnSync(process.execPath, [script], {
           encoding: 'utf8',
@@ -4140,7 +4145,9 @@ describe('authoritative Mobile API source surface', () => {
     // Preserve the complete pre-T48 totals and account only for those two edges.
     // T51 adds only the closed helper above:12 edges, one regular target.
     // Historical counts project that exact edge only; all raw scans include it.
-    expect(surface.nftReferenceCount).toBe(
+    // The four separately sealed social routes add4*105 references and five
+    // targets. Their entire raw graph remains in every global forbidden scan.
+    expect(surface.nftReferenceCount - 4 * 105).toBe(
       8202 +
         104 -
         6 +
@@ -4163,8 +4170,8 @@ describe('authoritative Mobile API source surface', () => {
         3 * 114 + // R136: original execution route traces remain exact.
         5 * 120, // R140: five explicit completion traces; all included in scans.
     )
-    expect(surface.nftUniqueTargetCount).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
-    expect(surface.nftRegularFileTargetCount).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
+    expect(surface.nftUniqueTargetCount - 5).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
+    expect(surface.nftRegularFileTargetCount - 5).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     // The three new routes add exactly one fully certified shared chunk and
@@ -5239,12 +5246,12 @@ describe('authoritative Mobile API source surface', () => {
 describe('current96 execution build extension', () => {
   test('builds all three required execution routes and scans their entire transitive graph', () => {
     const surface = inspectBuildSurface(buildRoot)
-    expect(surface.mobileRoutePaths).toHaveLength(101)
-    expect(surface.routePaths).toHaveLength(102)
-    expect(surface.mobileRoutePaths.filter((path) => !completionBuildPaths.has(path))).toHaveLength(
+    expect(surface.mobileRoutePaths).toHaveLength(105)
+    expect(surface.routePaths).toHaveLength(106)
+    expect(surface.mobileRoutePaths.filter((path) => !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path))).toHaveLength(
       96,
     )
-    for (const path of completionBuildPaths) expect(surface.mobileRoutePaths).toContain(path)
+    for (const path of [...completionBuildPaths, ...journeySocialBuildPaths]) expect(surface.mobileRoutePaths).toContain(path)
     for (const path of [
       '/api/mobile/v1/training/execution',
       '/api/mobile/v1/training/execution/[sessionId]',

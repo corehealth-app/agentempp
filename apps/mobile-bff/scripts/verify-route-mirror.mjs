@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { completionTransports } from './training-completion-surface.mjs'
+import { withoutJourneySocialRecords } from './journey-social-surface.mjs'
 
 const expectedCount = 93
 const expectedHash = '379b260d910f1364041880fb6aab30c458c9a8b511760735a9396aa8a058b5cf'
@@ -169,8 +170,8 @@ const executionTransports = new Map([
   ['training/execution/[sessionId]/route.ts', ['GET', 'dynamic', 'runtime']],
   ['training/execution/commands/route.ts', ['POST', 'dynamic', 'runtime']],
 ])
-const completeSources = sourceRecords(),
-  completeWrappers = wrapperRecords()
+const completeSources = withoutJourneySocialRecords(sourceRecords(), 'SOURCE', fail),
+  completeWrappers = withoutJourneySocialRecords(wrapperRecords(), 'WRAPPER', fail)
 for (const [label, records] of [
   ['SOURCE', completeSources],
   ['WRAPPER', completeWrappers],

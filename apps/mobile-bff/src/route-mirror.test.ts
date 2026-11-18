@@ -13,6 +13,7 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, test } from 'vitest'
 import { completionTransports } from '../scripts/training-completion-surface.mjs'
+import { journeySocialTransports } from '../scripts/journey-social-surface.mjs'
 
 const testDirectory = dirname(fileURLToPath(import.meta.url))
 const sourceRoot = resolve(testDirectory, '../../admin/src/app/api/mobile/v1')
@@ -101,6 +102,7 @@ function sourceExports(source: string): string[] {
 function sourceRecords(includeExecution = false, includeCompletion = false): RouteRecord[] {
   return walkFiles(sourceRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter((path) => !journeySocialTransports.has(relative(sourceRoot, path).split(sep).join('/')))
     .filter(
       (path) =>
         includeCompletion ||
@@ -121,6 +123,7 @@ function sourceRecords(includeExecution = false, includeCompletion = false): Rou
 function wrapperRecords(includeExecution = false, includeCompletion = false): RouteRecord[] {
   return walkFiles(wrapperRoot)
     .filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter((path) => !journeySocialTransports.has(relative(wrapperRoot, path).split(sep).join('/')))
     .filter(
       (path) =>
         includeCompletion ||
@@ -200,11 +203,13 @@ function withUnexpectedAuthComposition<T>(
       resolve(dirname(script), 'training-completion-surface.mjs'),
       readFileSync(resolve(testDirectory, '../scripts/training-completion-surface.mjs')),
     )
+    writeFileSync(resolve(dirname(script), 'journey-social-surface.mjs'), readFileSync(resolve(testDirectory, '../scripts/journey-social-surface.mjs')))
     for (const [from, to] of [
       [sourceRoot, resolve(root, 'apps/admin/src/app/api/mobile/v1')],
       [wrapperRoot, resolve(root, 'apps/mobile-bff/src/app/api/mobile/v1')],
     ] as const) {
-      for (const file of walkFiles(from).filter((path) => path.endsWith(`${sep}route.ts`))) {
+      for (const file of walkFiles(from).filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter((path) => !journeySocialTransports.has(relative(wrapperRoot, path).split(sep).join('/')))) {
         const target = resolve(to, relative(from, file))
         mkdirSync(dirname(target), { recursive: true })
         writeFileSync(target, readFileSync(file))
@@ -257,11 +262,13 @@ function withNutritionMutation<T>(
       resolve(dirname(script), 'training-completion-surface.mjs'),
       readFileSync(resolve(testDirectory, '../scripts/training-completion-surface.mjs')),
     )
+    writeFileSync(resolve(dirname(script), 'journey-social-surface.mjs'), readFileSync(resolve(testDirectory, '../scripts/journey-social-surface.mjs')))
     for (const [from, to] of [
       [sourceRoot, resolve(root, 'apps/admin/src/app/api/mobile/v1')],
       [wrapperRoot, resolve(root, 'apps/mobile-bff/src/app/api/mobile/v1')],
     ] as const) {
-      for (const file of walkFiles(from).filter((path) => path.endsWith(`${sep}route.ts`))) {
+      for (const file of walkFiles(from).filter((path) => path.endsWith(`${sep}route.ts`))
+    .filter((path) => !journeySocialTransports.has(relative(wrapperRoot, path).split(sep).join('/')))) {
         const target = resolve(to, relative(from, file))
         mkdirSync(dirname(target), { recursive: true })
         writeFileSync(target, readFileSync(file))

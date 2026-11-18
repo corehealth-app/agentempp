@@ -7,6 +7,7 @@ import {
   completionBuildPaths,
   completionTransports,
 } from '../scripts/training-completion-surface.mjs'
+import { journeySocialBuildPaths, journeySocialTransports } from '../scripts/journey-social-surface.mjs'
 import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../.next/server')
@@ -23,7 +24,8 @@ function currentAppPaths(): Record<string, string> {
           '/api/mobile/v1/training/execution/route',
           '/api/mobile/v1/training/execution/[sessionId]/route',
           '/api/mobile/v1/training/execution/commands/route',
-        ].includes(path) && !completionBuildPaths.has(path.replace(/\/route$/, '')),
+        ].includes(path) && !completionBuildPaths.has(path.replace(/\/route$/, '')) &&
+        !journeySocialBuildPaths.has(path.replace(/\/route$/, '')),
     ),
   )
 }
@@ -54,7 +56,8 @@ function exportStream(root: string, wrapper: boolean) {
           'training/execution/[sessionId]/route.ts',
           'training/execution/commands/route.ts',
         ].includes(relative(root, file).split('\\').join('/')) &&
-        !completionTransports.has(relative(root, file).split('\\').join('/')),
+        !completionTransports.has(relative(root, file).split('\\').join('/')) &&
+        !journeySocialTransports.has(relative(root, file).split('\\').join('/')),
     )
     .map((file) => {
       const source = readFileSync(file, 'utf8')

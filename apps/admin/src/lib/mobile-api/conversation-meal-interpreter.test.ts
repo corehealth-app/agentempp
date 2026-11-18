@@ -887,6 +887,84 @@ describe('closed semantic interpreter input and result', () => {
     )
     expect(complete).toHaveBeenCalledTimes(2)
   })
+  it.each([
+    ['Output schema is too complex for compilation', 'schema_complexity'],
+    ['Unsupported keyword minItems in response_format schema', 'schema_keyword'],
+    ['Invalid schema: required must include every property', 'schema_invalid'],
+    ['This model does not support structured outputs', 'structured_output_unsupported'],
+    ['max_tokens exceeds the maximum output token limit', 'output_token_limit'],
+  ])('classifies a nested provider 400 without disclosing its raw message: %s', async (message, rejection) => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      secret = 'password=provider-diagnostic-secret',
+      failure = {
+        status: 400,
+        error: {
+          metadata: { raw: JSON.stringify({ error: { message: `${message}; ${secret}` } }) },
+        },
+      },
+      sink = vi.fn(),
+      complete = vi.fn(async () => {
+        throw failure
+      }),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(sink.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'provider',
+          error_name: 'UnknownError',
+          http_status: 400,
+          provider_rejection: rejection,
+        },
+      ],
+    ])
+    expect(JSON.stringify(sink.mock.calls)).not.toContain(secret)
+    expect(JSON.stringify(sink.mock.calls)).not.toContain(message)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it('omits unknown and oversized provider details and never evaluates their accessors', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      accessor = vi.fn(() => 'Unsupported keyword secret'),
+      sink = vi.fn(),
+      failures = [
+        { status: 400, message: 'password=unknown-provider-secret' },
+        { status: 400, message: `${'x'.repeat(65536)} Unsupported keyword` },
+        Object.defineProperties(
+          { status: 400 },
+          { message: { get: accessor }, error: { get: accessor }, metadata: { get: accessor } },
+        ),
+      ]
+    for (const failure of failures) {
+      const interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic',
+        {
+          complete: vi.fn(async () => {
+            throw failure
+          }),
+        },
+        sink,
+      )
+      await expect(
+        interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+      ).rejects.toMatchObject({ status: 503 })
+    }
+    expect(accessor).not.toHaveBeenCalled()
+    expect(sink.mock.calls).toEqual(
+      failures.map(() => [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'provider',
+          error_name: 'UnknownError',
+          http_status: 400,
+        },
+      ]),
+    )
+  })
   it('records only the provider stage, whitelisted SDK name and HTTP status for a secret-bearing 401', async () => {
     const f = textSource('arroz200g'),
       source = buildConversationMealInterpretationSource(f.command, f.capture),

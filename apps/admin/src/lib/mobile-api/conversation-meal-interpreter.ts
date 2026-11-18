@@ -159,6 +159,12 @@ export interface ConversationMealInterpreterDiagnostic {
   readonly error_name: (typeof diagnosticErrorNames)[number] | 'UnknownError'
   readonly http_status?: number
   readonly validation_reason?: MealInterpretationValidationReason
+  readonly provider_rejection?:
+    | 'schema_complexity'
+    | 'schema_keyword'
+    | 'schema_invalid'
+    | 'structured_output_unsupported'
+    | 'output_token_limit'
 }
 type DiagnosticSink = (diagnostic: ConversationMealInterpreterDiagnostic) => void
 
@@ -226,6 +232,50 @@ function reportFailure(
   sink: DiagnosticSink,
   validationReason?: MealInterpretationValidationReason,
 ): void {
+  // Classify bounded SDK data in memory; only this closed enum may escape.
+  // Neither raw provider messages nor user-controlled text enter the sink.
+  const providerRejection = (): ConversationMealInterpreterDiagnostic['provider_rejection'] => {
+    if (stage !== 'provider' || ownData(error, 'status') !== 400) return undefined
+    const inner = ownData(error, 'error')
+    const candidates = [
+      ownData(error, 'message'),
+      ownData(inner, 'message'),
+      ownData(ownData(error, 'metadata'), 'raw'),
+      ownData(ownData(inner, 'metadata'), 'raw'),
+    ]
+    for (const raw of candidates) {
+      if (typeof raw !== 'string' || raw.length > 65_536) continue
+      const text = raw.toLowerCase()
+      if (/(schema|grammar).{0,120}(complex|compil|too many|exceed|limit)/u.test(text))
+        return 'schema_complexity'
+      if (
+        /(unsupported|not supported|not permitted|not allowed).{0,80}(keyword|schema)|(?:keyword).{0,80}(unsupported|not supported|not permitted|not allowed)/u.test(
+          text,
+        )
+      )
+        return 'schema_keyword'
+      if (
+        /(invalid|malformed).{0,40}(json.?schema|schema)|(?:schema).{0,40}(invalid|malformed)/u.test(
+          text,
+        )
+      )
+        return 'schema_invalid'
+      if (
+        /(not support|unsupported).{0,80}(structured|response_format)|(?:structured|response_format).{0,80}(not support|unsupported)/u.test(
+          text,
+        )
+      )
+        return 'structured_output_unsupported'
+      if (
+        /(max_tokens|output token).{0,80}(exceed|limit|maximum)|(?:exceed|maximum).{0,80}(max_tokens|output token)/u.test(
+          text,
+        )
+      )
+        return 'output_token_limit'
+    }
+    return undefined
+  }
+  const rejection = providerRejection()
   // Inspect data descriptors only: no getters, stringification, messages,
   // stacks, codes, headers, bodies, source IDs or provider output can escape.
   let name = ownData(error, 'name')
@@ -241,6 +291,7 @@ function reportFailure(
       event: 'conversation_meal_interpreter_failure',
       stage,
       error_name: diagnosticErrorNames.find((allowed) => allowed === name) ?? 'UnknownError',
+      ...(rejection ? { provider_rejection: rejection } : {}),
       ...(stage === 'validation'
         ? {
             validation_reason:

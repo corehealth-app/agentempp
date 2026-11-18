@@ -917,6 +917,51 @@ const photoManifestRoutesR59 = [
   '/api/mobile/v1/onboarding/body-photos/route',
   '/api/mobile/v1/onboarding/route',
 ]
+/** R182 adds closed provider-rejection observations only. Reverse the complete
+ * sealed diagnostic delta before every R181 and historical source/build check. */
+function restoreProviderDiagnosticR182(text: string, kind: 'source' | 'build'): string {
+  if (kind === 'source') {
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      'ee9eef413e471687491523cf15386c9bcb4b514c77acade2b9aa0edc33f14d69',
+    )
+    for (const [current, prior] of [
+      [
+        "  readonly provider_rejection?:\n    | 'schema_complexity'\n    | 'schema_keyword'\n    | 'schema_invalid'\n    | 'structured_output_unsupported'\n    | 'output_token_limit'\n",
+        '',
+      ],
+      [
+        "  // Classify bounded SDK data in memory; only this closed enum may escape.\n  // Neither raw provider messages nor user-controlled text enter the sink.\n  const providerRejection = (): ConversationMealInterpreterDiagnostic['provider_rejection'] => {\n    if (stage !== 'provider' || ownData(error, 'status') !== 400) return undefined\n    const inner = ownData(error, 'error')\n    const candidates = [\n      ownData(error, 'message'),\n      ownData(inner, 'message'),\n      ownData(ownData(error, 'metadata'), 'raw'),\n      ownData(ownData(inner, 'metadata'), 'raw'),\n    ]\n    for (const raw of candidates) {\n      if (typeof raw !== 'string' || raw.length > 65_536) continue\n      const text = raw.toLowerCase()\n      if (/(schema|grammar).{0,120}(complex|compil|too many|exceed|limit)/u.test(text))\n        return 'schema_complexity'\n      if (\n        /(unsupported|not supported|not permitted|not allowed).{0,80}(keyword|schema)|(?:keyword).{0,80}(unsupported|not supported|not permitted|not allowed)/u.test(\n          text,\n        )\n      )\n        return 'schema_keyword'\n      if (\n        /(invalid|malformed).{0,40}(json.?schema|schema)|(?:schema).{0,40}(invalid|malformed)/u.test(\n          text,\n        )\n      )\n        return 'schema_invalid'\n      if (\n        /(not support|unsupported).{0,80}(structured|response_format)|(?:structured|response_format).{0,80}(not support|unsupported)/u.test(\n          text,\n        )\n      )\n        return 'structured_output_unsupported'\n      if (\n        /(max_tokens|output token).{0,80}(exceed|limit|maximum)|(?:exceed|maximum).{0,80}(max_tokens|output token)/u.test(\n          text,\n        )\n      )\n        return 'output_token_limit'\n    }\n    return undefined\n  }\n  const rejection = providerRejection()\n",
+        '',
+      ],
+      ['      ...(rejection ? { provider_rejection: rejection } : {}),\n', ''],
+    ] as const) {
+      expect(text.split(current)).toHaveLength(2)
+      text = text.replace(current, prior)
+    }
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      '6ad76cadf7ca119afac675aeeed3a09962684f165a480072c20289af068d63c7',
+    )
+  }
+  if (kind === 'build') {
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      'cf311a5996ea1dd3e4752bd495ae51c5df9c72ba2a7ddb4d24fbf179028120d3',
+    )
+    for (const [current, prior] of [
+      [
+        'function _(a,b,c,d){let e=(()=>{if("provider"!==a||400!==$(b,"status"))return;let c=$(b,"error");for(let a of[$(b,"message"),$(c,"message"),$($(b,"metadata"),"raw"),$($(c,"metadata"),"raw")]){if("string"!=typeof a||a.length>65536)continue;let b=a.toLowerCase();if(/(schema|grammar).{0,120}(complex|compil|too many|exceed|limit)/u.test(b))return"schema_complexity";if(/(unsupported|not supported|not permitted|not allowed).{0,80}(keyword|schema)|(?:keyword).{0,80}(unsupported|not supported|not permitted|not allowed)/u.test(b))return"schema_keyword";if(/(invalid|malformed).{0,40}(json.?schema|schema)|(?:schema).{0,40}(invalid|malformed)/u.test(b))return"schema_invalid";if(/(not support|unsupported).{0,80}(structured|response_format)|(?:structured|response_format).{0,80}(not support|unsupported)/u.test(b))return"structured_output_unsupported";if(/(max_tokens|output token).{0,80}(exceed|limit|maximum)|(?:exceed|maximum).{0,80}(max_tokens|output token)/u.test(b))return"output_token_limit"}})(),f=$(b,"name");if(void 0===f&&null!==b&&"object"==typeof b)try{f=$($(Object.getPrototypeOf(b),"constructor"),"name")}catch{}let g=$(b,"status"),h=Object.freeze({event:"conversation_meal_interpreter_failure",stage:a,error_name:Z.find(a=>a===f)??"UnknownError",...e?{provider_rejection:e}:{},..."validation"===a?{validation_reason:T.U.find(a=>a===d)??"validation_internal"}:{},..."number"==typeof g&&Number.isInteger(g)&&g>=100&&g<=599?{http_status:g}:{}});try{c(h)}catch{}}',
+        'function _(a,b,c,d){let e=$(b,"name");if(void 0===e&&null!==b&&"object"==typeof b)try{e=$($(Object.getPrototypeOf(b),"constructor"),"name")}catch{}let f=$(b,"status"),g=Object.freeze({event:"conversation_meal_interpreter_failure",stage:a,error_name:Z.find(a=>a===e)??"UnknownError",..."validation"===a?{validation_reason:T.U.find(a=>a===d)??"validation_internal"}:{},..."number"==typeof f&&Number.isInteger(f)&&f>=100&&f<=599?{http_status:f}:{}});try{c(g)}catch{}}',
+      ],
+    ] as const) {
+      expect(text.split(current)).toHaveLength(2)
+      text = text.replace(current, prior)
+    }
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      '6b9684163de94810e5702c60980d35d1a2a04eb7367b15c55fc74a4424fb5d20',
+    )
+  }
+  return text
+}
+
 /** R181 changes only private provider wire indices. Seal the full current
  * source/build, then reverse the three reviewed compiled expressions and the
  * source projection. Every historical hash and raw graph scan remains active. */
@@ -924,7 +969,7 @@ function certifyMealProviderWireR181(): string {
   const chunks = semanticChunks(['.replaceAll("null","-1")', 'conversation.meal-source-labels.v1'])
   expect(chunks).toHaveLength(1)
   const chunk = chunks[0] ?? ''
-  let text = readFileSync(chunk, 'utf8')
+  let text = restoreProviderDiagnosticR182(readFileSync(chunk, 'utf8'), 'build')
   expect(createHash('sha256').update(text).digest('hex')).toBe(
     '6b9684163de94810e5702c60980d35d1a2a04eb7367b15c55fc74a4424fb5d20',
   )
@@ -948,6 +993,7 @@ function certifyMealProviderWireR181(): string {
   return chunk
 }
 function restoreMealProviderWireSourceR181(text: string): string {
+  text = restoreProviderDiagnosticR182(text, 'source')
   expect(createHash('sha256').update(text).digest('hex')).toBe(
     '6ad76cadf7ca119afac675aeeed3a09962684f165a480072c20289af068d63c7',
   )

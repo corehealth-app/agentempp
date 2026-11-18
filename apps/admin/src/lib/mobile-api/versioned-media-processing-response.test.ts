@@ -31,7 +31,10 @@ const env = {
   MOBILE_CURRENT_CLINICAL_PROJECT_REF: 'xitugspwfxkcluxvrdeg',
   NEXT_PUBLIC_SUPABASE_URL: origin,
 }
-function setup(version = 2) {
+function setup(
+  version = 2,
+  transport?: 'normal' | 'outage' | 'wrong_owner' | 'failed' | 'wake_failed',
+) {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(at))
   events.send.mockClear()
@@ -91,6 +94,31 @@ function setup(version = 2) {
           url.pathname === '/rest/v1/rpc/get_conversation_media_asset_v2'
         )
           return json({ schema: 'conversation.media-asset.v2', catalog_version: 2, asset: row })
+        if (
+          transport &&
+          url.pathname === '/rest/v1/rpc/enqueue_conversation_media_processing_job_v2'
+        ) {
+          expect(await req.json()).toEqual({
+            p_user_id: owner,
+            p_asset_id: id,
+            p_request_id: createHash('sha256').update(key).digest('hex'),
+          })
+          if (transport === 'outage') return json({ code: 'XX000' }, 500)
+          return json({
+            schema: 'conversation.media-processing-job.v2',
+            job_id: 'c1800000-0000-4000-8000-000000000009',
+            user_id: transport === 'wrong_owner' ? 'c1800000-0000-4000-8000-000000000008' : owner,
+            asset_id: id,
+            state: transport === 'failed' ? 'failed' : 'waiting',
+          })
+        }
+        if (
+          transport &&
+          url.pathname === '/rest/v1/rpc/dispatch_due_conversation_media_processing_v2'
+        ) {
+          expect(await req.json()).toEqual({})
+          return transport === 'wake_failed' ? json({ code: 'XX000' }, 500) : json(1)
+        }
         return json({ code: '42501', message: 'Unexpected physical IO' }, 400)
       },
     },
@@ -180,5 +208,56 @@ describe('private processing response and internal event boundary', () => {
     ) => Promise<Response>
     expect((await post(x.context, { params: Promise.resolve({ id }) })).status).toBe(202)
     expect(events.send).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('durable quota-independent private processing enqueue', () => {
+  it('accepts a persisted owned job then wakes the dispatcher without an Inngest event', async () => {
+    const x = setup(2, 'normal')
+    const response = await versionedMediaProcessingResponse(
+      x.context,
+      id,
+      async () => {
+        throw Error('forbidden fallback')
+      },
+      { ...env, MOBILE_CONVERSATION_PROCESSING_BRIDGE_ENABLED: 'true' },
+    )
+    expect(response.status).toBe(202)
+    expect(x.calls).toContain('/rest/v1/rpc/enqueue_conversation_media_processing_job_v2')
+    expect(x.calls).toContain('/rest/v1/rpc/dispatch_due_conversation_media_processing_v2')
+    expect(events.send).not.toHaveBeenCalled()
+  })
+  it.each([
+    'outage',
+    'wrong_owner',
+    'failed',
+  ] as const)('refuses an unaccepted job %s without a transport fallback', async (transport) => {
+    const x = setup(2, transport)
+    await expect(
+      versionedMediaProcessingResponse(
+        x.context,
+        id,
+        async () => {
+          throw Error('forbidden fallback')
+        },
+        { ...env, MOBILE_CONVERSATION_PROCESSING_BRIDGE_ENABLED: 'true' },
+      ),
+    ).rejects.toMatchObject({ code: 'media_catalog_unavailable' })
+    expect(x.calls).not.toContain('/rest/v1/rpc/dispatch_due_conversation_media_processing_v2')
+    expect(events.send).not.toHaveBeenCalled()
+  })
+  it('preserves durable acceptance if the optional immediate wakeup fails', async () => {
+    const x = setup(2, 'wake_failed')
+    const response = await versionedMediaProcessingResponse(
+      x.context,
+      id,
+      async () => {
+        throw Error('forbidden fallback')
+      },
+      { ...env, MOBILE_CONVERSATION_PROCESSING_BRIDGE_ENABLED: 'true' },
+    )
+    expect(response.status).toBe(202)
+    expect(x.calls).toContain('/rest/v1/rpc/enqueue_conversation_media_processing_job_v2')
+    expect(events.send).not.toHaveBeenCalled()
   })
 })

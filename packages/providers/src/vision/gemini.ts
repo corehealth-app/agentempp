@@ -21,6 +21,8 @@ import {
 } from './conversation-image-result.js'
 
 export interface VisionConfig {
+  /** Optional caller transport; defaults retain the installed SDK behavior. */
+  fetch?: typeof globalThis.fetch
   apiKey: string
   baseURL?: string
   model?: string // default 'anthropic/claude-sonnet-4.5' (era gemini-2.5-flash até 2026-05-30; trocado após A/B Bug Roberto — Claude é o único que estima quantidades em gramas e marca confidence baixa quando incerto, reduzindo alucinação tipo 'achocolatado + linguiça')
@@ -512,6 +514,7 @@ export class GeminiVision {
 
   constructor(cfg: VisionConfig & { prompts?: VisionPromptOverrides }) {
     this.client = new OpenAI({
+      ...(cfg.fetch ? { fetch: cfg.fetch } : {}),
       apiKey: cfg.apiKey,
       baseURL: cfg.baseURL ?? 'https://openrouter.ai/api/v1',
       defaultHeaders: buildHeaders(cfg),

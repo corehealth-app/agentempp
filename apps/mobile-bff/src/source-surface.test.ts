@@ -992,6 +992,114 @@ function certifyStructuredMealHelperT51() {
   }
 }
 
+/** Seal the complete new provider body before reversing only its optional
+ * constructor transport hook. Every historical hash and raw global scan stays. */
+function restoreVisionFetchBodyR180(body: string): string {
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    '05919b779e5b031625cf474dfd3edeee917b42723c92a685ff72e1c13e38e224',
+  )
+  const addition = '...a.fetch?{fetch:a.fetch}:{},'
+  expect(body.split(addition)).toHaveLength(2)
+  const original = body.replace(addition, '')
+  expect(createHash('sha256').update(original).digest('hex')).toBe(
+    'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed',
+  )
+  return original
+}
+function restoreVisionFetchSourceR180(text: string): string {
+  expect(createHash('sha256').update(text).digest('hex')).toBe(
+    '5b55db8304b128582609b88eb76a4937634f6707abd4c6724d841916c5225506',
+  )
+  for (const addition of [
+    '  /** Optional caller transport; defaults retain the installed SDK behavior. */\n  fetch?: typeof globalThis.fetch\n',
+    '      ...(cfg.fetch ? { fetch: cfg.fetch } : {}),\n',
+  ]) {
+    expect(text.split(addition)).toHaveLength(2)
+    text = text.replace(addition, '')
+  }
+  expect(createHash('sha256').update(text).digest('hex')).toBe(
+    '111500130aeef167929b5eff7f1f1783d99be104286e20a33ddb0c6f9a6f09aa',
+  )
+  return text
+}
+function restorePrivateProcessingDeltaR180(file: string, text: string): string {
+  if (file !== 'apps/admin/src/lib/mobile-api/versioned-media-processing-response.ts') return text
+  expect(createHash('sha256').update(text).digest('hex')).toBe(
+    '413a3642d1a5e0f74062923ae5e4bf0e88e1ffadd2e394ab0df0d231ef8eb1a4',
+  )
+  const addedImport = "import { z } from 'zod'\n"
+  expect(text.split(addedImport)).toHaveLength(2)
+  text = text.replace(addedImport, '')
+  const schemaStart = text.indexOf('const jobSchema = z\n'),
+    schemaEnd = text.indexOf('/** A queue capability')
+  expect(schemaStart).toBeGreaterThan(0)
+  expect(schemaEnd).toBeGreaterThan(schemaStart)
+  text = text.slice(0, schemaStart) + text.slice(schemaEnd)
+  const start = text.indexOf(
+      "      if (env.MOBILE_CONVERSATION_PROCESSING_BRIDGE_ENABLED === 'true') {\n",
+    ),
+    end = text.indexOf('      await inngest.send({', start)
+  expect(start).toBeGreaterThan(0)
+  expect(end).toBeGreaterThan(start)
+  text = text.slice(0, start) + text.slice(end)
+  // No byte of the legacy default event, gate, Auth or response may change.
+  expect(createHash('sha256').update(text).digest('hex')).toBe(
+    'ee59ae33a664677b3df4b7f5c61eb39adec5a03417d2bf9915922306983fecb6',
+  )
+  return text
+}
+
+/** This one process module adds only a sealed durable-enqueue branch/schema.
+ * Reverse that addition and the deterministic local minifier bindings, then
+ * prove all 6,403 historical callback/wrapper bytes match the prior artifact. */
+function restorePrivateProcessBodyR180(body: string): string {
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    'ac34282e9cc85e9554b8890ad95640724b352993c611d9a262771a17ca51d7d5',
+  )
+  const addedLoader = 'B=c(47504),'
+  expect(body.split(addedLoader)).toHaveLength(2)
+  body = body.replace(addedLoader, '')
+  const schemaStart = body.indexOf('let D=B.Ik('),
+    schemaEnd = body.indexOf(',E="nodejs"', schemaStart)
+  expect(schemaStart).toBeGreaterThan(0)
+  expect(schemaEnd).toBeGreaterThan(schemaStart)
+  body =
+    body.slice(0, schemaStart) + 'let E="nodejs"' + body.slice(schemaEnd + ',E="nodejs"'.length)
+  const start = body.indexOf('if("true"===d.MOBILE_CONVERSATION_PROCESSING_BRIDGE_ENABLED)'),
+    end = body.indexOf('await A.V.send(', start)
+  expect(start).toBeGreaterThan(0)
+  expect(end).toBeGreaterThan(start)
+  body = body.slice(0, start) + body.slice(end)
+  const handler = body.indexOf('async function L(a,b,c)')
+  expect(handler).toBeGreaterThan(0)
+  const bindings: Record<string, string> = {
+    C: 'B',
+    E: 'C',
+    F: 'D',
+    G: 'E',
+    H: 'F',
+    I: 'G',
+    J: 'H',
+    K: 'I',
+    L: 'J',
+  }
+  const prefix = body.slice(0, handler).replace(/\b[C-L]\b/g, (name) => bindings[name] ?? name)
+  const localBindings: Record<string, string> = { E: 'F', F: 'G', G: 'E' }
+  const tail = body
+    .slice(handler)
+    .replace('async function L(a,b,c)', 'async function J(a,b,c)')
+    .replace(/\b[EFG]\b/g, (name) => localBindings[name] ?? name)
+  body = prefix + tail
+  const enqueue =
+    'async enqueue(b){await A.V.send({id:`conversation-media-v2:${b.assetId}:${b.requestId}`,name:"conversation.media.private.process.requested",data:{schema:"conversation.media-process.v2",catalogVersion:2,...b}})}'
+  expect(body.split(enqueue)).toHaveLength(2)
+  body = body.replace(enqueue, enqueue.replace(/\bb\b/g, 'a'))
+  expect(createHash('sha256').update(body).digest('hex')).toBe(
+    '7b0cddcee34fc1887c109d933b0f0ac48b815bbd7c35de35b777afb6bfef1fb7',
+  )
+  return body
+}
+
 function certifyPhotoPurposeEdgesR62() {
   const chunks = semanticChunks(['analyzeConversationImage', 'conversation.image-result.v1'])
   expect(chunks).toHaveLength(1)
@@ -1026,12 +1134,12 @@ function certifyPhotoPurposeEdgesR62() {
           ],
         ]
       : []),
-  ])
+  ], (id, body) => id === '84359' ? restoreVisionFetchBodyR180(body) : body)
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
   // raw code or transitive is removed from the physical/global scans below.
-  const currentGeminiR106 = bodies.get('84359') ?? ''
+  const currentGeminiR106 = restoreVisionFetchBodyR180(bodies.get('84359') ?? '')
   expect(currentGeminiR106.split(`d=c(${parserId})`)).toHaveLength(2)
   const rawGeminiR102 =
     parserId === '63867' ? currentGeminiR106.replace('d=c(63867)', 'd=c(86248)') : currentGeminiR106
@@ -1090,7 +1198,9 @@ function certifyPhotoPurposeEdgesR62() {
   ])
     expect(
       createHash('sha256')
-        .update(readFileSync(resolve(appRoot, '../../packages/providers/src', source ?? '')))
+        .update(source === 'vision/gemini.ts'
+          ? restoreVisionFetchSourceR180(readFileSync(resolve(appRoot, '../../packages/providers/src', source), 'utf8'))
+          : readFileSync(resolve(appRoot, '../../packages/providers/src', source ?? '')))
         .digest('hex'),
     ).toBe(hash)
   expect(chunkConsumers(chunk)).toEqual(photoPurposeRoutesR59)
@@ -1211,6 +1321,7 @@ function restoreMediaFactoryLinkR170(body: string): string {
  * capability. The original GET/complete implementations and legacy processing
  * callback must reconstruct byte for byte, including idempotency and Auth. */
 function originalPrivateDeletionSourceR174(file: string, text: string): string {
+  text = restorePrivateProcessingDeltaR180(file, text)
   const pins: Record<string, readonly [string, string]> = {
     'packages/core/package.json': [
       '54fbc47f234eb7a995c339436b07928ba9edbb9abc32bc4bf6791d0c69e5b1be',
@@ -1662,7 +1773,7 @@ describe('authoritative Mobile API source surface', () => {
     const file = resolve(buildRoot, 'server', entry ?? '')
     const body = certifyPhysicalModule(file, '40550', [
       '7b0cddcee34fc1887c109d933b0f0ac48b815bbd7c35de35b777afb6bfef1fb7',
-    ])
+    ], restorePrivateProcessBodyR180)
     certifyPhysicalModule(file, '72262', [
       'c50d3d95cbb616ce76dd8d84d9312750bdd67047b88fdb489e12f94a8deaf1e0',
     ])
@@ -2368,6 +2479,14 @@ describe('authoritative Mobile API source surface', () => {
     const routes = runtimeMarkerRoutes('analyzeConversationImage')
     for (const route of [nutritionWindowAppPath, ...conversationWorkoutAppPaths])
       expect(routes).not.toContain(route)
+  })
+
+  test('confines the durable private processing transport to the owned process POST', () => {
+    for (const marker of ['enqueue_conversation_media_processing_job_v2', 'dispatch_due_conversation_media_processing_v2'])
+      expect(runtimeExactStringRoutes(marker)).toEqual(['/api/mobile/v1/media/[id]/process/route'])
+    expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_PROCESSING_BRIDGE_ENABLED')).toEqual([
+      '/api/mobile/v1/media/[id]/process/route',
+    ])
   })
 
   test('keeps photo-purpose and disposal gates on the closed media transports', () => {

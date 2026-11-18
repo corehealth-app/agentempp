@@ -10,3 +10,11 @@ describe('self-authenticated API paths', () => {
     expect(isSelfAuthenticatedApiPath('/api/stripe/checkout')).toBe(false)
   })
 })
+
+it('allows only the exact independently authenticated processing callback', () => {
+  expect(isSelfAuthenticatedApiPath('/api/internal/conversation-media/process-v2')).toBe(true)
+  expect(isSelfAuthenticatedApiPath('/api/internal/conversation-media/process-v2/other')).toBe(
+    false,
+  )
+  expect(isSelfAuthenticatedApiPath('/api/internal/conversation-media/other')).toBe(false)
+})

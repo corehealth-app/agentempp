@@ -3,6 +3,7 @@ export function isSelfAuthenticatedApiPath(path: string): boolean {
     path.startsWith('/api/inngest') ||
     path.startsWith('/api/admin/send-message') ||
     path.startsWith('/api/mobile/') ||
-    path === '/api/webhooks/revenuecat'
+    path === '/api/webhooks/revenuecat' ||
+    path === '/api/internal/conversation-media/process-v2'
   )
 }

@@ -24,6 +24,7 @@ export function privateConversationMediaWorkerEnabled(
 export function createPrivateMediaProcessingDependencies(
   client: ServiceClient,
   env: Readonly<Record<string, string | undefined>> = process.env,
+  options: { providerFetch?: typeof globalThis.fetch } = {},
 ): PrivateConversationMediaProcessingPorts {
   function current() {
     if (!privateConversationMediaWorkerEnabled(env)) throw new PrivateMediaCatalogError()
@@ -84,6 +85,7 @@ export function createPrivateMediaProcessingDependencies(
         const config = await loadVisionConfig(client)
         photoCurrent()
         const vision = new GeminiVision({
+          ...(options.providerFetch ? { fetch: options.providerFetch } : {}),
           apiKey,
           heliconeApiKey: env.HELICONE_API_KEY,
           model: config.model,
@@ -114,7 +116,10 @@ export function createPrivateMediaProcessingDependencies(
           'audio/x-wav': 'wav',
           'audio/ogg': 'ogg',
         }
-        const stt = new GroqSTT({ apiKey })
+        const stt = new GroqSTT({
+          apiKey,
+          ...(options.providerFetch ? { fetch: options.providerFetch } : {}),
+        })
         const result = await stt.transcribe({
           audio: input.bytes,
           mimeType: input.mimeType,

@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
     "./reevaluation-photo-disposition": "./src/lib/reevaluation-photo-disposition.ts",
-    "./supabase-reevaluation-photo-disposition": "./src/lib/supabase-reevaluation-photo-disposition.ts"
+    "./supabase-reevaluation-photo-disposition": "./src/lib/supabase-reevaluation-photo-disposition.ts",
+    "./private-media-processing-transport": "./src/lib/private-conversation-media-transport.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

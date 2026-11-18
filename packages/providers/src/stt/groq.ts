@@ -4,6 +4,8 @@
 import OpenAI from 'openai'
 
 export interface STTConfig {
+  /** Optional caller transport for a shared deadline and authorization fence. */
+  fetch?: typeof globalThis.fetch
   apiKey: string
   baseURL?: string
 }
@@ -29,6 +31,7 @@ export class GroqSTT {
 
   constructor(cfg: STTConfig) {
     this.client = new OpenAI({
+      ...(cfg.fetch ? { fetch: cfg.fetch } : {}),
       apiKey: cfg.apiKey,
       baseURL: cfg.baseURL ?? 'https://api.groq.com/openai/v1',
       timeout: 30_000, // áudio até ~10min costuma transcrever em <15s

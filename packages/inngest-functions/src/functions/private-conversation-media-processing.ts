@@ -11,7 +11,7 @@ import {
   MAX_AUDIO_DURATION_SECONDS,
   measureAudioDurationFromContainer,
   mediaSignatureMatches,
-} from './media-asset-processing.js'
+} from '../lib/media-container.js'
 
 const uuid = z
   .string()

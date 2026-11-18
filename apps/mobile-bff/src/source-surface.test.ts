@@ -1260,6 +1260,8 @@ function certifyStructuredMealHelperT51() {
 /** Seal the complete new provider body before reversing only its optional
  * constructor transport hook. Every historical hash and raw global scan stays. */
 function restoreVisionFetchBodyR180(body: string): string {
+  const recoveryParserMoved = body.includes('d=c(63867)')
+  body = restoreSocialRecoveryParserLinkR196(body)
   expect(createHash('sha256').update(body).digest('hex')).toBe(
     '05919b779e5b031625cf474dfd3edeee917b42723c92a685ff72e1c13e38e224',
   )
@@ -1269,6 +1271,13 @@ function restoreVisionFetchBodyR180(body: string): string {
   expect(createHash('sha256').update(original).digest('hex')).toBe(
     'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed',
   )
+  if (recoveryParserMoved) {
+    const moved = original.replace('d=c(86248)', 'd=c(63867)')
+    expect(createHash('sha256').update(moved).digest('hex')).toBe(
+      '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab',
+    )
+    return moved
+  }
   return original
 }
 function restoreVisionFetchSourceR180(text: string): string {
@@ -1772,6 +1781,41 @@ function certifyOwnedMediaBodyR174(body: string): string {
   )
   return body
 }
+/** R196's fifth transport swaps two deterministic module IDs. These three
+ * COMPLETE carriers differ from the actual R192 baseline by exactly one parser
+ * loader edge. Certify every complete parser copy before restoring that edge;
+ * historical hashes, source pins, global scans and negative fixtures stay. */
+function restoreSocialRecoveryParserLinkR196(body: string): string {
+  const pairs = new Map([
+    [
+      'd7740a7699f43019f03f0efbcb358217c6d86f61858a5924726eb944918e243c',
+      'c50d3d95cbb616ce76dd8d84d9312750bdd67047b88fdb489e12f94a8deaf1e0',
+    ],
+    [
+      '2a7ba64d117515bc4dd85e105f61aa24ebfe379a3566ef662c58d82ff9d36b66',
+      'f6eba0b2cc582c7f3afe3badd780b72178cd5e9475f975483c8e6d4a08ce080a',
+    ],
+    [
+      'd6e08c079ef4846b62635685d503859aa0ee78689fd31d76c6ccd13c0e49d785',
+      '05919b779e5b031625cf474dfd3edeee917b42723c92a685ff72e1c13e38e224',
+    ],
+  ])
+  const previous = pairs.get(createHash('sha256').update(body).digest('hex'))
+  if (!previous) return body // Unknown changes still reach the historical pin.
+  const copies = walkFiles(resolve(buildRoot, 'server')).filter(
+    (file) => file.endsWith('.js') && /(?:^|[,;{])63867:/.test(readFileSync(file, 'utf8')),
+  )
+  expect(copies).toHaveLength(6)
+  for (const file of copies)
+    certifyPhysicalModule(file, '63867', [
+      'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673',
+      '4a9a1600a8698bc89125fc32271a3b823506085f83b490db4ddb534089fc8916',
+    ])
+  expect(body.split('c(63867)')).toHaveLength(2)
+  const restored = body.replace('c(63867)', 'c(86248)')
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(previous)
+  return restored
+}
 function certifyPhysicalModule(
   file: string,
   id: string,
@@ -1792,7 +1836,7 @@ function certifyPhysicalModule(
   }
   visit(source)
   expect(found, `one physical reviewed module ${id}`).toHaveLength(1)
-  const raw = restoreMediaFactoryLinkR173(found[0]?.getText(source) ?? '')
+  const raw = restoreMediaFactoryLinkR173(restoreSocialRecoveryParserLinkR196(found[0]?.getText(source) ?? ''))
   const body = restoreWorkoutFacadeLinkR140(restore ? restore(raw) : raw)
   expect(allowedHashes).toContain(createHash('sha256').update(body).digest('hex'))
   expect(text.startsWith('"use strict";') || body.startsWith('(a,b,c)=>{"use strict";')).toBe(true)
@@ -4145,9 +4189,9 @@ describe('authoritative Mobile API source surface', () => {
     // Preserve the complete pre-T48 totals and account only for those two edges.
     // T51 adds only the closed helper above:12 edges, one regular target.
     // Historical counts project that exact edge only; all raw scans include it.
-    // The four separately sealed social routes add4*105 references and five
+    // The five separately sealed social routes add5*105 references and six
     // targets. Their entire raw graph remains in every global forbidden scan.
-    expect(surface.nftReferenceCount - 4 * 105).toBe(
+    expect(surface.nftReferenceCount - 5 * 105).toBe(
       8202 +
         104 -
         6 +
@@ -4170,8 +4214,8 @@ describe('authoritative Mobile API source surface', () => {
         3 * 114 + // R136: original execution route traces remain exact.
         5 * 120, // R140: five explicit completion traces; all included in scans.
     )
-    expect(surface.nftUniqueTargetCount - 5).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
-    expect(surface.nftRegularFileTargetCount - 5).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
+    expect(surface.nftUniqueTargetCount - 6).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
+    expect(surface.nftRegularFileTargetCount - 6).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     // The three new routes add exactly one fully certified shared chunk and
@@ -5246,8 +5290,8 @@ describe('authoritative Mobile API source surface', () => {
 describe('current96 execution build extension', () => {
   test('builds all three required execution routes and scans their entire transitive graph', () => {
     const surface = inspectBuildSurface(buildRoot)
-    expect(surface.mobileRoutePaths).toHaveLength(105)
-    expect(surface.routePaths).toHaveLength(106)
+    expect(surface.mobileRoutePaths).toHaveLength(106)
+    expect(surface.routePaths).toHaveLength(107)
     expect(surface.mobileRoutePaths.filter((path) => !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path))).toHaveLength(
       96,
     )

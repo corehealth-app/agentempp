@@ -60,6 +60,138 @@ const ranking = () => ({
   next_cursor: null,
 })
 describe('Journey social original-session service', () => {
+  it('resolves an unknown original send without dispatching that intent or creating consent', async () => {
+    const absent = {
+      revision: 0,
+      opted_in: false,
+      nickname: null,
+      member_id: null,
+      moderation: 'active',
+    }
+    const reply = {
+      status: 'fenced',
+      operation_id: operation,
+      kind: 'profile',
+      expected_revision: 0,
+      receipt: null,
+      profile: absent,
+    }
+    const f = harness(reply)
+    expect(await f.service.resolve({ kind: 'profile', command: join })).toEqual(reply)
+    expect(f.calls).toEqual([
+      {
+        name: 'resolve_journey_social_operation_authenticated',
+        args: {
+          p_user_id: owner,
+          p_auth_user_id: auth,
+          p_auth_session_id: login,
+          p_kind: 'profile',
+          p_command: join,
+        },
+      },
+    ])
+    expect(f.observed()).toBe(2)
+  })
+  it('recovers the exact saved receipt and current withdrawal without reissuing participation', async () => {
+    const reply = {
+      status: 'applied',
+      operation_id: operation,
+      kind: 'profile',
+      expected_revision: 0,
+      receipt: { operation_id: operation, revision: 1, opted_in: true },
+      profile: { ...profile, revision: 2, opted_in: false, nickname: null },
+    }
+    const f = harness(reply)
+    expect(await f.service.resolve({ kind: 'profile', command: join })).toEqual(reply)
+    expect(f.calls).toHaveLength(1)
+    expect(f.calls[0]?.name).toBe('resolve_journey_social_operation_authenticated')
+  })
+  it.each([
+    'wrongOperation',
+    'wrongRevision',
+    'wrongKind',
+    'falseFence',
+    'missingReceipt',
+    'privateProfile',
+    'extra',
+    'wrongReceipt',
+  ])('rejects an unproven social resolution: %s', async (attack) => {
+    const reply: Record<string, unknown> = {
+      status: 'fenced',
+      operation_id: operation,
+      kind: 'profile',
+      expected_revision: 0,
+      receipt: null,
+      profile,
+    }
+    if (attack === 'wrongOperation') reply.operation_id = peer
+    if (attack === 'wrongRevision') reply.expected_revision = 1
+    if (attack === 'wrongKind') reply.kind = 'block'
+    if (attack === 'falseFence')
+      reply.receipt = { operation_id: operation, revision: 1, opted_in: true }
+    if (attack === 'missingReceipt') reply.status = 'applied'
+    if (attack === 'privateProfile') reply.profile = { ...profile, member_id: login }
+    if (attack === 'extra') reply.health = { weight: 80 }
+    if (attack === 'wrongReceipt') {
+      reply.status = 'applied'
+      reply.receipt = { operation_id: operation, revision: 1, opted_in: false }
+    }
+    const f = harness(reply)
+    await expect(f.service.resolve({ kind: 'profile', command: join })).rejects.toMatchObject({
+      status: 503,
+    })
+  })
+  it('rejects a late recovery result after original authorization changes', async () => {
+    const f = harness({
+      status: 'fenced',
+      operation_id: operation,
+      kind: 'profile',
+      expected_revision: 0,
+      receipt: null,
+      profile,
+    })
+    f.fail(2)
+    await expect(f.service.resolve({ kind: 'profile', command: join })).rejects.toThrow(
+      'original session changed',
+    )
+    expect(f.calls).toHaveLength(1)
+  })
+  it.each([
+    owner,
+    auth,
+    login,
+  ])('never projects a private original identifier as a public member: %s', async (id) => {
+    const f = harness({ ...profile, member_id: id })
+    await expect(f.service.profile()).rejects.toMatchObject({ status: 503 })
+    f.respond({ ...ranking(), entries: [{ ...ranking().entries[0], member_id: id }] })
+    await expect(f.service.ranking()).rejects.toMatchObject({ status: 503 })
+    f.respond({ revision: 1, entries: [{ member_id: id, nickname: null }], next_cursor: null })
+    await expect(f.service.blocks()).rejects.toMatchObject({ status: 503 })
+  })
+  it.each([
+    owner,
+    auth,
+    login,
+  ])('refuses a private identifier as a peer before physical dispatch: %s', async (id) => {
+    const f = harness()
+    await expect(
+      f.service.block({
+        operation_id: operation,
+        expected_revision: 1,
+        member_id: id,
+        blocked: true,
+      }),
+    ).rejects.toMatchObject({ status: 503 })
+    await expect(
+      f.service.report({
+        operation_id: operation,
+        expected_revision: 1,
+        member_id: id,
+        reason: 'spam',
+      }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(f.calls).toHaveLength(0)
+  })
   it('uses only the authenticated gateway with fixed original identity and fresh pre/post admission', async () => {
     const f = harness()
     expect(await f.service.profile()).toEqual(profile)

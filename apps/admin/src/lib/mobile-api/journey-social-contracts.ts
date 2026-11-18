@@ -145,3 +145,30 @@ export function socialMutationSchema<T extends z.ZodTypeAny>(receiptSchema: T) {
     })
     .strict()
 }
+
+export const socialResolutionCommand = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('profile'), command: socialParticipationCommand }).strict(),
+  z.object({ kind: z.literal('block'), command: socialBlockCommand }).strict(),
+  z.object({ kind: z.literal('report'), command: socialReportCommand }).strict(),
+])
+const resolution = {
+  status: z.enum(['applied', 'fenced']),
+  operation_id: socialUUID,
+  expected_revision: expectedRevision,
+  profile: socialProfileSchema,
+}
+export const socialResolutionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...resolution,
+      kind: z.literal('profile'),
+      receipt: socialParticipationReceipt.nullable(),
+    })
+    .strict(),
+  z
+    .object({ ...resolution, kind: z.literal('block'), receipt: socialBlockReceipt.nullable() })
+    .strict(),
+  z
+    .object({ ...resolution, kind: z.literal('report'), receipt: socialReportReceipt.nullable() })
+    .strict(),
+])

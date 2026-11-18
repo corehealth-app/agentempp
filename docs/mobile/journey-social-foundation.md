@@ -26,6 +26,10 @@ Antes de ativar: contratos HTTP fechados com sessão viva e identidade original,
 
 ## Bloqueio, denúncia e operação
 
+A recuperação de resposta perdida e seu cancelamento auditável estão
+documentados em [Recuperação de operações](journey-social-operation-recovery.md).
+Essa dependência é local e não ativa as telas ou o banco de staging.
+
 `mutate_journey_social_block` e `submit_journey_social_report` compartilham o namespace idempotente e a revisão do próprio perfil. Retentar não reaplica um bloqueio retirado. Bloqueios ocultam o colega nos dois sentidos; a lista própria permite desfazê-los mesmo após sair do ranking. Apelidos retirados não são conservados nessa lista. As denúncias admitem somente os motivos `nickname`, `harassment`, `spam` e `other`, sem texto clínico livre. O mesmo motivo ainda pendente por pessoa/alvo é deduplicado. Nenhuma denúncia suspende um perfil automaticamente.
 
 `read_journey_social_reports`, `moderate_journey_social_profile` e `resolve_journey_social_report` exigem o papel operacional atual `operations_admin` ou `master_admin`. O transporte deve derivar os argumentos de ator da sessão administrativa, nunca do corpo enviado pelo cliente. `is_admin()` amplo não autoriza essas ações. A fila não expõe a identidade do denunciante. Suspender/restaurar e resolver/descartar usam UUID de operação, revisão e recibo auditável sem apelido histórico ou valores de saúde. A retirada de consentimento prevalece sobre restaurar a moderação; revogar o papel impede também a leitura de recibos antigos. Resolver uma denúncia não suspende alguém implicitamente: as duas ações são explícitas.

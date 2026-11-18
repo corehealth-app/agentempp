@@ -15,12 +15,14 @@ import {
   socialRankingSchema,
   socialReportCommand,
   socialReportReceipt,
+  socialResolutionCommand,
+  socialResolutionSchema,
   socialUUID,
 } from './journey-social-contracts'
 
 export interface JourneySocialRPCPort {
   rpc(
-    name: 'journey_social_patient_authenticated',
+    name: 'journey_social_patient_authenticated' | 'resolve_journey_social_operation_authenticated',
     args: Record<string, unknown>,
   ): PromiseLike<{ data: unknown; error: unknown }>
 }
@@ -57,7 +59,8 @@ export function createJourneySocialService(
   )
   const rpc = port.rpc.bind(port)
   function publicIdentity(id: string | null) {
-    if (id !== null && (id === fixed.owner || id === fixed.auth)) return unavailable()
+    if (id !== null && (id === fixed.owner || id === fixed.auth || id === fixed.login))
+      return unavailable()
   }
   function profile(raw: unknown) {
     const value = output(socialProfileSchema, raw)
@@ -65,17 +68,24 @@ export function createJourneySocialService(
     return value
   }
   async function call(action: string, input: unknown) {
+    const resolution = action === 'operation.resolve' ? socialResolutionCommand.parse(input) : null
     const args = detached({
       p_user_id: fixed.owner,
       p_auth_user_id: fixed.auth,
       p_auth_session_id: fixed.login,
-      p_action: action,
-      p_input: input,
+      ...(resolution
+        ? { p_kind: resolution.kind, p_command: resolution.command }
+        : { p_action: action, p_input: input }),
     })
     await authorize()
     let result: Awaited<ReturnType<JourneySocialRPCPort['rpc']>>
     try {
-      result = await rpc('journey_social_patient_authenticated', args)
+      result = await rpc(
+        resolution
+          ? 'resolve_journey_social_operation_authenticated'
+          : 'journey_social_patient_authenticated',
+        args,
+      )
     } catch {
       return unavailable()
     }
@@ -126,6 +136,42 @@ export function createJourneySocialService(
     return result
   }
   return Object.freeze({
+    async resolve(raw: unknown) {
+      const command = detached(socialResolutionCommand.parse(raw))
+      if (command.kind !== 'profile') publicIdentity(command.command.member_id)
+      const result = output(socialResolutionSchema, await call('operation.resolve', command))
+      profile(result.profile)
+      if (
+        result.kind !== command.kind ||
+        result.operation_id !== command.command.operation_id ||
+        result.expected_revision !== command.command.expected_revision
+      )
+        return unavailable()
+      if (result.status === 'fenced') {
+        if (result.receipt !== null) return unavailable()
+        return result
+      }
+      const receipt = result.receipt
+      if (
+        !receipt ||
+        receipt.operation_id !== command.command.operation_id ||
+        receipt.revision !== command.command.expected_revision + 1 ||
+        result.profile.revision < receipt.revision
+      )
+        return unavailable()
+      if (result.kind === 'profile' && command.kind === 'profile' && result.receipt) {
+        if (result.receipt.opted_in !== command.command.opted_in) return unavailable()
+      } else if (result.kind === 'block' && command.kind === 'block' && result.receipt) {
+        if (
+          result.receipt.member_id !== command.command.member_id ||
+          result.receipt.blocked !== command.command.blocked
+        )
+          return unavailable()
+      } else if (result.kind === 'report' && command.kind === 'report' && result.receipt) {
+        publicIdentity(result.receipt.report_id)
+      } else return unavailable()
+      return result
+    },
     async profile() {
       return profile(await call('profile.read', {}))
     },

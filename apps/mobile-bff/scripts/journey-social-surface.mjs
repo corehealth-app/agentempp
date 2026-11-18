@@ -3,6 +3,7 @@ export const journeySocialTransports = new Map([
   ['profile/journey-social/route.ts', ['GET', 'PATCH', 'dynamic', 'runtime']],
   ['profile/journey-social/blocks/route.ts', ['GET', 'POST', 'dynamic', 'runtime']],
   ['profile/journey-social/reports/route.ts', ['POST', 'dynamic', 'runtime']],
+  ['profile/journey-social/operations/resolve/route.ts', ['POST', 'dynamic', 'runtime']],
   ['journey/ranking/route.ts', ['GET', 'dynamic', 'runtime']],
 ])
 export const journeySocialBuildPaths = new Set(
@@ -12,7 +13,7 @@ export const journeySocialBuildPaths = new Set(
 )
 export function withoutJourneySocialRecords(records, label, fail) {
   console.info(`${label}_SOCIAL_CURRENT_ROUTE_EXPORT_COUNT=${records.length}`)
-  if (records.length !== 105) fail(`${label}_SOCIAL_CURRENT_STREAM`)
+  if (records.length !== 106) fail(`${label}_SOCIAL_CURRENT_STREAM`)
   for (const [path, methods] of journeySocialTransports) {
     const record = records.find((value) => value.path === path)
     if (JSON.stringify(record?.exports) !== JSON.stringify(methods))
@@ -28,7 +29,7 @@ export function withoutJourneySocialRecords(records, label, fail) {
 export function withoutJourneySocialBuild(surface, hash, fail) {
   console.info(`BUILD_SOCIAL_CURRENT_MOBILE_ROUTE_PATH_COUNT=${surface.mobileRoutePaths.length}`)
   if (
-    surface.mobileRoutePaths.length !== 105 ||
+    surface.mobileRoutePaths.length !== 106 ||
     [...journeySocialBuildPaths].some(
       (path) => !surface.mobileRoutePaths.includes(path) || !surface.routePaths.includes(path),
     )

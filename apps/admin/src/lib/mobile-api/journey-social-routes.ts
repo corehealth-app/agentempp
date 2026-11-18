@@ -8,10 +8,11 @@ import {
   socialParticipationCommand,
   socialRankingCursor,
   socialReportCommand,
+  socialResolutionCommand,
   socialUUID,
 } from './journey-social-contracts'
-import { createJourneySocialService, type JourneySocialRPCPort } from './journey-social-service'
 import { createJourneySocialRuntime, journeySocialOwner } from './journey-social-runtime'
+import { createJourneySocialService, type JourneySocialRPCPort } from './journey-social-service'
 import { createMobileRoute, type MobileRouteContext, type MobileRouteRuntime } from './route'
 
 export function journeySocialEnabled(env: Record<string, string | undefined> = process.env) {
@@ -61,6 +62,7 @@ const paths = {
   ranking: '/api/mobile/v1/journey/ranking',
   blocks: '/api/mobile/v1/profile/journey-social/blocks',
   reports: '/api/mobile/v1/profile/journey-social/reports',
+  resolve: '/api/mobile/v1/profile/journey-social/operations/resolve',
 }
 export function createJourneySocialRoutes(
   ports: { enabled?: () => boolean } = {},
@@ -159,6 +161,15 @@ export function createJourneySocialRoutes(
   const response = (value: unknown, id: string) =>
     mobileSuccess(value, id, 200, { 'X-Journey-Social': '1' })
   return Object.freeze({
+    RESOLVE_POST: createMobileRoute(async (context) => {
+      const service = bind(context, paths.resolve, 'POST')
+      query(context, null)
+      const command = socialResolutionCommand.parse(await readJsonBody(context.request, 8192))
+      z.literal(`jsocial-resolve1:${command.command.operation_id}`).parse(
+        context.request.headers.get('Idempotency-Key'),
+      )
+      return response(await service.resolve(command), context.requestId)
+    }, fixed),
     PROFILE_GET: createMobileRoute(async (context) => {
       const service = bind(context, paths.profile, 'GET')
       query(context, null)

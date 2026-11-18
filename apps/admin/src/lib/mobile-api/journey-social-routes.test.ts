@@ -31,6 +31,7 @@ const paths = {
   ranking: '/api/mobile/v1/journey/ranking',
   blocks: '/api/mobile/v1/profile/journey-social/blocks',
   reports: '/api/mobile/v1/profile/journey-social/reports',
+  resolve: '/api/mobile/v1/profile/journey-social/operations/resolve',
 }
 function harness(enabled = true, activeAccess = true) {
   let calls = 0,
@@ -107,6 +108,84 @@ function harness(enabled = true, activeAccess = true) {
   }
 }
 describe('Journey social closed patient routes', () => {
+  it('recovers a privacy operation through its own key even after subscription access expires', async () => {
+    const f = harness(true, false)
+    const data = {
+      status: 'fenced',
+      operation_id: operation,
+      kind: 'profile',
+      expected_revision: 0,
+      receipt: null,
+      profile: baseProfile,
+    }
+    f.reply(data)
+    const result = await f.routes.RESOLVE_POST(
+      f.request(
+        paths.resolve,
+        'POST',
+        { kind: 'profile', command },
+        { 'Idempotency-Key': `jsocial-resolve1:${operation}` },
+      ),
+    )
+    expect(result.status).toBe(200)
+    expect((await result.json()).data).toEqual(data)
+    expect(result.headers.get('Cache-Control')).toBe('no-store')
+    expect(result.headers.get('X-Journey-Social')).toBe('1')
+    expect(f.calls()).toBe(1)
+  })
+  it('refuses recovery through the original mutation key or an open body/query', async () => {
+    const f = harness()
+    for (const [path, body, headers] of [
+      [paths.resolve, { kind: 'profile', command }, {}],
+      [
+        paths.resolve,
+        { kind: 'profile', command, owner_id: owner },
+        { 'Idempotency-Key': `jsocial-resolve1:${operation}` },
+      ],
+      [
+        `${paths.resolve}?limit=1`,
+        { kind: 'profile', command },
+        { 'Idempotency-Key': `jsocial-resolve1:${operation}` },
+      ],
+    ] as const) {
+      expect((await f.routes.RESOLVE_POST(f.request(path, 'POST', body, headers))).status).toBe(422)
+    }
+    expect(f.calls()).toBe(0)
+  })
+  it('retains the feature flag and original-login fence during recovery', async () => {
+    const disabled = harness(false)
+    expect(
+      (
+        await disabled.routes.RESOLVE_POST(
+          disabled.request(paths.resolve, 'POST', { kind: 'profile', command }),
+        )
+      ).status,
+    ).toBe(503)
+    expect(disabled.calls()).toBe(0)
+    const changed = harness()
+    changed.change(3)
+    changed.reply({
+      status: 'fenced',
+      operation_id: operation,
+      kind: 'profile',
+      expected_revision: 0,
+      receipt: null,
+      profile: baseProfile,
+    })
+    expect(
+      (
+        await changed.routes.RESOLVE_POST(
+          changed.request(
+            paths.resolve,
+            'POST',
+            { kind: 'profile', command },
+            { 'Idempotency-Key': `jsocial-resolve1:${operation}` },
+          ),
+        )
+      ).status,
+    ).toBe(409)
+    expect(changed.calls()).toBe(1)
+  })
   it('keeps the disabled feature before any new social RPC', async () => {
     const f = harness(false),
       r = await f.routes.PROFILE_GET(f.request())

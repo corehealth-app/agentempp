@@ -3,14 +3,14 @@
 ## Estado e limite de ativação
 
 Esta camada implementa os contratos e o repositório iOS das rotas de
-participação, bloqueio, denúncia e ranking. Não expõe uma tela nem ativa a
-funcionalidade. `MOBILE_JOURNEY_SOCIAL_ENABLED` continua desabilitado por padrão;
+participação, bloqueio, denúncia e ranking, com telas nativas opcionais de
+privacidade. A composição real ainda não instala essa capacidade por padrão. `MOBILE_JOURNEY_SOCIAL_ENABLED` continua desabilitado por padrão;
 as migrações de Jornada ainda precisam de qualificação conectada antes da
 publicação. O build 1.0(20) distribuído não contém esta camada.
 
-As telas de privacidade e sua integração com a recuperação protegida, a moderação,
-as missões em dupla, o QA integrado e a distribuição continuam necessários para
-concluir T6/T7. Estes contratos não substituem esses entregáveis.
+A integração com a exclusão verificada da conta, a moderação, as missões em
+dupla, o QA integrado e a distribuição continuam necessários para concluir T6/T7.
+As telas no código não substituem esses entregáveis nem ativam o recurso.
 
 ## Autoridade e sessão
 
@@ -99,5 +99,33 @@ ou corrompido, confirmação exata, falhas de rede e descarte local, cancelament
 troca de conta/login e reentrância. Os testes de recuperação HTTP usam o
 coordenador real de sessão e verificam corpo/chave imutáveis, nenhuma renovação
 ou repetição automática e recusa de publicação tardia. Antes da ativação, ainda
-é obrigatória a integração com a exclusão verificada da conta e com a ação
-explícita de recuperação na interface; logout não pode apagar envios incertos.
+é obrigatória a integração com a exclusão verificada da conta; logout não pode
+apagar envios incertos.
+
+## Apresentação nativa e ciclo da sessão
+
+`JourneySocialSessionSource` é inerte: ao abrir verifica o Auth esperado, resolve
+propriedade por `/me` e cria o modelo com armazenamento protegido. Não admite
+transporte com adaptador de sessão legado. A capacidade opcional em
+`AppDependencies` permanece nula na composição real até a qualificação.
+
+`Prompt14SessionOwner` mantém e encerra `JourneySocialShellCoordinator`. A
+invalidação é síncrona; depois aguarda trabalhos em andamento e libera capacidades.
+O modelo e a janela de denúncia removem dados visíveis ao encerrar. Uma resposta
+tardia não publica em outra conta. O Form inteiro é retirado ao fechar a sessão,
+impedindo que seu cache nativo mantenha células de participantes no acesso visual.
+
+`JourneySocialView` oferece apelido e aceite explícito, saída, ranking semanal
+paginado, bloqueio/desbloqueio, denúncia por motivo fechado e consulta/cancelamento
+de envio pendente. Abrir ou atualizar faz apenas leituras. O perfil oficial atual
+determina elegibilidade. Não há consentimento ou gravação ao aparecer. Os cartões
+clínicos da Jornada são preservados. Datas civis não são convertidas pelo fuso do aparelho.
+
+Mutação passa por `JourneySocialPendingSession`. Se gravar foi comprovado, mas ler
+as listas falhou, a tela informa ação salva e oferece consulta, sem reenviar.
+A janela de denúncia fecha somente após o resultado da operação que acabou de
+enviar. Entrada inválida não reaproveita uma mensagem de sucesso anterior.
+
+Falha de página elimina a audiência visível até nova consulta. Combinar páginas
+recusa duplicação de membros, mudança de contexto e quebra de empates. Nenhum UUID
+privado ou dado clínico é acrescentado à projeção pública.

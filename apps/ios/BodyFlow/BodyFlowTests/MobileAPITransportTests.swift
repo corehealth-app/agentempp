@@ -6109,3 +6109,57 @@ extension MobileAPITransportTests {
     #expect(visible.value == 0)
   }
 }
+extension MobileAPITransportTests {
+  @Test("social source is inert and refuses a different shell owner before /me")
+  @MainActor func journeySocialSourceRetainsTheActualOriginalAccount() async throws {
+    let h = try await journeySocialHarness()
+    await h.stub.respond { request, _ in
+      if request.url?.path == "/api/mobile/v1/me" { return try journeySocialMe() }
+      return try journeySocialResponse(socialResolution()["profile"]!)
+    }
+    let store = try JourneySocialPendingStore(
+      origin: h.transport.configuredOrigin!, security: JourneySocialUISecurity())
+    let source = JourneySocialSessionSource(
+      transport: h.transport, lifecycle: h.lifecycle, pendingStore: store)
+    #expect(await h.stub.requests().isEmpty)
+    await #expect(throws: (any Error).self) { try await source.open(expectedUserID: socialPeer) }
+    #expect(await h.stub.requests().isEmpty)
+    let model = try await source.open(expectedUserID: socialAuth)
+    await model.load()
+    #expect(model.phase == .ready && model.profile?.revision == 0)
+    let requests = await h.stub.requests()
+    #expect(requests.count == 2 && requests.allSatisfy { $0.httpMethod == "GET" })
+    try await h.replaceSession(returnToA: false)
+    await model.load()
+    #expect(model.phase == .closed && model.profile == nil && model.rankings.isEmpty)
+    await model.close()
+    #expect(!model.hasRetainedCapabilities)
+  }
+
+  @Test("the shell owns and synchronously invalidates the optional social model")
+  @MainActor func journeySocialShellRetiresItsNativePrivacyCapability() async throws {
+    let h = try await journeySocialHarness()
+    await h.stub.respond { request, _ in
+      if request.url?.path == "/api/mobile/v1/me" { return try journeySocialMe() }
+      return try journeySocialResponse(socialResolution()["profile"]!)
+    }
+    let store = try JourneySocialPendingStore(
+      origin: h.transport.configuredOrigin!, security: JourneySocialUISecurity())
+    let source = JourneySocialSessionSource(
+      transport: h.transport, lifecycle: h.lifecycle, pendingStore: store)
+    var dependencies = AppDependencies.scaffold()
+    dependencies.journeySocialSessions = source
+    let owner = Prompt14SessionOwner(userID: socialAuth, dependencies: dependencies)
+    let coordinator = try #require(owner.journeySocial)
+    #expect(await h.stub.requests().isEmpty)
+    await coordinator.load()
+    let model = try #require(coordinator.model)
+    await model.load()
+    #expect(model.phase == .ready)
+    owner.invalidateSynchronously()
+    #expect(coordinator.phase == .closed && coordinator.model == nil && model.profile == nil)
+    await owner.endSession()
+    #expect(!coordinator.hasRetainedCapabilities && !model.hasRetainedCapabilities)
+    #expect(await h.stub.requests().allSatisfy { $0.httpMethod == "GET" })
+  }
+}

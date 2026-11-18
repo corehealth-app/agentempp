@@ -682,6 +682,7 @@ struct AppShellView: View {
                 execution: sessionOwner.trainingExecution)
         case .progress:
             ProgressRootView(model: progressViewModel, selectedTab: tabSelection, clinicalFull: clinicalFullModel,
+                journeySocial: sessionOwner.journeySocial,
                 navigationTitle: navigationLayout.title(for: .progress, language: presentationLanguage))
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("screen.jornada")

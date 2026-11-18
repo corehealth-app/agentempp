@@ -99,8 +99,7 @@ enum PremiumRenderingTestSupport {
                     nativeBounds: (object as? UIView)?.bounds,
                     value: object.accessibilityValue ?? "",
                     hint: object.accessibilityHint ?? "",
-                    identifier: (object as? UIAccessibilityIdentification)?
-                        .accessibilityIdentifier ?? "",
+                    identifier: accessibilityIdentifier(of: object),
                     isStaticText: object.accessibilityTraits.contains(.staticText)
                 ))
             }
@@ -122,6 +121,17 @@ enum PremiumRenderingTestSupport {
         }
         collect(root)
         return probes
+    }
+
+    /// SwiftUI AccessibilityNode exposes the public getter without adopting
+    /// UIAccessibilityIdentification. Keep the existing UIKit path and read the
+    /// getter only when the object actually responds; never invent an ID.
+    private static func accessibilityIdentifier(of object: NSObject) -> String {
+        if let identified = object as? UIAccessibilityIdentification {
+            return identified.accessibilityIdentifier ?? ""
+        }
+        guard object.responds(to: NSSelectorFromString("accessibilityIdentifier")) else { return "" }
+        return object.value(forKey: "accessibilityIdentifier") as? String ?? ""
     }
 
     /// One view hosted once and probed at several moments, so a test can

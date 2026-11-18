@@ -19,6 +19,7 @@ final class Prompt14SessionOwner {
     let coverLoader: any ContentCoverLoading
     let flowConversation: FlowConversationShellCoordinator?
     let trainingExecution: TrainingExecutionShellCoordinator?
+    let journeySocial: JourneySocialShellCoordinator?
 
     private(set) var mealRecordBinding: MealRecordSessionBinding?
     private(set) var workoutRegistrationBinding: WorkoutRegistrationSessionBinding?
@@ -67,6 +68,9 @@ final class Prompt14SessionOwner {
         }
         trainingExecution = dependencies.trainingExecutionSessions.map {
             TrainingExecutionShellCoordinator(userID: userID, source: $0)
+        }
+        journeySocial = dependencies.journeySocialSessions.map {
+            JourneySocialShellCoordinator(userID: userID, source: $0)
         }
         permitsMealRecordBinding = enablesMealRecordBinding
         workoutRegistrationSource = dependencies.workoutRegistrationSessionSource
@@ -350,6 +354,7 @@ final class Prompt14SessionOwner {
             || workoutRegistrationBinding?.hasRetainedCapability == true
             || billingBinding?.hasRetainedCapability == true
             || trainingExecution?.hasRetainedCapabilities == true
+            || journeySocial?.hasRetainedCapabilities == true
     }
 
     /// Lets a caller wait for the `/me` resolution to settle (tests and
@@ -392,6 +397,7 @@ final class Prompt14SessionOwner {
     func invalidateSynchronously() {
         flowConversation?.invalidateSynchronously()
         trainingExecution?.invalidateSynchronously()
+        journeySocial?.invalidateSynchronously()
         mealRecordBinding?.invalidateSynchronously()
         workoutRegistrationBinding?.invalidateSynchronously()
         workoutResolutionTask?.cancel()
@@ -437,6 +443,7 @@ final class Prompt14SessionOwner {
                 mealRecordRetirementTask = nil
                 await flowConversation?.close()
                 await trainingExecution?.close()
+                await journeySocial?.close()
                 await gate.drain()
 
                 async let contentEnd: Void = lifetimeEndpoint.end { lifetime in

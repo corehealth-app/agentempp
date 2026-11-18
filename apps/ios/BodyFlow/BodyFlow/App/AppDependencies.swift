@@ -71,6 +71,8 @@ struct AppDependencies: Sendable {
     var flowConversationSessions: FlowConversationSessionSource? = nil
     /// Separate writer capability; current-clinical readers remain read only.
     var trainingExecutionSessions: TrainingExecutionSessionSource? = nil
+    /// Remains absent until social privacy/deletion/moderation are qualified.
+    var journeySocialSessions: JourneySocialSessionSource? = nil
 
     var patientTimeZone: PatientTimeZoneContext {
         patientTimeZoneStore.current

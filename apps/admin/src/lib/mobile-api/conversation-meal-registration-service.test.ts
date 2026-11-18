@@ -278,6 +278,10 @@ describe('actual source-to-factual meal registration composition', () => {
                   { index: 1, visual_index: -1 },
                 ],
               },
+          (key, value) =>
+            key === 'labels' && value !== null && typeof value === 'object' && !Array.isArray(value)
+              ? Object.values(value)
+              : value,
         ),
         toolCalls: [],
         model: 'anthropic/claude-haiku-4.5',

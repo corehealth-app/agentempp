@@ -237,7 +237,7 @@ describe('closed semantic interpreter input and result', () => {
     expect(JSON.stringify(complete.mock.calls[0]?.[0]?.messages)).not.toContain(owner)
     expect(Object.isFrozen(result.foods)).toBe(true)
   })
-  it('keeps source keys and closed objects while lowering only index nullability and unsupported bounds', async () => {
+  it('keeps canonical source keys and closed label records behind a bounded private array grammar', async () => {
     const f = textSource('arroz200g'),
       source = buildConversationMealInterpretationSource(f.command, f.capture),
       complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>(async () =>
@@ -263,7 +263,7 @@ describe('closed semantic interpreter input and result', () => {
       'sources',
       'foods',
     ])
-    const removed: Record<string, number> = { minimum: 0, maximum: 0, maxItems: 0 }
+    const removed: Record<string, number> = { minimum: 0, maximum: 0, maxItems: 0, definitions: 0 }
     let objects = 0
     function resolveOriginal(raw: unknown): unknown {
       if (raw === null || typeof raw !== 'object' || !('$ref' in raw)) return raw
@@ -289,6 +289,16 @@ describe('closed semantic interpreter input and result', () => {
         expect(typeof actual).toBe('object')
         const before = expected as Record<string, unknown>,
           after = actual as Record<string, unknown>
+        if (before.type === 'object' && after.type === 'array') {
+          expect(before.additionalProperties).toBe(false)
+          const labels = before.properties as Record<string, unknown>
+          expect(Object.keys(labels).every((key) => /^t\d+$/u.test(key))).toBe(true)
+          expect([...(before.required as string[])].sort()).toEqual(Object.keys(labels).sort())
+          expect(Object.keys(after).sort()).toEqual(['items', 'type'])
+          for (const label of Object.values(labels)) compare(label, after.items)
+          if (!Object.keys(labels).length) expect(after.items).toEqual({ type: 'null' })
+          return
+        }
         if (Array.isArray(before.anyOf) && before.anyOf.length === 2) {
           const integer = resolveOriginal(before.anyOf[0]) as Record<string, unknown>
           if (
@@ -329,7 +339,8 @@ describe('closed semantic interpreter input and result', () => {
     const schemaText = JSON.stringify(format)
     expect(schemaText).toContain('conversation.meal-source-labels.v1')
     expect(schemaText).toContain('labels')
-    expect(schemaText).toContain('t0')
+    expect(schemaText).not.toContain('"t0"')
+    expect(JSON.stringify(original)).toContain('"t0"')
     expect(schemaText).not.toContain('part_index')
     expect(schemaText).not.toContain('"start"')
     expect(schemaText).not.toContain('"end"')
@@ -1378,10 +1389,25 @@ function photoResult(
   }
 }
 
+function providerArrays(value: unknown): unknown {
+  const wire = structuredClone(value)
+  if (
+    wire &&
+    typeof wire === 'object' &&
+    'schema' in wire &&
+    wire.schema === 'conversation.meal-source-labels.v1'
+  ) {
+    const object = wire as { sources?: Record<string, { labels?: unknown }> }
+    for (const source of Object.values(object.sources ?? {}))
+      if (source.labels && typeof source.labels === 'object' && !Array.isArray(source.labels))
+        source.labels = Object.values(source.labels)
+  }
+  return wire
+}
 function providerResult(value: unknown): LLMResult {
   // Fixtures remain canonical (null means no index). Encode only the private
   // provider boundary; assertions below still exercise the unchanged result.
-  const wire = structuredClone(value)
+  const wire = providerArrays(value)
   if (
     wire &&
     typeof wire === 'object' &&
@@ -1398,7 +1424,7 @@ function providerResult(value: unknown): LLMResult {
     for (const food of object.foods ?? []) if (food.visual_index === null) food.visual_index = -1
   }
   return {
-    content: JSON.stringify(wire),
+    content: JSON.stringify(providerArrays(wire)),
     toolCalls: [],
     promptTokens: 100,
     completionTokens: 100,
@@ -1436,6 +1462,159 @@ function expandedProviderUnions(root: unknown): number {
 }
 
 describe('provider grammar compatibility preserves canonical interpretation', () => {
+  it('keeps provider grammar identical for short and long sources with the same units', async () => {
+    const formats: unknown[] = []
+    for (const text of [
+      'Não comi arroz.',
+      'Não consumi nenhum alimento hoje. '.repeat(50).trimEnd(),
+    ]) {
+      const f = textSource(text),
+        source = buildConversationMealInterpretationSource(f.command, f.capture),
+        packet = prepareConversationMealSourceLabels(source)
+      const interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic',
+        {
+          complete: async (params) => {
+            formats.push(params.responseFormat)
+            expect(params.systemPrompt).toContain('labels é um array')
+            return {
+              ...providerResult({}),
+              content: JSON.stringify({
+                schema: 'conversation.meal-source-labels.v1',
+                decision: 'not_reported',
+                reason: 'negated',
+                sources: {
+                  command_text: {
+                    classification: 'negated',
+                    labels: packet.input.sources[0]?.tokens.map(() => ({
+                      kind: 'other',
+                      food_index: -1,
+                    })),
+                  },
+                },
+                foods: [],
+              }),
+            }
+          },
+        },
+        () => {},
+      )
+      const result = await interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 })
+      expect(result.decision).toBe('not_reported')
+      expect(result.sources[0]?.spans).toEqual([
+        { start: 0, end: text.length, kind: 'other', food_index: null },
+      ])
+    }
+    expect(formats).toHaveLength(2)
+    expect(formats[1]).toEqual(formats[0])
+    expect(JSON.stringify(formats)).not.toContain('"t0"')
+    expect(JSON.stringify(formats)).not.toContain('definitions')
+  })
+  it('decodes an ordered provider array into the original food spans and quantity', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture)
+    const result = await createOpenRouterConversationMealInterpreter(
+      'synthetic',
+      {
+        complete: async () => ({
+          ...providerResult({}),
+          content: JSON.stringify({
+            schema: 'conversation.meal-source-labels.v1',
+            decision: 'reported_meal',
+            reason: 'nominal_food_list',
+            sources: {
+              command_text: {
+                classification: 'nominal_list',
+                labels: [
+                  { kind: 'food', food_index: 0 },
+                  { kind: 'quantity', food_index: 0 },
+                  { kind: 'unit', food_index: 0 },
+                ],
+              },
+            },
+            foods: [{ index: 0, visual_index: -1 }],
+          }),
+        }),
+      },
+      () => {},
+    ).interpret(source, { attemptId: epoch, remainingMs: 1000 })
+    expect(result.foods[0]).toEqual({
+      index: 0,
+      name: { unit: 'command_text', start: 0, end: 5 },
+      quantity: { unit: 'command_text', start: 5, end: 8 },
+      unit: { unit: 'command_text', start: 8, end: 9 },
+      visual_index: null,
+    })
+  })
+  it.each([
+    'missing',
+    'extra',
+    'object',
+    'null',
+    'unknown_field',
+    'unknown_unit',
+  ] as const)('rejects malformed ordered provider labels: %s', async (kind) => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture)
+    const labels: unknown[] = [
+      { kind: 'food', food_index: 0 },
+      { kind: 'quantity', food_index: 0 },
+      { kind: 'unit', food_index: 0 },
+    ]
+    if (kind === 'missing') labels.pop()
+    if (kind === 'extra') labels.push({ kind: 'other', food_index: -1 })
+    if (kind === 'null') labels[1] = null
+    if (kind === 'unknown_field')
+      labels[1] = { kind: 'quantity', food_index: 0, private_field: 'untrusted' }
+    const interpreter = createOpenRouterConversationMealInterpreter(
+      'synthetic',
+      {
+        complete: async () => ({
+          ...providerResult({}),
+          content: JSON.stringify({
+            schema: 'conversation.meal-source-labels.v1',
+            decision: 'reported_meal',
+            reason: 'nominal_food_list',
+            sources: {
+              [kind === 'unknown_unit' ? 'invented' : 'command_text']: {
+                classification: 'nominal_list',
+                labels:
+                  kind === 'object' ? { t0: labels[0], t1: labels[1], t2: labels[2] } : labels,
+              },
+            },
+            foods: [{ index: 0, visual_index: -1 }],
+          }),
+        }),
+      },
+      () => {},
+    )
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ code: 'conversation_meal_interpretation_unavailable', status: 503 })
+  })
+  it('rejects labels invented for an empty visual source', async () => {
+    const f = mediaSource('meal_photo'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture)
+    const interpreter = createOpenRouterConversationMealInterpreter(
+      'synthetic',
+      {
+        complete: async () => ({
+          ...providerResult({}),
+          content: JSON.stringify({
+            schema: 'conversation.meal-source-labels.v1',
+            decision: 'reported_meal',
+            reason: 'explicit_media_action',
+            sources: { vision_items: { classification: 'visual', labels: [null] } },
+            foods: [{ index: 0, visual_index: 0 }],
+          }),
+        }),
+      },
+      () => {},
+    )
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ code: 'conversation_meal_interpretation_unavailable', status: 503 })
+  })
   it('interprets a long negative report without exceeding the provider union budget', async () => {
     const f = textSource(
         'Não consumi nenhum destes alimentos hoje, nem arroz, nem feijão, nem pão, nem leite com whey depois do treino.',
@@ -1470,7 +1649,7 @@ describe('provider grammar compatibility preserves canonical interpretation', ()
             expandedProviderUnions(params.responseFormat.json_schema.schema) > 16
           )
             throw Object.assign(new Error('Synthetic provider grammar limit'), { status: 400 })
-          return { ...providerResult(wire), content: JSON.stringify(wire) }
+          return { ...providerResult(wire), content: JSON.stringify(providerArrays(wire)) }
         },
       },
       () => {},
@@ -1491,7 +1670,7 @@ describe('provider grammar compatibility preserves canonical interpretation', ()
       'synthetic',
       {
         async complete() {
-          return { ...providerResult(wire), content: JSON.stringify(wire) }
+          return { ...providerResult(wire), content: JSON.stringify(providerArrays(wire)) }
         },
       },
       () => {},
@@ -1531,7 +1710,7 @@ describe('provider grammar compatibility preserves canonical interpretation', ()
           'synthetic',
           {
             async complete() {
-              return { ...providerResult(wire), content: JSON.stringify(wire) }
+              return { ...providerResult(wire), content: JSON.stringify(providerArrays(wire)) }
             },
           },
           (diagnostic) => diagnostics.push(diagnostic),

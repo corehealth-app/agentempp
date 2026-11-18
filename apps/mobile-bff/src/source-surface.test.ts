@@ -917,9 +917,75 @@ const photoManifestRoutesR59 = [
   '/api/mobile/v1/onboarding/body-photos/route',
   '/api/mobile/v1/onboarding/route',
 ]
+/** R184 bounds only private label grammar; canonical source/materialization
+ * and every historical source/build pin are restored byte-for-byte below. */
+function restoreBoundedMealGrammarR184(text: string, kind: 'source' | 'build'): string {
+  if (kind === 'source') {
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      '6e71f4044afe6489a1a5b40c6e10a320c495090c5b8a5b753996025d13703f2a',
+    )
+    for (const [current, prior] of [
+      [
+        "          .filter(\n            ([key]) => !['minimum', 'maximum', 'maxItems', 'definitions', '$defs'].includes(key),\n          )\n",
+        "          .filter(([key]) => !['minimum', 'maximum', 'maxItems'].includes(key))\n",
+      ],
+      [
+        "      // Source-owned token keys still belong to the canonical schema. On the\n      // provider wire, one array item grammar replaces an object per token.\n      // This keeps grammar size independent of the source's token count.\n      const properties = projected.properties\n      if (\n        projected.type === 'object' &&\n        properties !== null &&\n        typeof properties === 'object' &&\n        !Array.isArray(properties) &&\n        isDeepStrictEqual(Object.keys(properties).sort(), ['classification', 'labels'])\n      ) {\n        const fields = properties as Record<string, unknown>,\n          labels = fields.labels\n        if (\n          labels === null ||\n          typeof labels !== 'object' ||\n          !('properties' in labels) ||\n          labels.properties === null ||\n          typeof labels.properties !== 'object' ||\n          Array.isArray(labels.properties)\n        )\n          return interpretationUnavailable()\n        const entries = Object.values(labels.properties)\n        if (entries.some((label) => !isDeepStrictEqual(label, entries[0])))\n          return interpretationUnavailable()\n        fields.labels = { type: 'array', items: entries[0] ?? { type: 'null' } }\n      }\n",
+        '',
+      ],
+      ["  input: ReturnType<typeof prepareConversationMealSourceLabels>['input'],\n", ''],
+      [
+        '  for (const [unit, source] of Object.entries(value.sources)) {\n    const original = input.sources.find((item) => item.unit === unit)\n    if (\n      !original ||\n      !record(source) ||\n      !Array.isArray(source.labels) ||\n      source.labels.length !== original.tokens.length\n    )\n      return reject()\n    const labels = source.labels\n    source.labels = Object.fromEntries(original.tokens.map(([key], i) => [key, labels[i]]))\n    if (!record(source.labels)) return reject()\n',
+        '  for (const source of Object.values(value.sources)) {\n    if (!record(source) || !record(source.labels)) return reject()\n',
+      ],
+      [
+        "          systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1')\n            .replace(\n              'labels é um objeto com TODAS as chaves t0,t1,... fornecidas naquela unidade. Cada valor tem exatamente kind e food_index.',\n              'labels é um array na ordem EXATA das chaves t0,t1,... fornecidas naquela unidade, com exatamente um item por chave. Cada item tem exatamente kind e food_index. Não escreva as chaves no array.',\n            )\n            .replace(\n              'classification é visual e labels é objeto vazio',\n              'classification é visual e labels é array vazio',\n            ),\n",
+        "          systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1'),\n",
+      ],
+      [
+        '          decodeMealProviderIndices(decoded, onFailure, packet.input),\n',
+        '          decodeMealProviderIndices(decoded, onFailure),\n',
+      ],
+    ] as const) {
+      expect(text.split(current)).toHaveLength(2)
+      text = text.replace(current, prior)
+    }
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      '91a1d79b35daf2a3ea788a1ac10ac90275f88171f16338849a49c7ec208042eb',
+    )
+  }
+  if (kind === 'build') {
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      '056663c4f528c4c4455c032f8126b170e5e62f60931671d8890a0ae837952b41',
+    )
+    for (const [current, prior] of [
+      [
+        'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=(a,e=[])=>{if(Array.isArray(a))return a.map(a=>c(a,e));if(null!==a&&"object"==typeof a){if("$ref"in a){let{$ref:d,...f}=a;if("string"!=typeof d||!d.startsWith("#/")||e.includes(d))return(0,z.v8)();let g=b.json_schema.schema;for(let a of d.slice(2).split("/")){let b=a.replaceAll("~1","/").replaceAll("~0","~");if(null===g||"object"!=typeof g||!Object.hasOwn(g,b))return(0,z.v8)();g=g[b]}return null===g||"object"!=typeof g||Array.isArray(g)?(0,z.v8)():c({...g,...f},[...e,d])}let f=Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems","definitions","$defs"].includes(a)).map(([a,b])=>[a,c(b,e)])),g=f.properties;if("object"===f.type&&null!==g&&"object"==typeof g&&!Array.isArray(g)&&(0,d.isDeepStrictEqual)(Object.keys(g).sort(),["classification","labels"])){let a=g.labels;if(null===a||"object"!=typeof a||!("properties"in a)||null===a.properties||"object"!=typeof a.properties||Array.isArray(a.properties))return(0,z.v8)();let b=Object.values(a.properties);if(b.some(a=>!(0,d.isDeepStrictEqual)(a,b[0])))return(0,z.v8)();g.labels={type:"array",items:b[0]??{type:"null"}}}return(0,d.isDeepStrictEqual)(f,{anyOf:[{type:"integer"},{type:"null"}]})?{type:"integer"}:f}return a};return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
+        'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=(a,e=[])=>{if(Array.isArray(a))return a.map(a=>c(a,e));if(null!==a&&"object"==typeof a){if("$ref"in a){let{$ref:d,...f}=a;if("string"!=typeof d||!d.startsWith("#/")||e.includes(d))return(0,z.v8)();let g=b.json_schema.schema;for(let a of d.slice(2).split("/")){let b=a.replaceAll("~1","/").replaceAll("~0","~");if(null===g||"object"!=typeof g||!Object.hasOwn(g,b))return(0,z.v8)();g=g[b]}return null===g||"object"!=typeof g||Array.isArray(g)?(0,z.v8)():c({...g,...f},[...e,d])}let f=Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems"].includes(a)).map(([a,b])=>[a,c(b,e)]));return(0,d.isDeepStrictEqual)(f,{anyOf:[{type:"integer"},{type:"null"}]})?{type:"integer"}:f}return a};return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
+      ],
+      [
+        'function(a,b,c){let d=a=>null!==a&&"object"==typeof a&&!Array.isArray(a),e=()=>(b("model_schema"),(0,z.v8)()),f=structuredClone(a);if(!d(f)||!d(f.sources)||!Array.isArray(f.foods))return e();function g(a,b){if(!d(a))return e();let c=a[b];if("number"!=typeof c||!Number.isInteger(c)||c<-1||c>29)return e();-1===c&&(a[b]=null)}for(let[a,b]of Object.entries(f.sources)){let f=c.sources.find(b=>b.unit===a);if(!f||!d(b)||!Array.isArray(b.labels)||b.labels.length!==f.tokens.length)return e();let h=b.labels;if(b.labels=Object.fromEntries(f.tokens.map(([a],b)=>[a,h[b]])),!d(b.labels))return e();for(let a of Object.values(b.labels))g(a,"food_index")}for(let a of f.foods)g(a,"visual_index");return f}(p,q,k.input)',
+        'function(a,b){let c=a=>null!==a&&"object"==typeof a&&!Array.isArray(a),d=()=>(b("model_schema"),(0,z.v8)()),e=structuredClone(a);if(!c(e)||!c(e.sources)||!Array.isArray(e.foods))return d();function f(a,b){if(!c(a))return d();let e=a[b];if("number"!=typeof e||!Number.isInteger(e)||e<-1||e>29)return d();-1===e&&(a[b]=null)}for(let a of Object.values(e.sources)){if(!c(a)||!c(a.labels))return d();for(let b of Object.values(a.labels))f(b,"food_index")}for(let a of e.foods)f(a,"visual_index");return e}(p,q)',
+      ],
+      [
+        'Y.replaceAll("null","-1").replace("labels \\xe9 um objeto com TODAS as chaves t0,t1,... fornecidas naquela unidade. Cada valor tem exatamente kind e food_index.","labels \\xe9 um array na ordem EXATA das chaves t0,t1,... fornecidas naquela unidade, com exatamente um item por chave. Cada item tem exatamente kind e food_index. N\\xe3o escreva as chaves no array.").replace("classification \\xe9 visual e labels \\xe9 objeto vazio","classification \\xe9 visual e labels \\xe9 array vazio")',
+        'Y.replaceAll("null","-1")',
+      ],
+    ] as const) {
+      expect(text.split(current)).toHaveLength(2)
+      text = text.replace(current, prior)
+    }
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      'fac0e87fa7358859d3bfc3fbfe86e304a6115ee9915f69d1b802e3a80fb407b3',
+    )
+  }
+  return text
+}
+
 /** R183 adds fixed SDK error-type/vendor/technical-term observations only.
  * Seal and reverse this complete diagnostic delta before every R182/older check. */
 function restoreProviderErrorShapeR183(text: string, kind: 'source' | 'build'): string {
+  text = restoreBoundedMealGrammarR184(text, kind)
   if (kind === 'source') {
     expect(createHash('sha256').update(text).digest('hex')).toBe(
       '91a1d79b35daf2a3ea788a1ac10ac90275f88171f16338849a49c7ec208042eb',

@@ -76,9 +76,38 @@ function mealInterpretationResponseFormat(
       }
       const projected = Object.fromEntries(
         Object.entries(value)
-          .filter(([key]) => !['minimum', 'maximum', 'maxItems'].includes(key))
+          .filter(
+            ([key]) => !['minimum', 'maximum', 'maxItems', 'definitions', '$defs'].includes(key),
+          )
           .map(([key, item]) => [key, project(item, ancestors)]),
       )
+      // Source-owned token keys still belong to the canonical schema. On the
+      // provider wire, one array item grammar replaces an object per token.
+      // This keeps grammar size independent of the source's token count.
+      const properties = projected.properties
+      if (
+        projected.type === 'object' &&
+        properties !== null &&
+        typeof properties === 'object' &&
+        !Array.isArray(properties) &&
+        isDeepStrictEqual(Object.keys(properties).sort(), ['classification', 'labels'])
+      ) {
+        const fields = properties as Record<string, unknown>,
+          labels = fields.labels
+        if (
+          labels === null ||
+          typeof labels !== 'object' ||
+          !('properties' in labels) ||
+          labels.properties === null ||
+          typeof labels.properties !== 'object' ||
+          Array.isArray(labels.properties)
+        )
+          return interpretationUnavailable()
+        const entries = Object.values(labels.properties)
+        if (entries.some((label) => !isDeepStrictEqual(label, entries[0])))
+          return interpretationUnavailable()
+        fields.labels = { type: 'array', items: entries[0] ?? { type: 'null' } }
+      }
       // Nullable integer indices occur once per token after local refs expand.
       // A numeric -1 sentinel keeps that grammar bounded; the canonical schema
       // and every source/quantity check still receive null after strict decoding.
@@ -100,6 +129,7 @@ function mealInterpretationResponseFormat(
 function decodeMealProviderIndices(
   raw: unknown,
   onFailure: (reason: MealInterpretationValidationReason) => void,
+  input: ReturnType<typeof prepareConversationMealSourceLabels>['input'],
 ): unknown {
   const record = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -115,8 +145,18 @@ function decodeMealProviderIndices(
     if (typeof n !== 'number' || !Number.isInteger(n) || n < -1 || n > 29) return reject()
     if (n === -1) item[field] = null
   }
-  for (const source of Object.values(value.sources)) {
-    if (!record(source) || !record(source.labels)) return reject()
+  for (const [unit, source] of Object.entries(value.sources)) {
+    const original = input.sources.find((item) => item.unit === unit)
+    if (
+      !original ||
+      !record(source) ||
+      !Array.isArray(source.labels) ||
+      source.labels.length !== original.tokens.length
+    )
+      return reject()
+    const labels = source.labels
+    source.labels = Object.fromEntries(original.tokens.map(([key], i) => [key, labels[i]]))
+    if (!record(source.labels)) return reject()
     for (const label of Object.values(source.labels)) index(label, 'food_index')
   }
   for (const food of value.foods) index(food, 'visual_index')
@@ -574,7 +614,15 @@ export function createOpenRouterConversationMealInterpreter(
         stage = 'provider'
         const providerReply = await complete({
           model: MEAL_TEXT_EXTRACTION_MODEL,
-          systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1'),
+          systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1')
+            .replace(
+              'labels é um objeto com TODAS as chaves t0,t1,... fornecidas naquela unidade. Cada valor tem exatamente kind e food_index.',
+              'labels é um array na ordem EXATA das chaves t0,t1,... fornecidas naquela unidade, com exatamente um item por chave. Cada item tem exatamente kind e food_index. Não escreva as chaves no array.',
+            )
+            .replace(
+              'classification é visual e labels é objeto vazio',
+              'classification é visual e labels é array vazio',
+            ),
           messages,
           temperature: 0,
           maxTokens: MEAL_INTERPRETER_MAX_TOKENS,
@@ -592,7 +640,7 @@ export function createOpenRouterConversationMealInterpreter(
           validationReason = reason
         }
         const canonical = packet.materialize(
-          decodeMealProviderIndices(decoded, onFailure),
+          decodeMealProviderIndices(decoded, onFailure, packet.input),
           onFailure,
         )
         let screeningReasons: readonly MealInterpretationScreeningReason[] = []

@@ -13,6 +13,21 @@ schema and source validator then check the entire result. Unknown fields,
 missing tokens, unsupported references and inconsistent quantities still fail.
 Persisted interpretations and existing receipt readers retain canonical nulls.
 
+Each source's private `labels` field is an ordered array of the same closed
+label records, matching the server-provided token order exactly. The decoder
+requires an existing source unit and exactly one label per original token,
+then reconstructs the original token-keyed object before canonical parsing.
+Missing/extra labels, invented units, invalid indices and unknown label fields
+remain errors. An empty visual source must have an empty label array.
+
+The provider schema shares one array-item grammar per source instead of
+expanding one object grammar per token. Local references are resolved before
+unused definitions are removed; the resulting grammar is independent of text
+length for the same set of source units. Canonical source schemas, source
+hashes, semantic validation, persisted interpretations and write permissions
+remain unchanged. A previously unknown attempt is never retried under this
+codec; connected qualification uses fresh synthetic command identities.
+
 This representation avoids a nullable union for every token. Local JSON Schema
 references are resolved from the server-generated schema before projection, so
 lowering a nullable index cannot leave a dangling reference to its old `anyOf`.

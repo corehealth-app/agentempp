@@ -54,6 +54,21 @@ const CONTENT_EDITOR_ALLOWED = [
 ]
 
 describe('matriz de acesso do painel', () => {
+  it('reserva a nova moderação da Jornada aos operadores, inclusive em subrotas e links diretos', () => {
+    for (const role of ADMIN_ROLES) {
+      const allowed = role === 'operations_admin' || role === 'master_admin'
+      for (const path of [
+        '/journey-moderation',
+        '/journey-moderation/',
+        '/journey-moderation?view=pending',
+        '/journey-moderation/report',
+      ]) {
+        expect(canOpenAdminPath(role, path), `${role} ${path}`).toBe(allowed)
+        expect(canSeeAdminNavItem(role, { href: path }), `${role} nav ${path}`).toBe(allowed)
+      }
+    }
+  })
+
   it('content_editor abre só Publicações, Regras e Mensagens do coach', () => {
     const opened = PANEL_PATHS.filter((path) => canOpenAdminPath('content_editor', path))
     expect(opened).toEqual(CONTENT_EDITOR_ALLOWED)

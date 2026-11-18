@@ -1,4 +1,4 @@
-import type { AdminRole } from './admin-rbac'
+import { type AdminRole, hasAdminRole, OPERATIONS_ADMIN_ROLES } from './admin-rbac'
 
 /**
  * Quais telas do painel cada papel pode abrir.
@@ -13,7 +13,8 @@ import type { AdminRole } from './admin-rbac'
  *   pela ação `saveRule`, que aceita `CONTENT_ADMIN_ROLES`; ativar uma regra
  *   continua só de `master_admin`). O Playground (`/prompts/playground`) fica
  *   fechado para ele: roda o motor legado como uma conta e apaga conta.
- * - Todos os outros papéis → como antes (nenhuma tela a menos; as páginas que
+ * - Moderação da Jornada (nova) → operations_admin/master_admin.
+ * - Demais telas e papéis → como antes (nenhuma tela a menos; as páginas que
  *   já conferiam papel por conta própria continuam conferindo).
  *
  * Este arquivo é puro (sem servidor, sem React): o menu lateral, a busca
@@ -38,8 +39,9 @@ function isUnder(path: string, base: string): boolean {
 }
 
 export function canOpenAdminPath(role: AdminRole, href: string): boolean {
-  if (role !== 'content_editor') return true
   const path = normalizeAdminPath(href)
+  if (isUnder(path, '/journey-moderation')) return hasAdminRole(role, OPERATIONS_ADMIN_ROLES)
+  if (role !== 'content_editor') return true
   if (CONTENT_EDITOR_CLOSED_PATHS.some((base) => isUnder(path, base))) return false
   return CONTENT_EDITOR_PATHS.some((base) => isUnder(path, base))
 }

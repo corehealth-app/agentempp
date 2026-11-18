@@ -2384,6 +2384,14 @@
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Food per day: %lld days with records" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comida por dia: %lld dias com registro" } }
   } },
+  "progress.trends.food" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "Food per day (%lld days)" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comida por dia (%lld dias)" } }
+  } },
+  "progress.trends.no-target" : { "localizations" : {
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "consumed · target unavailable" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "consumo · meta indisponível" } }
+  } },
   "progress.trends.days" : { "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Days with records" } },
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dias com registro" } }
@@ -2413,8 +2421,8 @@
     "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tendências indisponíveis no momento." } }
   } },
   "progress.trends.under" : { "localizations" : {
-    "en" : { "stringUnit" : { "state" : "translated", "value" : "under target" } },
-    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "abaixo da meta" } }
+    "en" : { "stringUnit" : { "state" : "translated", "value" : "at or below target" } },
+    "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "até a meta" } }
   } },
   "progress.trends.weight" : { "localizations" : {
     "en" : { "stringUnit" : { "state" : "translated", "value" : "Weight" } },

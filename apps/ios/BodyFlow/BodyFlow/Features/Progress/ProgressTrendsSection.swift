@@ -10,7 +10,8 @@ struct ProgressTrendsPresentation: Equatable, Sendable {
         let label: String
         let consumed: Int
         let target: Int?
-        var overTarget: Bool { target.map { consumed > $0 } ?? false }
+        /// No comparison is possible without an available official target.
+        var overTarget: Bool? { target.map { consumed > $0 } }
         var id: Date { date }
     }
 
@@ -66,7 +67,7 @@ struct ProgressTrendsPresentation: Equatable, Sendable {
                 date: date,
                 label: Self.dayLabel(date, language: language),
                 consumed: day.caloriesConsumed,
-                target: day.caloriesTarget
+                target: snapshot.clinicalPolicy?.hide.calories == true ? nil : day.caloriesTarget.flatMap { $0 > 0 ? $0 : nil }
             )
         }
         block = snapshot.clinicalPolicy?.hide.block == true ? [] : days.compactMap { date, day in
@@ -81,7 +82,10 @@ struct ProgressTrendsPresentation: Equatable, Sendable {
                 )
             }
         }
-        target = days.last?.1.caloriesTarget
+        // A line across the whole window must not apply the latest day's
+        // target to days with a different or unavailable target.
+        let targets = Set(calories.compactMap(\.target))
+        target = targets.count == 1 && calories.allSatisfy { $0.target != nil } ? targets.first : nil
         latestWeight = snapshot.weights.last.map { Self.kilograms($0.weightKG, language: language) }
         let calendar = Self.calendar
         let end = calendar.startOfDay(for: days.last?.0 ?? today)
@@ -236,7 +240,8 @@ struct ProgressTrendsSection: View {
         return BodyFlowCard(surface: .elevated) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
                 cardTitle(
-                    String(format: copy("progress.trends.calories"), presentation.window),
+                    String(format: copy(presentation.calories.allSatisfy { $0.target == nil }
+                        ? "progress.trends.food" : "progress.trends.calories"), presentation.window),
                     domain: .energy,
                     value: nil,
                     note: presentation.target.map { "\(copy("progress.trends.target")) \(TodayValueFormatter.kcal($0, language: language))" }
@@ -244,7 +249,7 @@ struct ProgressTrendsSection: View {
                 Chart {
                     ForEach(presentation.calories) { bar in
                         BarMark(x: .value("date", bar.date, unit: .day), y: .value("kcal", bar.consumed))
-                            .foregroundStyle(BodyFlowColor.color(bar.overTarget ? .fatVivid : .energyVivid))
+                            .foregroundStyle(BodyFlowColor.color(bar.overTarget.map { $0 ? .fatVivid : .energyVivid } ?? .textSecondary))
                             .cornerRadius(3)
                             .opacity(selected == nil || selected?.id == bar.id ? 1 : 0.45)
                     }
@@ -289,9 +294,16 @@ struct ProgressTrendsSection: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(String(format: copy("progress.trends.calories.accessibility"), presentation.calories.count))
                 dateRange(first: presentation.calories.first?.label, last: presentation.calories.last?.label)
-                HStack(spacing: BodyFlowSpacing.md) {
-                    legend(copy("progress.trends.under"), color: .energyVivid)
-                    legend(copy("progress.trends.over"), color: .fatVivid)
+                VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
+                    if presentation.calories.contains(where: { $0.overTarget == false }) {
+                        legend(copy("progress.trends.under"), color: .energyVivid)
+                    }
+                    if presentation.calories.contains(where: { $0.overTarget == true }) {
+                        legend(copy("progress.trends.over"), color: .fatVivid)
+                    }
+                    if presentation.calories.contains(where: { $0.overTarget == nil }) {
+                        legend(copy("progress.trends.no-target"), color: .textSecondary)
+                    }
                 }
             }
         }

@@ -5,6 +5,62 @@ import Testing
 
 @Suite("Progress trends")
 struct ProgressTrendsTests {
+    @Test("An unavailable target never classifies recorded food as below or above a target", arguments: [
+        (nil as Int?, 650, nil as Bool?, nil as Int?), (0, 650, nil, nil), (-1, 650, nil, nil),
+        (2_000, 1_800, false, 2_000), (2_000, 2_000, false, 2_000), (2_000, 2_200, true, 2_000),
+        (nil, 0, nil, nil), (2_000, 0, false, 2_000),
+    ])
+    func calorieComparison(_ input: (Int?, Int, Bool?, Int?)) throws {
+        let day = TrendsDay(date: "2026-11-18", caloriesConsumed: input.1, caloriesTarget: input.0,
+            exerciseCalories: 0, proteinG: 25, proteinTarget: nil, waterConsumedML: 0,
+            deficitAccumulated: nil, xpEarned: 15, dayClosed: false)
+        let presentation = ProgressTrendsPresentation(
+            snapshot: TrendsSnapshot(days: 7, daily: [day], weights: []), language: .portugueseBrazil
+        )
+        let bar = try #require(presentation.calories.first)
+        let comparison: Bool? = bar.overTarget
+        #expect(comparison == input.2)
+        #expect(bar.consumed == input.1)
+        #expect(bar.target == input.3)
+        #expect(presentation.recordedDays.last == true)
+    }
+
+    @Test("A shared target line requires the same available target on every visible day", arguments: [
+        ([2_000, 2_000] as [Int?], 2_000 as Int?),
+        ([2_000, 2_100], nil), ([nil, 2_000], nil), ([2_000, nil], nil),
+        ([nil, nil], nil), ([0, 0], nil),
+    ])
+    func commonCalorieTarget(_ input: ([Int?], Int?)) {
+        let days = input.0.enumerated().map { index, target in
+            TrendsDay(date: "2026-11-\(17 + index)", caloriesConsumed: 650, caloriesTarget: target,
+                exerciseCalories: 0, proteinG: 25, proteinTarget: nil, waterConsumedML: 0,
+                deficitAccumulated: nil, xpEarned: 15, dayClosed: false)
+        }
+        let presentation = ProgressTrendsPresentation(
+            snapshot: TrendsSnapshot(days: 7, daily: days, weights: []), language: .portugueseBrazil
+        )
+        #expect(presentation.target == input.1)
+        #expect(presentation.calories.map(\.consumed) == [650, 650])
+    }
+
+    @Test("Clinical calorie visibility suppresses comparisons without removing consumption")
+    func hiddenCalorieTarget() throws {
+        let day = TrendsDay(date: "2026-11-18", caloriesConsumed: 650, caloriesTarget: 2_000,
+            exerciseCalories: 0, proteinG: 25, proteinTarget: nil, waterConsumedML: 0,
+            deficitAccumulated: 400, xpEarned: 15, dayClosed: false)
+        var snapshot = TrendsSnapshot(days: 7, daily: [day], weights: [])
+        snapshot.clinicalPolicy = try JSONDecoder().decode(CurrentClinicalPolicy.self,
+            from: Data(CurrentClinicalPolicyTests.policy.utf8))
+        let presentation = ProgressTrendsPresentation(snapshot: snapshot, language: .portugueseBrazil)
+        let bar = try #require(presentation.calories.first)
+        let comparison: Bool? = bar.overTarget
+        #expect(bar.target == nil)
+        #expect(comparison == nil)
+        #expect(presentation.target == nil)
+        #expect(bar.consumed == 650)
+        #expect(presentation.block.isEmpty)
+    }
+
     @Test("clinical null accumulated block is a gap, preserving consumption and XP")
     func clinicalNullIsNotAZeroPoint() throws {
         let raw = #"{"date":"2026-10-26","calories_consumed":650,"calories_target":null,"exercise_calories":100,"protein_g":25,"protein_target":null,"water_consumed_ml":500,"deficit_accumulated":null,"xp_earned":15,"day_closed":true}"#
@@ -30,7 +86,7 @@ struct ProgressTrendsTests {
         #expect(presentation.recordedDays.count == 14)
         #expect(presentation.recordedDays.filter { $0 }.count == 12)
         #expect(presentation.recordedDays.last == true)
-        #expect(presentation.calories.filter(\.overTarget).map(\.consumed) == [2_310, 2_120])
+        #expect(presentation.calories.filter { $0.overTarget == true }.map(\.consumed) == [2_310, 2_120])
         #expect(presentation.target == 1_935)
         #expect(presentation.weights.map(\.kilograms) == [80.0, 79.1, 78.4])
         // The axis frames the measured range, never from zero.
@@ -88,6 +144,7 @@ struct ProgressTrendsTests {
         for key in ["progress.trends.title", "progress.trends.weight", "progress.trends.calories", "progress.trends.block",
                     "progress.trends.days", "progress.trends.days.value", "progress.trends.empty", "progress.trends.unavailable",
                     "progress.trends.target", "progress.trends.over", "progress.trends.under",
+                    "progress.trends.food", "progress.trends.no-target",
                     "progress.trends.weight.accessibility", "progress.trends.calories.accessibility"] {
             let text = try AppLocalization.string(String.LocalizationValue(key), for: language)
             #expect(text != key && !text.isEmpty, "\(key) / \(language)")

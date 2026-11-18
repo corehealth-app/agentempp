@@ -591,7 +591,7 @@ actor NeutralMealBridgeUnitServer {
   import UIKit
   @MainActor extension FlowNeutralMealEditingBridgeTests {
     @Test(arguments: [false, true], [false, true])
-    func actualUpdatedCurrentQuantityIsVisibleWithoutRestoringMaskedMacrosOrOldCommentary(
+    func actualUpdatedCurrentFactsStaySeparateFromHistoricalCommentary(
       _ english: Bool, _ deduplicated: Bool
     ) async throws {
       let f = try await openNeutralMealBridge()
@@ -633,9 +633,19 @@ actor NeutralMealBridgeUnitServer {
         })
       #expect(
         !nodes.contains {
-          $0.identifier.hasPrefix("conversation.feedback.section.") || $0.label.contains("kcal")
-            || $0.label.contains("P ")
+          $0.identifier.hasPrefix("conversation.feedback.section.")
         })
+      // Current server facts remain visible after an edit (approved in
+      // 1053946a). The original 206 g milk item becomes 257.5 g: 1.25x its
+      // 126.12 kcal, 6.3 g protein, 9.5 g carbs and 6.5 g fat.
+      #expect(nodes.contains {
+        $0.label.contains(english
+          ? "157.65 kcal · P 7.88 g · C 11.88 g · F 8.12 g"
+          : "157,65 kcal · P 7,88 g · C 11,88 g · G 8,12 g")
+      })
+      #expect(!nodes.contains {
+        $0.label.contains(english ? "126.12 kcal" : "126,12 kcal")
+      })
       await f.model.close()
     }
     @Test(arguments: [false, true])

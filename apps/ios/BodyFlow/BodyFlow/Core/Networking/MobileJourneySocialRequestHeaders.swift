@@ -7,9 +7,10 @@ enum MobileJourneySocialRequestHeaders: Sendable {
   case ranking(JourneySocialBinding, cursor: JourneySocialRankingCursor?, limit: Int)
   case blocks(JourneySocialBinding, cursor: JourneySocialBlocksCursor?, limit: Int)
   case mutation(JourneySocialOperation)
+  case recovery(JourneySocialBinding, JourneySocialPendingOperation)
   var binding: JourneySocialBinding {
     switch self {
-    case .profile(let b), .ranking(let b, _, _), .blocks(let b, _, _): b
+    case .profile(let b), .ranking(let b, _, _), .blocks(let b, _, _), .recovery(let b, _): b
     case .mutation(let o): o.binding
     }
   }
@@ -46,6 +47,12 @@ enum MobileJourneySocialRequestHeaders: Sendable {
       try require(
         method == operation.method && path == operation.path && body == operation.wireBody
           && query.isEmpty && key?.value == operation.idempotencyKey)
+    case .recovery(let current, let pending):
+      try require(
+        pending.matches(current) && method == .post
+          && path == "/api/mobile/v1/profile/journey-social/operations/resolve"
+          && query.isEmpty && body == (try pending.recoveryBody())
+          && key?.value == pending.recoveryKey)
     }
   }
   static func pageQuery(cursor: ConversationMealEditJSON?, limit: Int) throws -> [URLQueryItem] {
@@ -61,6 +68,13 @@ enum MobileJourneySocialRequestHeaders: Sendable {
     return query
   }
   func validate(lease: SessionLease) throws { try binding.validate(lease: lease) }
+  func validate(origin: URL) throws {
+    if case .recovery(_, let pending) = self {
+      guard try journeySocialOrigin(origin) == pending.origin else {
+        throw MobileAPIRequestError.invalidJourneySocialHeaders
+      }
+    }
+  }
   func apply(to request: inout URLRequest) {
     request.setValue(binding.ownerID.uuidString.lowercased(), forHTTPHeaderField: "X-Journey-Owner")
     request.setValue(

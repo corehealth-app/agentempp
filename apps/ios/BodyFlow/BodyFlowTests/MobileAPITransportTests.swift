@@ -5983,3 +5983,129 @@ private func journeyProfile(revision: Int) -> [String: Any] {
   p["revision"] = revision
   return p
 }
+extension MobileAPITransportTests {
+  @Test("new original login can explicitly recover the same old social intent")
+  func journeySocialRecoveryUsesCurrentLoginWithoutAdoptingTheOldConsent() async throws {
+    let h = try await journeySocialHarness()
+    let captured = C11RequestBodyCapture()
+    await h.stub.respond { request, _ in
+      if request.url?.path == "/api/mobile/v1/me" { return try journeySocialMe() }
+      try await captured.capture(request)
+      return try journeySocialResponse(socialResolution())
+    }
+    let first = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    let operation = try JourneySocialOperation(
+      binding: first.binding, id: UUID(uuidString: socialOperation)!, expectedRevision: 0,
+      action: .participation(nickname: "Caminhante", consentVersion: "journey-social.v1"))
+    let pending = try JourneySocialPendingOperation(origin: first.origin, operation: operation)
+    let newLogin = "19700000-0000-4000-8000-000000000004"
+    try await h.coordinator.switch(
+      to: AuthenticationSessionRecord(
+        userID: socialAuth, email: "social-qa@example.invalid", isEmailConfirmed: true,
+        isOnboardingCompleted: true, accessToken: socialLease(login: newLogin).bearer,
+        refreshToken: "social-synthetic-refresh", expiresAt: Date(timeIntervalSince1970: 2000)))
+    await #expect(throws: (any Error).self) { try await first.recover(pending) }
+    let current = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    await #expect(throws: (any Error).self) { try await current.submit(operation) }
+    let proof = try await current.recover(pending)
+    #expect(proof.status == .fenced && !proof.profile.optedIn)
+    #expect(pending.operation.binding.loginID != current.binding.loginID)
+    let requests = await h.stub.requests()
+    #expect(requests.count == 3 && requests[2].httpMethod == "POST")
+    #expect(requests[2].url?.path == "/api/mobile/v1/profile/journey-social/operations/resolve")
+    #expect(requests[2].value(forHTTPHeaderField: "X-Journey-Session") == newLogin)
+    #expect(
+      requests[2].value(forHTTPHeaderField: "Idempotency-Key") == "jsocial-resolve1:"
+        + socialOperation)
+    #expect(await captured.bodies() == [try pending.recoveryBody()])
+    #expect(await h.remote.refreshCount == 0)
+  }
+
+  @Test("social recovery cannot send an intent from another origin or account")
+  func journeySocialRecoveryRejectsForeignOriginsAndAccountsBeforePhysicalWork() async throws {
+    let h = try await journeySocialHarness()
+    await h.stub.respond { _, _ in try journeySocialMe() }
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    let p = try pendingSocial()
+    await #expect(throws: (any Error).self) { try await repo.recover(p) }
+    let foreign = try JourneySocialPendingOperation(
+      origin: repo.origin,
+      operation: JourneySocialOperation(
+        binding: .init(ownerID: UUID(), authUserID: UUID(), loginID: UUID()), id: UUID(),
+        expectedRevision: 0,
+        action: .participation(nickname: "Other account", consentVersion: "journey-social.v1")))
+    await #expect(throws: (any Error).self) { try await repo.recover(foreign) }
+    let sameAccountWrongOrigin = try JourneySocialPendingOperation(
+      origin: p.origin,
+      operation: JourneySocialOperation(
+        binding: repo.binding, id: UUID(), expectedRevision: 0,
+        action: .participation(nickname: "Caminhante", consentVersion: "journey-social.v1")))
+    await #expect(throws: (any Error).self) {
+      try await h.transport.executeHTTP(
+        MobileAPIRequest<JourneySocialResolutionSnapshot>(
+          method: .post, path: "/api/mobile/v1/profile/journey-social/operations/resolve",
+          body: sameAccountWrongOrigin.recoveryBody(),
+          idempotencyKey: IdempotencyKey(validating: sameAccountWrongOrigin.recoveryKey),
+          unauthorizedReplay: .never, journeySocial: .recovery(repo.binding, sameAccountWrongOrigin)
+        ))
+    }
+    #expect(await h.stub.requests().count == 1)
+  }
+
+  @Test("uncertain social recovery repeats only on explicit request with its exact body and key")
+  func journeySocialRecoveryNeverAutomaticallyRefreshesOrReplays() async throws {
+    let h = try await journeySocialHarness()
+    let captured = C11RequestBodyCapture()
+    await h.stub.respond { request, ordinal in
+      if request.url?.path == "/api/mobile/v1/me" { return try journeySocialMe() }
+      try await captured.capture(request)
+      if ordinal == 2 { throw URLError(.networkConnectionLost) }
+      return try journeySocialResponse(socialResolution())
+    }
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    let pending = try JourneySocialPendingOperation(
+      origin: repo.origin,
+      operation: JourneySocialOperation(
+        binding: repo.binding, id: UUID(uuidString: socialOperation)!, expectedRevision: 0,
+        action: .participation(nickname: "Caminhante", consentVersion: "journey-social.v1")))
+    await #expect(throws: (any Error).self) { try await repo.recover(pending) }
+    #expect(await h.stub.requests().count == 2)
+    #expect(try await repo.recover(pending).status == .fenced)
+    let requests = await h.stub.requests()
+    #expect(
+      requests.count == 3
+        && requests.dropFirst().allSatisfy {
+          $0.value(forHTTPHeaderField: "Idempotency-Key") == pending.recoveryKey
+        })
+    #expect(await captured.bodies() == [try pending.recoveryBody(), try pending.recoveryBody()])
+    await h.stub.respond(with: .failure(status: 401, code: "journey_social_401"))
+    await #expect(throws: (any Error).self) { try await repo.recover(pending) }
+    #expect(await h.stub.requests().count == 4)
+    #expect(await h.remote.refreshCount == 0)
+  }
+
+  @Test("a recovered response arriving after account departure cannot publish")
+  @MainActor func journeySocialRecoveryDropsLatePatientResponses() async throws {
+    let h = try await journeySocialHarness()
+    await h.stub.respond { _, _ in try journeySocialMe() }
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    let pending = try JourneySocialPendingOperation(
+      origin: repo.origin,
+      operation: JourneySocialOperation(
+        binding: repo.binding, id: UUID(uuidString: socialOperation)!, expectedRevision: 0,
+        action: .participation(nickname: "Caminhante", consentVersion: "journey-social.v1")))
+    await h.stub.respond { _, _ in
+      try await h.replaceSession(returnToA: false)
+      return try journeySocialResponse(socialResolution(), ignoresCancellation: true)
+    }
+    await #expect(throws: (any Error).self) { try await repo.recover(pending) }
+    let visible = JourneySocialPublicationProbe()
+    await #expect(throws: (any Error).self) { try await repo.publish { visible.value = 1 } }
+    #expect(visible.value == 0)
+  }
+}

@@ -240,6 +240,7 @@ struct MobileAPITransport: Sendable {
         }
 
         try request.journeySocial?.validate(lease: lease)
+        try request.journeySocial?.validate(origin: configuration.origin)
         let url = try request.url(using: configuration)
         guard configuration.approves(url) else {
             throw MobileAPIRequestError.invalidPath

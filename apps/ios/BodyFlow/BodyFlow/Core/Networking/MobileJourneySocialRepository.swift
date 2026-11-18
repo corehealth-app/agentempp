@@ -2,6 +2,7 @@ import Foundation
 
 protocol JourneySocialProviding: Sendable {
   var binding: JourneySocialBinding { get }
+  var origin: URL { get }
   func validate() async throws
   func publish(_ action: @escaping @MainActor @Sendable () throws -> Void) async throws
   func profile() async throws -> JourneySocialProfile
@@ -10,6 +11,8 @@ protocol JourneySocialProviding: Sendable {
   func blocks(cursor: JourneySocialBlocksCursor?, limit: Int) async throws
     -> JourneySocialBlocksPage
   func submit(_ operation: JourneySocialOperation) async throws -> JourneySocialMutationSnapshot
+  func recover(_ pending: JourneySocialPendingOperation) async throws
+    -> JourneySocialResolutionSnapshot
 }
 
 /// Original-account privacy controls use the existing BFF only. Construction
@@ -17,6 +20,7 @@ protocol JourneySocialProviding: Sendable {
 /// in this repository. Lost responses retain the caller's immutable operation.
 struct MobileJourneySocialRepository: JourneySocialProviding {
   let binding: JourneySocialBinding
+  let origin: URL
   private let transport: MobileAPITransport
   private let lifecycle: any SessionLifecycleProviding
   private let lease: SessionLease
@@ -24,6 +28,10 @@ struct MobileJourneySocialRepository: JourneySocialProviding {
   static func scoped(
     transport: MobileAPITransport, lifecycle: any SessionLifecycleProviding, lease: SessionLease
   ) async throws -> Self {
+    guard let configuredOrigin = transport.configuredOrigin else {
+      throw JourneySocialPendingError.scopeChanged
+    }
+    let origin = try journeySocialOrigin(configuredOrigin)
     let scoped = transport.withResponseBodyLimit(128 * 1024).scoped(to: lease)
     try await scoped.validateOriginalSession(lease)
     try await lifecycle.validate(lease)
@@ -39,7 +47,8 @@ struct MobileJourneySocialRepository: JourneySocialProviding {
       throw MobileAPITransportError.invalidResponse
     }
     let repository = Self(
-      binding: .init(ownerID: owner, authUserID: auth, loginID: login), transport: scoped,
+      binding: .init(ownerID: owner, authUserID: auth, loginID: login), origin: origin,
+      transport: scoped,
       lifecycle: lifecycle, lease: lease)
     try await repository.validate()
     return repository
@@ -102,6 +111,24 @@ struct MobileJourneySocialRepository: JourneySocialProviding {
         idempotencyKey: IdempotencyKey(validating: operation.idempotencyKey),
         unauthorizedReplay: .never, journeySocial: .mutation(operation)))
     try value.validate(for: operation)
+    return value
+  }
+  /// Explicitly learns a prior result or fences a command that never committed.
+  /// A new login of the same account may resolve, but cannot execute old consent.
+  func recover(_ pending: JourneySocialPendingOperation) async throws
+    -> JourneySocialResolutionSnapshot
+  {
+    try await validate()
+    guard pending.origin == origin, pending.matches(binding) else {
+      throw JourneySocialPendingError.scopeChanged
+    }
+    let value: JourneySocialResolutionSnapshot = try await execute(
+      MobileAPIRequest(
+        method: .post, path: "/api/mobile/v1/profile/journey-social/operations/resolve",
+        body: pending.recoveryBody(),
+        idempotencyKey: IdempotencyKey(validating: pending.recoveryKey),
+        unauthorizedReplay: .never, journeySocial: .recovery(binding, pending)))
+    try value.validate(for: pending, current: binding)
     return value
   }
   private func execute<T: Decodable & Sendable>(_ request: MobileAPIRequest<T>) async throws -> T {

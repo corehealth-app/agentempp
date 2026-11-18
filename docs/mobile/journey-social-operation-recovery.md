@@ -1,6 +1,6 @@
 # Jornada social — recuperação de um envio interrompido
 
-Estado: implementação de servidor e testes locais. A funcionalidade social
+Estado: implementação de servidor e camada nativa protegida, com testes locais. A funcionalidade social
 continua desligada por padrão e as migrações ainda precisam de qualificação
 conectada. O build 1.0(20) distribuído não contém esta recuperação.
 
@@ -49,15 +49,27 @@ cancelamento. Removê-los poderia permitir a execução de envios atrasados. A
 mudança é aditiva; não exige alteração de metas, histórico de XP ou recibos
 antigos.
 
-## Integração nativa ainda necessária
+## Camada nativa e integração ainda necessária
 
-Antes de expor as telas, persistir a operação imutável no Keychain por origem e
-conta. Uma falha de rede não autoriza descartá-la nem gerar outra chave.
+`JourneySocialPendingSession` já persiste a operação imutável no Keychain por
+origem e conta antes de enviar. Uma falha de rede não autoriza descartá-la nem gerar outra chave.
 Recuperação em novo login usa o comando antigo e a autorização atual da mesma
 conta, por uma ação explícita que informe a possibilidade de cancelar o envio
 não aplicado. Somente o recibo exato ou a resposta `fenced` validada permite
 retirar a operação pendente. GET do perfil e erro 409 genérico não são provas
 suficientes. Troca de conta continua isolando os dados pendentes.
+
+O payload fechado e seu checksum preservam também o login original e os bytes
+canônicos do comando. O repositório vinculado ao login atual e o transporte
+validam separadamente a recuperação: conta de domínio/Auth iguais, origem
+original, chave/corpo exatos, sem 401 automático ou redirecionamento. Uma falha
+ao remover o pendente após o recibo preserva o comando para resolução explícita;
+não permite substituí-lo silenciosamente.
+
+Ainda falta conectar essa camada às telas de privacidade e ao descarte local
+após exclusão comprovada da conta. A interface deve explicar que a resolução
+pode cancelar um envio não aplicado. Não deve apresentar isso como reenvio nem
+apagar pendentes no logout.
 
 ## Evidência reproduzível
 

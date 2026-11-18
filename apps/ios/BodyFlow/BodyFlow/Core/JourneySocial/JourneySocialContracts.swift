@@ -267,8 +267,8 @@ struct JourneySocialBlocksPage: Decodable, Sendable {
 }
 
 enum JourneySocialReportReason: String, Sendable { case nickname, harassment, spam, other }
-struct JourneySocialOperation: Sendable {
-  enum Action: Sendable {
+struct JourneySocialOperation: Sendable, Equatable {
+  enum Action: Sendable, Equatable {
     case participation(nickname: String?, consentVersion: String?)
     case block(memberID: UUID, blocked: Bool)
     case report(memberID: UUID, reason: JourneySocialReportReason)
@@ -278,6 +278,13 @@ struct JourneySocialOperation: Sendable {
   let expectedRevision: Int
   let action: Action
   let wireBody: Data
+  var kind: String {
+    switch action {
+    case .participation: "profile"
+    case .block: "block"
+    case .report: "report"
+    }
+  }
   var idempotencyKey: String { "jsocial1:" + id.uuidString.lowercased() }
   var path: String {
     switch action {
@@ -320,6 +327,38 @@ struct JourneySocialOperation: Sendable {
     self.expectedRevision = expectedRevision
     self.action = action
     wireBody = try ConversationMealEditJSON.object(o).data()
+  }
+  /// Reconstruct only the existing closed command, not an arbitrary request.
+  init(binding: JourneySocialBinding, kind: String, command: ConversationMealEditJSON) throws {
+    let keys: Set<String>
+    switch kind {
+    case "profile":
+      keys = ["operation_id", "expected_revision", "opted_in", "nickname", "consent_version"]
+    case "block": keys = ["operation_id", "expected_revision", "member_id", "blocked"]
+    case "report": keys = ["operation_id", "expected_revision", "member_id", "reason"]
+    default: throw JourneySocialInvalid.value
+    }
+    let o = try command.object(keys)
+    let id = try o.required("operation_id").uuid()
+    let revision = try socialInteger(o.required("expected_revision"), max: 9_007_199_254_740_990)
+    let action: Action
+    switch kind {
+    case "profile":
+      let nickname = try o.required("nickname").optional { try $0.string() }
+      try socialRequire(o.required("opted_in").bool() == (nickname != nil))
+      action = .participation(
+        nickname: nickname,
+        consentVersion: try o.required("consent_version").optional { try $0.string() })
+    case "block":
+      action = .block(
+        memberID: try o.required("member_id").uuid(), blocked: try o.required("blocked").bool())
+    default:
+      guard let reason = try JourneySocialReportReason(rawValue: o.required("reason").string())
+      else { throw JourneySocialInvalid.value }
+      action = .report(memberID: try o.required("member_id").uuid(), reason: reason)
+    }
+    try self.init(binding: binding, id: id, expectedRevision: revision, action: action)
+    try socialRequire(command.data() == wireBody)
   }
 }
 struct JourneySocialMutationSnapshot: Decodable, Sendable {

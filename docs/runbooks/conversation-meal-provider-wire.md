@@ -32,7 +32,8 @@ attempt. Qualification uses new synthetic commands and verifies the actual
 provider, official saved receipt, technical repeat and readback before release.
 No migration, key rotation or new provider service is required for this wire
 change.
-# Provider rejection observations
+
+## Provider rejection observations
 
 For HTTP 400 at the provider boundary, the interpreter can emit a closed
 `provider_rejection` category: schema complexity, unsupported schema keyword,
@@ -47,4 +48,3 @@ The R181 hosted meal attempt still received HTTP 400 after the wire projection.
 The projection's offline grammar checks do not establish the cause of that
 rejection or prove a successful registration. Qualify a new synthetic attempt;
 never replay an interpretation whose provider outcome is already unknown.
-

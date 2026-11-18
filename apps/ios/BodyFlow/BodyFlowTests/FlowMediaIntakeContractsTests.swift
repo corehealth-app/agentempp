@@ -5,6 +5,64 @@ import Testing
 
 @Suite("Negotiated neutral media binds the original attachment to the factual child")
 struct FlowMediaIntakeContractsTests {
+  @Test(arguments: ["meal_photo", "audio_workout", "audio_missing_meal_type"])
+  func privateCatalogMediaRecoversTheSameSavedOrQuestionReply(_ label: String) throws {
+    let unit = try mediaIntakeUnit(label == "audio_missing_meal_type" ? "meal_photo" : label)
+    let ticket = try mediaIntakeTicket(unit)
+    var packet = unit["response"] as! [String: Any]
+    var selection = packet["selection"] as! [String: Any]
+    var projection = selection["media_projection"] as! [String: Any]
+    var media = projection["media"] as! [String: Any]
+    media["catalog_version"] = 2
+    if label == "audio_missing_meal_type" {
+      media["kind"] = "audio_note"
+      let child = selection["command"] as! [String: Any]
+      packet["result"] = [
+        "schema": "conversation.meal-command-state.v1", "status": "not_recorded",
+        "owner_id": child["owner_id"]!, "command_id": child["command_id"]!,
+        "input_hash": child["input_hash"]!, "epoch": child["epoch"]!,
+        "reason": "meal_type_required", "food_indexes": [] as [Int],
+      ]
+    }
+    projection["media"] = media
+    selection["media_projection"] = projection
+    packet["selection"] = selection
+    let reply = try mediaIntakeDecode(packet)
+    #expect(reply.matches(ticket))
+    if label == "audio_missing_meal_type" {
+      #expect(reply.deliveryState == .notRecorded)
+      #expect(reply.factualAcknowledgement(for: ticket) == nil)
+      guard case .meal(.state(let question)) = reply.result else {
+        Issue.record("The original question must remain recoverable"); return
+      }
+      #expect(question.reason == "meal_type_required")
+    } else {
+      #expect(reply.factualAcknowledgement(for: ticket) != nil)
+    }
+  }
+  @Test(arguments: ["null", "string", "bool", "zero", "legacy_tag", "future", "fraction", "private_url"])
+  func privateCatalogDoesNotAdmitUnknownVersionsOrExtraFields(_ attack: String) throws {
+    var packet = try mediaIntakeUnit("meal_photo")["response"] as! [String: Any]
+    var selection = packet["selection"] as! [String: Any]
+    var projection = selection["media_projection"] as! [String: Any]
+    var media = projection["media"] as! [String: Any]
+    switch attack {
+    case "null": media["catalog_version"] = NSNull()
+    case "string": media["catalog_version"] = "2"
+    case "bool": media["catalog_version"] = true
+    case "zero": media["catalog_version"] = 0
+    case "legacy_tag": media["catalog_version"] = 1
+    case "future": media["catalog_version"] = 3
+    case "fraction": media["catalog_version"] = 2.5
+    default:
+      media["catalog_version"] = 2
+      media["signed_url"] = "https://unit.invalid/private"
+    }
+    projection["media"] = media
+    selection["media_projection"] = projection
+    packet["selection"] = selection
+    #expect(throws: (any Error).self) { try mediaIntakeDecode(packet) }
+  }
   @Test(arguments: [
     "ordinary_meal", "ordinary_equipment_not_performed", "ordinary_label_missing_portion",
   ])

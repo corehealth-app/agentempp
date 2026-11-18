@@ -228,9 +228,17 @@ struct FlowNeutralIntakeMediaProjection: Sendable {
         && origin.required("decision_hash").hash() == decisionHash
         && o.required("child_input_hash").hash() == child.inputHash)
     _ = try origin.required("claim_id").uuid()
-    let media = try o.required("media").object([
-      "asset_id", "owner_id", "kind", "processed_at", "updated_at", "processing_hash",
-    ])
+    let media = try neutralObject(
+      o.required("media"),
+      required: ["asset_id", "owner_id", "kind", "processed_at", "updated_at", "processing_hash"],
+      optional: ["catalog_version"])
+    // Legacy projections omit the tag. The qualified private catalog emits
+    // only literal2; this does not admit future catalogs or other extra fields.
+    if let catalog = media["catalog_version"] {
+      guard case .number(let version) = catalog, version == 2 else {
+        throw FlowNeutralIntakeInvalid.value
+      }
+    }
     assetID = try media.required("asset_id").uuid()
     let kind = try media.required("kind").string()
     try neutralRequire(

@@ -252,7 +252,10 @@ function trailingPhotoPointerStart(
     tail.some((span) => span.food_index !== null || !['other', 'separator'].includes(span.kind))
   )
     return null
-  const tailText = plain(text.slice(report.end))
+  // A current-time adjunct belongs to the same complete, already reported
+  // photo pointer. Only these exact terminal words are inert: questions,
+  // quantities, other dates and additional clauses remain fully accounted for.
+  const tailText = plain(text.slice(report.end)).replace(/ (?:agora|hoje)([.!]?)$/u, '$1')
   // A literal reference to this bound photo is inert context, just like
   // "esse prato". Match the entire tail so future/negative/third-party clauses,
   // questions and explicit quantities still require semantic accounting.

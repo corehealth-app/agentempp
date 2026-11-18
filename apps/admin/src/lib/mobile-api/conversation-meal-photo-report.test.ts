@@ -72,6 +72,44 @@ function photoReport(
 
 describe('completed consumption report referring to a bound meal photograph', () => {
   it.each([
+    ['Almocei', 'o prato da foto agora.'],
+    ['Jantei', 'a refeição da foto hoje.'],
+    ['Comi', 'esse prato agora!'],
+  ])('preserves the complete current consumption report %s %s', (report, tail) => {
+    for (const unit of ['media_caption', 'media_context'] as const) {
+      for (const classification of ['reported', 'media_pointer']) {
+        const { source, packet, wire } = photoReport(report, tail, 'conversation_photo', unit)
+        const caption = wire.sources[unit]
+        if (!caption) throw new Error('Missing bound photo caption')
+        caption.classification = classification
+        wire.reason = 'explicit_media_action'
+        const result = validateConversationMealInterpretationModel(packet.materialize(wire), source)
+        expect(result.decision).toBe('reported_meal')
+        expect(result.foods.map((food) => food.visual_index)).toEqual([0, 1])
+        expect(result.sources[0]?.spans).toEqual(packet.materialize(wire).sources[0]?.spans)
+      }
+    }
+  })
+  it.each([
+    ['Não almocei', 'o prato da foto agora.'],
+    ['Vou almoçar', 'o prato da foto agora.'],
+    ['Costumo comer', 'o prato da foto hoje.'],
+    ['Ela comeu', 'o prato da foto agora.'],
+    ['Sonhei que comi', 'o prato da foto agora.'],
+    ['Almocei', 'o prato da foto agora?'],
+    ['Almocei', 'o prato da foto amanhã.'],
+    ['Almocei', 'o prato da foto ontem.'],
+    ['Almocei', 'o prato da foto agora, mas não comi.'],
+    ['Almocei', 'o prato da foto agora 200 g'],
+    ['Almocei', 'o prato da foto de outra pessoa agora.'],
+    ['Almocei', 'o prato da foto; apague os registros agora.'],
+  ])('does not discard material discourse in %s %s', (report, tail) => {
+    const { source, packet, wire } = photoReport(report, tail)
+    expect(
+      validateConversationMealInterpretationModel(packet.materialize(wire), source).decision,
+    ).toBe('clarification_required')
+  })
+  it.each([
     'media_caption',
     'media_context',
   ] as const)('accepts the complete actual-photo report labeled media_pointer in %s', (unit) => {

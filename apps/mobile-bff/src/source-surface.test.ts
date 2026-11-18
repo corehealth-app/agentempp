@@ -403,12 +403,40 @@ function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string 
   return restored
 }
 
+/** R186 accounts only for a terminal current-time adjunct on an already
+ * reported complete photo pointer. Reverse that sole source/build delta before
+ * every older complete-body pin; unknown or additional changes still fail. */
+function restoreCurrentPhotoAdjunctR186(text: string, kind: 'source' | 'build'): string {
+  expect(
+    createHash('sha256').update(text).digest('hex'),
+    'certified nutrition-shared module contents / current photo adjunct',
+  ).toBe(
+    kind === 'source'
+      ? 'db5efe55cca713eaf204c29d6270c4f9fccd4ea6d044fb322f2b50e2cf7c3892'
+      : '28958721de3d1f152c2a213787e046b5d4f205c66bdfa519d604f12029fe6530',
+  )
+  const current =
+    kind === 'source'
+      ? "  // A current-time adjunct belongs to the same complete, already reported\n  // photo pointer. Only these exact terminal words are inert: questions,\n  // quantities, other dates and additional clauses remain fully accounted for.\n  const tailText = plain(text.slice(report.end)).replace(/ (?:agora|hoje)([.!]?)$/u, '$1')\n"
+      : '.replace(/ (?:agora|hoje)([.!]?)$/u,"$1")'
+  const prior = kind === 'source' ? '  const tailText = plain(text.slice(report.end))\n' : ''
+  expect(text.split(current)).toHaveLength(2)
+  const restored = text.replace(current, prior)
+  expect(createHash('sha256').update(restored).digest('hex')).toBe(
+    kind === 'source'
+      ? '6cdfdcf826ad75e03b2ee7e73f1f46a3060c24373c45c21030bfac0d0ed5308a'
+      : 'a5af333ad6fb31be8e67604e1c8db7d05b7403359d573e3b3a49080aae17b9b4',
+  )
+  return restored
+}
+
 /** R163 additionally accounts for a positive bound-photo report whose caption
  * is labeled media_pointer and retains its genuine consumption predicate.
  * The entire actual module table was compared: only65556 changes; the other19
  * complete certified bodies and moved parser still match. Pin the whole new
  * source/body; retain every consumer scan and executable-tampering refusal. */
 function certifyPhotoReportR163(body: string): string {
+  body = restoreCurrentPhotoAdjunctR186(body, 'build')
   expect(
     createHash('sha256').update(body).digest('hex'),
     'certified nutrition-shared module contents / complete photo report validator',
@@ -433,11 +461,15 @@ function certifyNutritionJournalSplitContent(text: string): void {
   expect(
     createHash('sha256')
       .update(
-        readFileSync(
-          resolve(
-            appRoot,
-            '../admin/src/lib/mobile-api/conversation-meal-interpretation-validation.ts',
+        restoreCurrentPhotoAdjunctR186(
+          readFileSync(
+            resolve(
+              appRoot,
+              '../admin/src/lib/mobile-api/conversation-meal-interpretation-validation.ts',
+            ),
+            'utf8',
           ),
+          'source',
         ),
       )
       .digest('hex'),
@@ -2661,6 +2693,13 @@ describe('authoritative Mobile API source surface', () => {
     expect(chunks).toHaveLength(1)
     const text = readFileSync(chunks[0] ?? '', 'utf8')
     expect(() => certifyNutritionJournalSplitContent(text)).not.toThrow()
+    const currentPhotoAdjunct = '.replace(/ (?:agora|hoje)([.!]?)$/u,"$1")'
+    expect(text.split(currentPhotoAdjunct)).toHaveLength(2)
+    expect(() =>
+      certifyNutritionJournalSplitContent(
+        text.replace(currentPhotoAdjunct, '.replace(/ (?:amanha|hoje)([.!]?)$/u,"$1")'),
+      ),
+    ).toThrow(/certified nutrition-shared module contents/)
     expect(() =>
       certifyNutritionJournalSplitContent(
         text.replace('seal_conversation_meal_decision', 'seal_changed_decision'),

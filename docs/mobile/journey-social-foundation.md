@@ -1,6 +1,6 @@
 # Jornada social — fundação privada do ranking
 
-Estado: dependência de T6 implementada e qualificada localmente; **não ativada no app nem aplicada no staging**. O plano aprovado de 03/11/2026 continua integralmente aberto. Os controles de bloqueio, denúncia, moderação, paginação e a interface precisam ser integrados e qualificados antes da exposição.
+Estado: dependência de T6 implementada e qualificada localmente; **não ativada no app nem aplicada no staging**. O plano aprovado de 03/11/2026 continua integralmente aberto. Os controles SQL de bloqueio, denúncia, moderação e paginação foram acrescentados em `20261118152959_journey_social_controls.sql` e qualificados localmente. Os contratos HTTP, a sessão viva, as interfaces e o QA conectado continuam obrigatórios antes da exposição.
 
 ## Dados e autoridade
 
@@ -16,10 +16,18 @@ Os wrappers SQL são executáveis somente pelo backend `service_role`, validam o
 
 A projeção exclui quem não consentiu, contas bloqueadas/excluídas, perfis suspensos e bloqueios em ambas as direções. As posições são calculadas sobre o conjunto visível: empates compartilham posição (`1, 1, 3`). A ordenação por identificador público estabiliza os empates sem desempatar a posição.
 
-A resposta dos colegas admite somente `member_id`, `nickname`, `rank`, `weekly_xp` e `is_you`. Não expõe Auth, ID interno, nome de cadastro, calorias, peso, gordura, metas ou proteções clínicas. O primeiro leitor é limitado a 1–100 participantes e informa `has_more`; não há ainda cursor de continuação e não se pode apresentar essa página como o ranking completo. A função privada com relógio parametrizado serve aos testes determinísticos e não recebe EXECUTE de nenhum papel da API.
+A resposta dos colegas admite somente `member_id`, `nickname`, `rank`, `weekly_xp` e `is_you`. Não expõe Auth, ID interno, nome de cadastro, calorias, peso, gordura, metas ou proteções clínicas. O leitor inicial continua compatível, limitado a 1–100 participantes e com `has_more`. O novo `read_journey_weekly_ranking_page` oferece cursor ligado ao membro público do leitor, à data civil e a um digest do conjunto visível. Mudança de XP, participação ou bloqueio exige atualizar a lista; não se mantém um snapshot que reapresente quem saiu. O cursor não concede autoridade e não contém IDs internos ou fatos clínicos. A função privada com relógio parametrizado serve aos testes determinísticos e não recebe EXECUTE de nenhum papel da API.
 
 ## Verificação e próximas integrações
 
 `supabase/tests/journey_social_weekly_foundation.sql` executa o contrato em PostgreSQL e reverte as identidades sintéticas. Cobre ausência sem escrita, propriedade, papel de backend, consentimento, replay/conflito, saída, XP de dias fechados, empates, limite, fuso/meia-noite, lista pública restrita, bloqueio bidirecional, RLS/privilégios e cascatas de exclusão. A qualificação local também exerceu duas conexões concorrentes e 500 participantes/3.500 dias sintéticos, sem usar dados ou serviços externos.
 
-Antes de ativar: comandos de bloqueio/denúncia, moderação com autorização operacional específica (não `is_admin()` amplo), cursor, contratos HTTP fechados, opt-in/saída/controles no iOS, QA A/B com persistência e privacidade, distribuição e conferência da versão instalada. A missão em dupla, conquista sem XP extra e Android continuam obrigatórios no plano geral.
+Antes de ativar: contratos HTTP fechados com sessão viva e identidade original, opt-in/saída/controles no iOS, telas operacionais de moderação, QA A/B com persistência e privacidade, distribuição e conferência da versão instalada. A missão em dupla, conquista sem XP extra e Android continuam obrigatórios no plano geral.
+
+## Bloqueio, denúncia e operação
+
+`mutate_journey_social_block` e `submit_journey_social_report` compartilham o namespace idempotente e a revisão do próprio perfil. Retentar não reaplica um bloqueio retirado. Bloqueios ocultam o colega nos dois sentidos; a lista própria permite desfazê-los mesmo após sair do ranking. Apelidos retirados não são conservados nessa lista. As denúncias admitem somente os motivos `nickname`, `harassment`, `spam` e `other`, sem texto clínico livre. O mesmo motivo ainda pendente por pessoa/alvo é deduplicado. Nenhuma denúncia suspende um perfil automaticamente.
+
+`read_journey_social_reports`, `moderate_journey_social_profile` e `resolve_journey_social_report` exigem o papel operacional atual `operations_admin` ou `master_admin`. O transporte deve derivar os argumentos de ator da sessão administrativa, nunca do corpo enviado pelo cliente. `is_admin()` amplo não autoriza essas ações. A fila não expõe a identidade do denunciante. Suspender/restaurar e resolver/descartar usam UUID de operação, revisão e recibo auditável sem apelido histórico ou valores de saúde. A retirada de consentimento prevalece sobre restaurar a moderação; revogar o papel impede também a leitura de recibos antigos. Resolver uma denúncia não suspende alguém implicitamente: as duas ações são explícitas.
+
+A serialização por operador torna duas resoluções simultâneas do mesmo comando uma aplicação e uma repetição. Bloqueios usam lock compatível com as FKs para permitir A e B bloquearem um ao outro sem deadlock. O teste reproduzível `supabase/tests/journey_social_concurrency.py --registry /caminho/LOCAL-ARENA.json` exige uma cópia local própria, socket Unix privado e identidade PostgreSQL conferida. Cria UUIDs sintéticos novos e apaga somente seus registros; não cria, apaga ou reinicia banco/serviço. O contrato SQL adicional está em `supabase/tests/journey_social_controls.sql`.

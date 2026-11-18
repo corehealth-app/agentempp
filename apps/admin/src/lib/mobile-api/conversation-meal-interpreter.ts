@@ -165,6 +165,72 @@ export interface ConversationMealInterpreterDiagnostic {
     | 'schema_invalid'
     | 'structured_output_unsupported'
     | 'output_token_limit'
+  readonly provider_error?: Readonly<{
+    raw_kind: 'absent' | 'string' | 'object' | 'other'
+    error_type?:
+      | 'invalid_request'
+      | 'invalid_prompt'
+      | 'context_length_exceeded'
+      | 'max_tokens_exceeded'
+      | 'token_limit_exceeded'
+      | 'string_too_long'
+      | 'payload_too_large'
+      | 'unprocessable'
+      | 'unmapped'
+    provider?: 'anthropic' | 'bedrock' | 'azure' | 'google'
+    terms: readonly (
+      | 'additionalproperties'
+      | 'allof'
+      | 'anyof'
+      | 'array'
+      | 'body'
+      | 'budget'
+      | 'compilation'
+      | 'complex'
+      | 'const'
+      | 'constraint'
+      | 'credit'
+      | 'definitions'
+      | 'empty'
+      | 'enum'
+      | 'exceed'
+      | 'exceeds'
+      | 'format'
+      | 'grammar'
+      | 'integer'
+      | 'invalid'
+      | 'items'
+      | 'json'
+      | 'large'
+      | 'length'
+      | 'limit'
+      | 'long'
+      | 'maximum'
+      | 'maxitems'
+      | 'max_tokens'
+      | 'minimum'
+      | 'minitems'
+      | 'missing'
+      | 'null'
+      | 'object'
+      | 'oneof'
+      | 'parameter'
+      | 'pattern'
+      | 'properties'
+      | 'provider'
+      | 'ref'
+      | 'required'
+      | 'response_format'
+      | 'schema'
+      | 'size'
+      | 'string'
+      | 'temperature'
+      | 'tokens'
+      | 'type'
+      | 'unsupported'
+      | 'validation'
+    )[]
+  }>
 }
 type DiagnosticSink = (diagnostic: ConversationMealInterpreterDiagnostic) => void
 
@@ -276,6 +342,129 @@ function reportFailure(
     return undefined
   }
   const rejection = providerRejection()
+  // Observe only fixed technical terms and published error/vendor enums when
+  // the phrase classifier cannot identify a category. Upstream raw may be an
+  // object, not a string. Never enumerate arbitrary keys or evaluate getters.
+  const providerDetails = (): ConversationMealInterpreterDiagnostic['provider_error'] => {
+    if (rejection || stage !== 'provider' || ownData(error, 'status') !== 400) return undefined
+    const inner = ownData(error, 'error'),
+      metadata = ownData(inner, 'metadata') ?? ownData(error, 'metadata'),
+      raw = ownData(metadata, 'raw'),
+      messages = [
+        ownData(error, 'message'),
+        ownData(inner, 'message'),
+        raw,
+        ownData(raw, 'message'),
+        ownData(ownData(raw, 'error'), 'message'),
+      ],
+      vocabulary = [
+        'additionalproperties',
+        'allof',
+        'anyof',
+        'array',
+        'body',
+        'budget',
+        'compilation',
+        'complex',
+        'const',
+        'constraint',
+        'credit',
+        'definitions',
+        'empty',
+        'enum',
+        'exceed',
+        'exceeds',
+        'format',
+        'grammar',
+        'integer',
+        'invalid',
+        'items',
+        'json',
+        'large',
+        'length',
+        'limit',
+        'long',
+        'maximum',
+        'maxitems',
+        'max_tokens',
+        'minimum',
+        'minitems',
+        'missing',
+        'null',
+        'object',
+        'oneof',
+        'parameter',
+        'pattern',
+        'properties',
+        'provider',
+        'ref',
+        'required',
+        'response_format',
+        'schema',
+        'size',
+        'string',
+        'temperature',
+        'tokens',
+        'type',
+        'unsupported',
+        'validation',
+      ] as const,
+      allowedTerms = new Set<string>(vocabulary),
+      words = new Set<string>()
+    if (
+      (inner === null || typeof inner !== 'object') &&
+      (metadata === null || typeof metadata !== 'object')
+    )
+      return undefined
+    for (const message of messages) {
+      if (typeof message !== 'string' || message.length > 65_536) continue
+      for (const word of message.toLowerCase().split(/[^a-z_]+/u))
+        if (allowedTerms.has(word)) words.add(word)
+    }
+    const terms = Object.freeze(vocabulary.filter((term) => words.has(term))),
+      error_type = (
+        [
+          'invalid_request',
+          'invalid_prompt',
+          'context_length_exceeded',
+          'max_tokens_exceeded',
+          'token_limit_exceeded',
+          'string_too_long',
+          'payload_too_large',
+          'unprocessable',
+          'unmapped',
+        ] as const
+      ).find((type) => type === ownData(metadata, 'error_type')),
+      providerName = ownData(metadata, 'provider_name'),
+      provider =
+        typeof providerName === 'string' && providerName.length <= 50
+          ? (
+              [
+                ['anthropic', 'anthropic'],
+                ['amazon bedrock', 'bedrock'],
+                ['amazon-bedrock', 'bedrock'],
+                ['azure', 'azure'],
+                ['google', 'google'],
+                ['google vertex', 'google'],
+              ] as const
+            ).find(([name]) => name === providerName.toLowerCase())?.[1]
+          : undefined
+    if (!terms.length && !error_type && !provider && raw === undefined) return undefined
+    return Object.freeze({
+      raw_kind:
+        raw === undefined
+          ? 'absent'
+          : typeof raw === 'string'
+            ? 'string'
+            : raw !== null && typeof raw === 'object'
+              ? 'object'
+              : 'other',
+      ...(error_type ? { error_type } : {}),
+      ...(provider ? { provider } : {}),
+      terms,
+    })
+  }
+  const details = providerDetails()
   // Inspect data descriptors only: no getters, stringification, messages,
   // stacks, codes, headers, bodies, source IDs or provider output can escape.
   let name = ownData(error, 'name')
@@ -292,6 +481,7 @@ function reportFailure(
       stage,
       error_name: diagnosticErrorNames.find((allowed) => allowed === name) ?? 'UnknownError',
       ...(rejection ? { provider_rejection: rejection } : {}),
+      ...(details ? { provider_error: details } : {}),
       ...(stage === 'validation'
         ? {
             validation_reason:

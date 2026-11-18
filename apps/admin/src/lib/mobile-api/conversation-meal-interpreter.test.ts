@@ -1,5 +1,5 @@
 import { type LLMCallParams, type LLMResult, OpenRouterLLM } from '@mpp/providers'
-import { AuthenticationError } from 'openai'
+import { AuthenticationError, BadRequestError } from 'openai'
 import { zodResponseFormat } from 'openai/helpers/zod'
 import { describe, expect, it, vi } from 'vitest'
 import { bindConversationCommand } from './conversation-command-contracts'
@@ -925,6 +925,148 @@ describe('closed semantic interpreter input and result', () => {
     expect(JSON.stringify(sink.mock.calls)).not.toContain(secret)
     expect(JSON.stringify(sink.mock.calls)).not.toContain(message)
     expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it('projects an actual SDK 400 with object-valued upstream data into closed technical terms', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      secret = 'password=private-upstream-sentinel',
+      failure = new BadRequestError(
+        400,
+        {
+          message: 'Provider returned error',
+          metadata: {
+            error_type: 'invalid_request',
+            provider_name: 'Amazon Bedrock',
+            raw: { error: { message: `Required object properties must be non-empty; ${secret}` } },
+          },
+        },
+        'Provider returned error',
+        {},
+      ),
+      sink = vi.fn(),
+      complete = vi.fn(async () => {
+        throw failure
+      }),
+      interpreter = createOpenRouterConversationMealInterpreter('synthetic', { complete }, sink)
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(sink.mock.calls[0]?.[0]).toEqual({
+      event: 'conversation_meal_interpreter_failure',
+      stage: 'provider',
+      error_name: 'BadRequestError',
+      http_status: 400,
+      provider_error: {
+        raw_kind: 'object',
+        error_type: 'invalid_request',
+        provider: 'bedrock',
+        terms: ['empty', 'object', 'properties', 'provider', 'required'],
+      },
+    })
+    expect(JSON.stringify(sink.mock.calls)).not.toContain(secret)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    'not-a-public-error-type',
+    'password=private-error-type',
+  ])('omits an unrecognized upstream error type %s', async (errorType) => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      sink = vi.fn(),
+      interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic',
+        {
+          complete: vi.fn(async () => {
+            throw new BadRequestError(
+              400,
+              {
+                message: 'Provider returned error',
+                metadata: { error_type: errorType, provider_name: 'password=private-provider' },
+              },
+              'Provider returned error',
+              {},
+            )
+          }),
+        },
+        sink,
+      )
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(sink.mock.calls[0]?.[0].provider_error).toEqual({
+      raw_kind: 'absent',
+      terms: ['provider'],
+    })
+    expect(JSON.stringify(sink.mock.calls)).not.toContain(errorType)
+    expect(JSON.stringify(sink.mock.calls)).not.toContain('password=private-provider')
+  })
+  it.each([
+    'constructor',
+    '__proto__',
+    'toString',
+  ])('rejects inherited provider lookup key %s', async (providerName) => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      sink = vi.fn(),
+      interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic',
+        {
+          complete: vi.fn(async () => {
+            throw new BadRequestError(
+              400,
+              { message: 'Provider returned error', metadata: { provider_name: providerName } },
+              'Provider returned error',
+              {},
+            )
+          }),
+        },
+        sink,
+      )
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(sink.mock.calls[0]?.[0].provider_error).toEqual({
+      raw_kind: 'absent',
+      terms: ['provider'],
+    })
+  })
+  it('never evaluates nested upstream accessors or traverses arbitrary provider fields', async () => {
+    const f = textSource('arroz200g'),
+      source = buildConversationMealInterpretationSource(f.command, f.capture),
+      sink = vi.fn(),
+      accessor = vi.fn(() => {
+        throw Error('secret-accessor')
+      }),
+      raw = Object.defineProperties(
+        {},
+        { message: { get: accessor }, error: { get: accessor }, anything: { get: accessor } },
+      ),
+      metadata = Object.defineProperties(
+        { raw },
+        { error_type: { get: accessor }, provider_name: { get: accessor } },
+      ),
+      interpreter = createOpenRouterConversationMealInterpreter(
+        'synthetic',
+        {
+          complete: vi.fn(async () => {
+            throw new BadRequestError(
+              400,
+              { message: 'Provider returned error', metadata },
+              'Provider returned error',
+              {},
+            )
+          }),
+        },
+        sink,
+      )
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 1000 }),
+    ).rejects.toMatchObject({ status: 503 })
+    expect(accessor).not.toHaveBeenCalled()
+    expect(sink.mock.calls[0]?.[0].provider_error).toEqual({
+      raw_kind: 'object',
+      terms: ['provider'],
+    })
   })
   it('omits unknown and oversized provider details and never evaluates their accessors', async () => {
     const f = textSource('arroz200g'),

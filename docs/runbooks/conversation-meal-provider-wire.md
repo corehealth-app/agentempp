@@ -48,3 +48,14 @@ The R181 hosted meal attempt still received HTTP 400 after the wire projection.
 The projection's offline grammar checks do not establish the cause of that
 rejection or prove a successful registration. Qualify a new synthetic attempt;
 never replay an interpretation whose provider outcome is already unknown.
+
+When that category is unavailable, an SDK-shaped HTTP 400 can also emit a
+closed `provider_error` projection: the upstream raw value's type, selected
+published OpenRouter `error_type` values, a known provider enum, and a fixed
+technical vocabulary. The projection reads only known data descriptors;
+object-valued upstream errors are supported. Words retain no source ordering,
+positions or frequencies, and arbitrary values, keys and provider names never
+escape. Tests use actual OpenAI `BadRequestError` instances and reject getters,
+prototype lookup names and secret-bearing messages. Unknown outcomes still
+remain immutable; these observations do not retry or authorize a writer.
+See [OpenRouter error formats](https://openrouter.ai/docs/api_reference/errors-and-debugging).

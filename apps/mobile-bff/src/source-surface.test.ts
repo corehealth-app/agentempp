@@ -917,6 +917,75 @@ const photoManifestRoutesR59 = [
   '/api/mobile/v1/onboarding/body-photos/route',
   '/api/mobile/v1/onboarding/route',
 ]
+/** R181 changes only private provider wire indices. Seal the full current
+ * source/build, then reverse the three reviewed compiled expressions and the
+ * source projection. Every historical hash and raw graph scan remains active. */
+function certifyMealProviderWireR181(): string {
+  const chunks = semanticChunks(['.replaceAll("null","-1")', 'conversation.meal-source-labels.v1'])
+  expect(chunks).toHaveLength(1)
+  const chunk = chunks[0] ?? ''
+  let text = readFileSync(chunk, 'utf8')
+  expect(createHash('sha256').update(text).digest('hex')).toBe(
+    '6b9684163de94810e5702c60980d35d1a2a04eb7367b15c55fc74a4424fb5d20',
+  )
+  for (const [current, prior] of [
+    ['.replaceAll("null","-1")', ''],
+    [
+      'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=(a,e=[])=>{if(Array.isArray(a))return a.map(a=>c(a,e));if(null!==a&&"object"==typeof a){if("$ref"in a){let{$ref:d,...f}=a;if("string"!=typeof d||!d.startsWith("#/")||e.includes(d))return(0,z.v8)();let g=b.json_schema.schema;for(let a of d.slice(2).split("/")){let b=a.replaceAll("~1","/").replaceAll("~0","~");if(null===g||"object"!=typeof g||!Object.hasOwn(g,b))return(0,z.v8)();g=g[b]}return null===g||"object"!=typeof g||Array.isArray(g)?(0,z.v8)():c({...g,...f},[...e,d])}let f=Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems"].includes(a)).map(([a,b])=>[a,c(b,e)]));return(0,d.isDeepStrictEqual)(f,{anyOf:[{type:"integer"},{type:"null"}]})?{type:"integer"}:f}return a};return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
+      'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=a=>Array.isArray(a)?a.map(c):null!==a&&"object"==typeof a?Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems"].includes(a)).map(([a,b])=>[a,c(b)])):a;return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
+    ],
+    [
+      'function(a,b){let c=a=>null!==a&&"object"==typeof a&&!Array.isArray(a),d=()=>(b("model_schema"),(0,z.v8)()),e=structuredClone(a);if(!c(e)||!c(e.sources)||!Array.isArray(e.foods))return d();function f(a,b){if(!c(a))return d();let e=a[b];if("number"!=typeof e||!Number.isInteger(e)||e<-1||e>29)return d();-1===e&&(a[b]=null)}for(let a of Object.values(e.sources)){if(!c(a)||!c(a.labels))return d();for(let b of Object.values(a.labels))f(b,"food_index")}for(let a of e.foods)f(a,"visual_index");return e}(p,q)',
+      'p',
+    ],
+  ] as const) {
+    expect(text.split(current)).toHaveLength(2)
+    text = text.replace(current, prior)
+  }
+  expect(createHash('sha256').update(text).digest('hex')).toBe(
+    '41cfeaa189a954a60be85ea522189b6fa692e3297dc06b87d7b2b2dffeccac04',
+  )
+  return chunk
+}
+function restoreMealProviderWireSourceR181(text: string): string {
+  expect(createHash('sha256').update(text).digest('hex')).toBe(
+    '6ad76cadf7ca119afac675aeeed3a09962684f165a480072c20289af068d63c7',
+  )
+  const projectStart = text.indexOf('  const project = '),
+    projectEnd = text.indexOf('\n  return {\n    ...format,', projectStart)
+  expect(projectStart).toBeGreaterThan(0)
+  expect(projectEnd).toBeGreaterThan(projectStart)
+  expect(createHash('sha256').update(text.slice(projectStart, projectEnd)).digest('hex')).toBe(
+    '69b5db01934bf69a36ca30c4721ed3b9ddad809ee3bc4fb286a50ba0c10b71ed',
+  )
+  text =
+    text.slice(0, projectStart) +
+    "  const project = (value: unknown): unknown => {\n    if (Array.isArray(value)) return value.map(project)\n    if (value !== null && typeof value === 'object')\n      return Object.fromEntries(\n        Object.entries(value)\n          .filter(([key]) => !['minimum', 'maximum', 'maxItems'].includes(key))\n          .map(([key, item]) => [key, project(item)]),\n      )\n    return value\n  }" +
+    text.slice(projectEnd)
+  const decoderStart = text.indexOf('function decodeMealProviderIndices('),
+    decoderEnd = text.indexOf('export interface ConversationMealInterpreter', decoderStart)
+  expect(decoderStart).toBeGreaterThan(0)
+  expect(decoderEnd).toBeGreaterThan(decoderStart)
+  expect(createHash('sha256').update(text.slice(decoderStart, decoderEnd)).digest('hex')).toBe(
+    '5261b6b7e842249ec7c5b65a39f5086998184ac8173e00ec73c592b304c701d1',
+  )
+  text = text.slice(0, decoderStart) + text.slice(decoderEnd)
+  for (const [current, prior] of [
+    [
+      "systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1'),",
+      'systemPrompt: MEAL_INTERPRETER_PROMPT,',
+    ],
+    [
+      'const canonical = packet.materialize(\n          decodeMealProviderIndices(decoded, onFailure),\n          onFailure,\n        )',
+      'const canonical = packet.materialize(decoded, onFailure)',
+    ],
+  ] as const) {
+    expect(text.split(current)).toHaveLength(2)
+    text = text.replace(current, prior)
+  }
+  return text
+}
+
 /** T51 adds the explicit OpenAI structured-output helper to the interpreter.
  * This one closed chunk has exactly12 interpreter consumers and no ordinary
  * media/workout edge. Every physical target remains in the global scans. */
@@ -930,9 +999,12 @@ function certifyStructuredMealHelperT51() {
   certifyExactSharedTable(chunk, [
     ['69725', '05baadb1daac3f593c2b929f33b08e833c6de075d41caebcbbae406ed9dd7f0d'],
   ])
-  const interpreter = readFileSync(
-    resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),
-    'utf8',
+  const providerWireChunk = certifyMealProviderWireR181()
+  const interpreter = restoreMealProviderWireSourceR181(
+    readFileSync(
+      resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),
+      'utf8',
+    ),
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
     'fbeb7ccbd4e0850bcc1f6d4cc203c2b08067cd40410f2e050c8c68a2f18f0d6c',
@@ -985,6 +1057,7 @@ function certifyStructuredMealHelperT51() {
     '/api/mobile/v1/conversation/meal-commands/route',
     '/api/mobile/v1/conversation/session/route',
   ]
+  expect(chunkConsumers(providerWireChunk)).toEqual(consumers)
   expect(chunkConsumers(chunk)).toEqual(consumers)
   return {
     chunk,

@@ -256,14 +256,14 @@ describe('actual durable meal interpretation composition', () => {
                   command_text: {
                     classification: 'reported',
                     labels: {
-                      t0: { kind: 'report', food_index: null },
+                      t0: { kind: 'report', food_index: -1 },
                       t1: { kind: 'food', food_index: 0 },
                       t2: { kind: 'unit', food_index: 0 },
                       t3: { kind: 'food', food_index: 0 },
                     },
                   },
                 },
-                foods: [{ index: 0, visual_index: null }],
+                foods: [{ index: 0, visual_index: -1 }],
               },
         ),
         toolCalls: [],

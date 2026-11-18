@@ -1,97 +1,12 @@
-import type { ServiceClient } from '@mpp/db'
 import { inngest } from '../client.js'
-import { createConversationMediaExpiryDependencies } from '../lib/conversation-media-expiry-debt.js'
 import { createWorkerSupabase } from '../lib/env.js'
+import { cleanupExpiredMedia, createRetentionDependencies } from '../lib/media-retention.js'
 
-const RETENTION_BATCH_SIZE = 100
-
-interface ExpiredMediaAsset {
-  id: string
-  userId: string
-  bucketId: string
-  objectPath: string
-}
-
-export interface MediaRetentionDependencies {
-  repository: {
-    listExpired(now: string, limit: number): Promise<ExpiredMediaAsset[]>
-    markDeleted(assetId: string, userId: string, deletedAt: string): Promise<void>
-  }
-  storage: {
-    remove(bucketId: string, objectPath: string): Promise<void>
-  }
-}
-
-export async function cleanupExpiredMedia(
-  deps: MediaRetentionDependencies,
-  now = new Date(),
-): Promise<{ deleted: number }> {
-  const nowIso = now.toISOString()
-  const assets = await deps.repository.listExpired(nowIso, RETENTION_BATCH_SIZE)
-  let deleted = 0
-
-  for (const asset of assets) {
-    await deps.storage.remove(asset.bucketId, asset.objectPath)
-    await deps.repository.markDeleted(asset.id, asset.userId, nowIso)
-    deleted += 1
-  }
-
-  return { deleted }
-}
-
-export function createRetentionDependencies(
-  supabase: ServiceClient,
-  options?: { scope: 'conversation' },
-): MediaRetentionDependencies {
-  if (options !== undefined && options?.scope !== 'conversation')
-    throw new Error('Media retention scope unavailable')
-  if (options?.scope === 'conversation') return createConversationMediaExpiryDependencies(supabase)
-  return {
-    repository: {
-      async listExpired(now, limit) {
-        const query = supabase
-          .from('media_assets')
-          .select('id, user_id, bucket_id, object_path')
-          .lte('retention_until', now)
-          .is('reevaluation_origin_version', null)
-          .neq('status', 'deleted')
-          .order('retention_until', { ascending: true })
-          .limit(limit)
-        const { data, error } = await query
-        if (error) throw new Error(error.message || 'expired media lookup failed')
-        return (data ?? []).map((row) => ({
-          id: row.id,
-          userId: row.user_id,
-          bucketId: row.bucket_id,
-          objectPath: row.object_path,
-        }))
-      },
-      async markDeleted(assetId, userId, deletedAt) {
-        const query = supabase
-          .from('media_assets')
-          .update({
-            status: 'deleted',
-            deleted_at: deletedAt,
-            failure_stage: null,
-            failure_code: null,
-            processing_result: null,
-          })
-          .eq('id', assetId)
-          .eq('user_id', userId)
-          .is('reevaluation_origin_version', null)
-          .neq('status', 'deleted')
-        const { error } = await query
-        if (error) throw new Error(error.message || 'expired media state update failed')
-      },
-    },
-    storage: {
-      async remove(bucketId, objectPath) {
-        const { error } = await supabase.storage.from(bucketId).remove([objectPath])
-        if (error) throw new Error(error.message || 'expired media removal failed')
-      },
-    },
-  }
-}
+export {
+  cleanupExpiredMedia,
+  createRetentionDependencies,
+  type MediaRetentionDependencies,
+} from '../lib/media-retention.js'
 
 export const mediaRetentionCleanupFn = inngest.createFunction(
   { id: 'media-retention-cleanup', retries: 3, concurrency: { limit: 1 } },

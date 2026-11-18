@@ -5,7 +5,7 @@ import {
 } from '@mpp/core/conversation-media-revocation'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
-import type { MediaRetentionDependencies } from '../functions/media-retention-cleanup.js'
+import type { MediaRetentionDependencies } from './media-retention.js'
 
 const page = z
   .object({

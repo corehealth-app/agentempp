@@ -7,6 +7,40 @@ describe('functionsForSet', () => {
   afterEach(() => vi.unstubAllEnvs())
   const ids = (fns: readonly { id: (prefix?: string) => string }[]) => fns.map((fn) => fn.id())
 
+  it('hands cleanup schedules to the qualified bridge only for the explicit conversational set', () => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('MOBILE_CONVERSATION_MAINTENANCE_BRIDGE_ENABLED', 'true')
+    vi.stubEnv('MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED', 'true')
+    vi.stubEnv('MOBILE_CONVERSATION_PRIVATE_DISPOSAL_ENABLED', 'true')
+    expect(ids(functionsForSet('media-conversation-staging'))).toEqual([
+      'media-asset-processing',
+      'conversation-private-media-processing',
+    ])
+    expect(ids(functionsForSet('media-staging'))).toEqual(['media-asset-processing'])
+    expect(functionsForSet(undefined)).toBe(allFunctions)
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-clinical-staging')
+    expect(ids(functionsForSet('media-clinical-staging'))).toEqual([
+      'media-asset-processing',
+      'reevaluation-photo-disposition-cleanup',
+    ])
+  })
+  it.each([
+    undefined,
+    'false',
+    'TRUE',
+  ])('keeps the original cleanup schedules without exact bridge opt-in (%s)', (flag) => {
+    vi.stubEnv('INNGEST_FUNCTION_SET', 'media-conversation-staging')
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('MOBILE_CONVERSATION_MAINTENANCE_BRIDGE_ENABLED', flag)
+    expect(ids(functionsForSet('media-conversation-staging'))).toEqual([
+      'media-asset-processing',
+      'reevaluation-photo-disposition-cleanup',
+      'conversation-media-retention-cleanup',
+      'user-deletion-purger',
+    ])
+  })
+
   it('serves every function when no set is named (production behaviour unchanged)', () => {
     expect(functionsForSet(undefined)).toBe(allFunctions)
     expect(functionsForSet('')).toBe(allFunctions)

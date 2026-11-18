@@ -2,6 +2,8 @@
 
 Estado deste documento: implementação local; não comprova ativação no servidor.
 
+O transporte alternativo para reduzir execuções vazias está descrito em [Limpeza de mídia no Supabase de staging](conversation-media-maintenance-bridge.md). A troca depende da qualificação hospedada; nenhuma configuração deste documento, sozinha, comprova essa troca.
+
 ## Identidade e limites
 
 - Banco permitido: `xitugspwfxkcluxvrdeg`, URL exata HTTPS, com `/` final opcional.

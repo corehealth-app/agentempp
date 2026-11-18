@@ -1,18 +1,18 @@
 import type { ServiceClient } from '@mpp/db'
+import { assertPrivateConversationMediaCleanup } from './private-conversation-media-cleanup-policy.js'
+import { createPrivateMediaDisposalV2 } from './private-conversation-media-disposal.js'
 import {
   createPurgeDependencies,
   type UserDeletionPurgeDependencies,
-} from '../functions/user-deletion-purger.js'
-import { assertPrivateConversationMediaCleanup } from './private-conversation-media-cleanup-policy.js'
-import { createPrivateMediaDisposalV2 } from './private-conversation-media-disposal.js'
+} from './user-deletion-purge.js'
 
 /** Add private readiness ahead of the existing legacy/recurring coordinator.
  * No account or frozen record is removed until every independent protocol is
  * ready. The original cutoff, batch, row filters and delete remain unchanged. */
 export function createPrivateConversationPurgeDependencies(
   client: ServiceClient,
+  guard: () => void = assertPrivateConversationMediaCleanup,
 ): UserDeletionPurgeDependencies {
-  const guard = assertPrivateConversationMediaCleanup
   guard()
   const legacy = createPurgeDependencies(client, { conversationMedia: true })
   const privateMedia = createPrivateMediaDisposalV2(client, guard)

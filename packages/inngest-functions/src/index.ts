@@ -105,6 +105,10 @@ export function functionsForSet(name: string | undefined): readonly ServedFuncti
   if (name !== 'media-conversation-staging') return selected
   const cleanup = privateConversationMediaCleanupEnabled()
   const processing = privateConversationMediaWorkerEnabled()
+  // Opt in only after the independent SQL/Edge dispatcher is qualified and
+  // scheduled. Old/OFF and every other roster retain their original callbacks.
+  if (process.env.MOBILE_CONVERSATION_MAINTENANCE_BRIDGE_ENABLED === 'true')
+    return [mediaAssetProcessingFn, ...(processing ? [privateConversationMediaProcessingFn] : [])]
   if (!cleanup && !processing) return selected
   return [
     ...selected.map((fn) =>

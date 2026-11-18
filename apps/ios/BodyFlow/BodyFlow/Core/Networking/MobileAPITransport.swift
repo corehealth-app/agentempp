@@ -129,6 +129,7 @@ struct MobileAPITransport: Sendable {
         )
         try request.conversation?.validateResponseProtocol(firstResult.response)
         try request.trainingExecution?.validateResponseProtocol(firstResult.response)
+        try request.journeySocial?.validateResponseProtocol(firstResult.response)
         guard firstResult.response.statusCode == 401,
               request.isRetryEligible
         else {
@@ -136,7 +137,7 @@ struct MobileAPITransport: Sendable {
                 Response.self,
                 result: firstResult,
                 lease: lease,
-                closedEnvelope: request.conversation != nil || request.trainingExecution != nil,
+                closedEnvelope: request.conversation != nil || request.trainingExecution != nil || request.journeySocial != nil,
                 feedbackPresentation: request.feedbackPresentation,
                 intakeMediaProvenance: request.conversation?.intakeMediaProvenance
             )
@@ -156,7 +157,7 @@ struct MobileAPITransport: Sendable {
                 Response.self,
                 data: firstResult.data,
                 response: firstResult.response,
-                closedEnvelope: request.conversation != nil || request.trainingExecution != nil,
+                closedEnvelope: request.conversation != nil || request.trainingExecution != nil || request.journeySocial != nil,
                 feedbackPresentation: request.feedbackPresentation,
                 intakeMediaProvenance: request.conversation?.intakeMediaProvenance
             )
@@ -170,11 +171,12 @@ struct MobileAPITransport: Sendable {
         )
         try request.conversation?.validateResponseProtocol(secondResult.response)
         try request.trainingExecution?.validateResponseProtocol(secondResult.response)
+        try request.journeySocial?.validateResponseProtocol(secondResult.response)
         return try await validatedDecode(
             Response.self,
             result: secondResult,
             lease: refreshedLease,
-            closedEnvelope: request.conversation != nil || request.trainingExecution != nil,
+            closedEnvelope: request.conversation != nil || request.trainingExecution != nil || request.journeySocial != nil,
             feedbackPresentation: request.feedbackPresentation,
                 intakeMediaProvenance: request.conversation?.intakeMediaProvenance
         )
@@ -237,6 +239,7 @@ struct MobileAPITransport: Sendable {
             throw MobileAPITransportError.missingSession
         }
 
+        try request.journeySocial?.validate(lease: lease)
         let url = try request.url(using: configuration)
         guard configuration.approves(url) else {
             throw MobileAPIRequestError.invalidPath
@@ -262,12 +265,13 @@ struct MobileAPITransport: Sendable {
 
         request.conversation?.apply(to: &urlRequest)
         request.trainingExecution?.apply(to: &urlRequest)
+        request.journeySocial?.apply(to: &urlRequest)
         if let selection = request.feedbackPresentation {
             urlRequest.setValue(selection.rawValue, forHTTPHeaderField: ConversationFeedbackPresentationSelection.header)
         }
         if let owner = request.conversationMediaOwnerID { urlRequest.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner") }
         let preparedRequest = urlRequest
-        let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration, allowsReadRedirects: request.conversation == nil && request.conversationMediaOwnerID == nil && request.trainingExecution == nil)
+        let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration, allowsReadRedirects: request.conversation == nil && request.conversationMediaOwnerID == nil && request.trainingExecution == nil && request.journeySocial == nil)
         let cancellationRelay = NetworkTaskCancellationRelay()
         return try await withTaskCancellationHandler {
             let workID: UUID

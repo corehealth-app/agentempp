@@ -5792,3 +5792,194 @@ extension MobileAPITransportTests {
         }
     }
 }
+
+extension MobileAPITransportTests {
+  @Test("social repository uses one original session and its immutable privacy operation")
+  func journeySocialRepositoryOriginalSession() async throws {
+    let h = try await journeySocialHarness()
+    let captured = C11RequestBodyCapture()
+    let response = try journeySocialResponse([
+      "status": "applied",
+      "receipt": [
+        "operation_id": socialOperation, "revision": 2, "member_id": socialPeer, "blocked": true,
+      ], "profile": journeyProfile(revision: 2),
+    ])
+    await h.stub.respond { request, _ in
+      if request.url?.path == "/api/mobile/v1/me" { return try journeySocialMe() }
+      if request.httpMethod == "POST" {
+        try await captured.capture(request)
+        return response
+      }
+      return try journeySocialResponse(socialProfile())
+    }
+    let lease = try await h.coordinator.leaseForRequest()
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: lease)
+    #expect(try await repo.profile().nickname == "Caminhante")
+    let op = try JourneySocialOperation(
+      binding: repo.binding, id: UUID(uuidString: socialOperation)!, expectedRevision: 1,
+      action: .block(memberID: UUID(uuidString: socialPeer)!, blocked: true))
+    let saved = try await repo.submit(op)
+    #expect(saved.revision == 2 && saved.profile.revision == 2)
+    let requests = await h.stub.requests()
+    #expect(
+      requests.map { $0.url!.path } == [
+        "/api/mobile/v1/me", "/api/mobile/v1/profile/journey-social",
+        "/api/mobile/v1/profile/journey-social/blocks",
+      ])
+    #expect(requests[2].httpMethod == "POST")
+    #expect(requests[2].value(forHTTPHeaderField: "X-Journey-Owner") == socialOwner)
+    #expect(requests[2].value(forHTTPHeaderField: "X-Journey-Session") == socialLogin)
+    #expect(
+      requests[2].value(forHTTPHeaderField: "Idempotency-Key")
+        == "jsocial1:19500000-0000-4000-8000-000000000100")
+    #expect(requests[2].value(forHTTPHeaderField: "X-Training-Owner") == nil)
+    #expect(await captured.bodies() == [op.wireBody])
+    #expect(await h.remote.refreshCount == 0)
+  }
+  @Test("social responses arriving after an account transition cannot publish old patients")
+  @MainActor func journeySocialRejectsLatePatientAndPublication() async throws {
+    let h = try await journeySocialHarness()
+    await h.stub.respond { _, _ in try journeySocialMe() }
+    let lease = try await h.coordinator.leaseForRequest()
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: lease)
+    let visible = JourneySocialPublicationProbe()
+    try await repo.publish { visible.value = 1 }
+    #expect(visible.value == 1)
+    visible.value = 0
+    await h.stub.respond { _, _ in
+      try await h.replaceSession(returnToA: false)
+      return try journeySocialResponse(socialProfile(), ignoresCancellation: true)
+    }
+    await #expect(throws: (any Error).self) { try await repo.profile() }
+    await #expect(throws: (any Error).self) { try await repo.publish { visible.value = 2 } }
+    #expect(visible.value == 0)
+    let count = await h.stub.requests().count
+    await #expect(throws: (any Error).self) { try await repo.profile() }
+    #expect(await h.stub.requests().count == count)
+  }
+  @Test("social original login never refreshes, redirects or accepts an unnegotiated response")
+  func journeySocialNoFallbackRefreshOrRedirect() async throws {
+    let h = try await journeySocialHarness()
+    await h.stub.respond { _, _ in try journeySocialMe() }
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    await h.stub.respond(with: .failure(status: 401, code: "journey_social_401"))
+    await #expect(throws: (any Error).self) { try await repo.profile() }
+    #expect(await h.remote.refreshCount == 0)
+    #expect(await h.stub.requests().count == 2)
+    await h.stub.respond { request, _ in
+      .redirect(
+        from: request.url!, to: URL(string: "https://staging.example.test/api/mobile/v1/profile")!)
+    }
+    await #expect(throws: MobileAPITransportError.redirectNotAllowed) { try await repo.profile() }
+    #expect(await h.stub.requests().count == 3)
+    let missing = try journeySocialResponse(socialProfile(), negotiated: false)
+    await h.stub.respond(with: missing)
+    await #expect(throws: MobileAPITransportError.invalidResponse) { try await repo.profile() }
+    #expect(await h.stub.requests().count == 4)
+  }
+  @Test("lost social response keeps the same operation and current withdrawal on explicit replay")
+  func journeySocialLostResponseReplaysExactOperation() async throws {
+    let h = try await journeySocialHarness()
+    let captured = C11RequestBodyCapture()
+    var withdrawn = journeyProfile(revision: 2)
+    withdrawn["opted_in"] = false
+    withdrawn["nickname"] = NSNull()
+    let replay = try journeySocialResponse([
+      "status": "replayed",
+      "receipt": ["operation_id": socialOperation, "revision": 1, "opted_in": true],
+      "profile": withdrawn,
+    ])
+    await h.stub.respond { request, ordinal in
+      if request.url?.path == "/api/mobile/v1/me" { return try journeySocialMe() }
+      try await captured.capture(request)
+      if ordinal == 2 { throw URLError(.networkConnectionLost) }
+      return replay
+    }
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    let operation = try JourneySocialOperation(
+      binding: repo.binding, id: UUID(uuidString: socialOperation)!, expectedRevision: 0,
+      action: .participation(nickname: "Caminhante", consentVersion: "journey-social.v1"))
+    await #expect(throws: (any Error).self) { try await repo.submit(operation) }
+    #expect(await h.stub.requests().count == 2)
+    let observed = try await repo.submit(operation)
+    #expect(
+      observed.status == .replayed && !observed.profile.optedIn && observed.profile.revision == 2)
+    let requests = await h.stub.requests()
+    #expect(requests.count == 3)
+    #expect(
+      requests.dropFirst().allSatisfy {
+        $0.httpMethod == "PATCH"
+          && $0.value(forHTTPHeaderField: "Idempotency-Key")
+            == "jsocial1:19500000-0000-4000-8000-000000000100"
+      })
+    #expect(await captured.bodies() == [operation.wireBody, operation.wireBody])
+  }
+  @Test("social ranking and block pages send bounded cursors without another registration")
+  func journeySocialReadOnlyPages() async throws {
+    let h = try await journeySocialHarness()
+    await h.stub.respond { request, _ in
+      if request.url?.path == "/api/mobile/v1/me" { return try journeySocialMe() }
+      if request.url?.path == "/api/mobile/v1/journey/ranking" {
+        let cursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+          .contains { $0.name == "cursor" }
+        return try journeySocialResponse(socialRanking(firstPage: !cursor))
+      }
+      return try journeySocialResponse(["revision": 3, "entries": [], "next_cursor": NSNull()])
+    }
+    let repo = try await MobileJourneySocialRepository.scoped(
+      transport: h.transport, lifecycle: h.lifecycle, lease: h.coordinator.leaseForRequest())
+    let first = try await repo.ranking(cursor: nil, limit: 2)
+    let second = try await repo.ranking(cursor: first.nextCursor, limit: 2)
+    #expect(first.entries.map(\.rank) == [1, 1] && second.entries.map(\.rank) == [3])
+    #expect(try await repo.blocks(cursor: nil, limit: 10).entries.isEmpty)
+    let requests = await h.stub.requests()
+    #expect(
+      requests.count == 4
+        && requests.allSatisfy {
+          $0.httpMethod == "GET" && $0.value(forHTTPHeaderField: "Idempotency-Key") == nil
+        })
+    let secondQuery = URLComponents(url: requests[2].url!, resolvingAgainstBaseURL: false)!
+      .queryItems!
+    #expect(secondQuery.first(where: { $0.name == "limit" })?.value == "2")
+    #expect(
+      secondQuery.first(where: { $0.name == "cursor" })?.value?.contains("\"offset\":2") == true)
+  }
+}
+
+@MainActor private final class JourneySocialPublicationProbe { var value = 0 }
+private func journeySocialHarness() async throws -> C11RealLifecycleTransportHarness {
+  let h = try await C11RealLifecycleTransportHarness()
+  try await h.coordinator.switch(
+    to: AuthenticationSessionRecord(
+      userID: socialAuth, email: "social-qa@example.invalid", isEmailConfirmed: true,
+      isOnboardingCompleted: true, accessToken: socialLease().bearer,
+      refreshToken: "social-synthetic-refresh", expiresAt: Date(timeIntervalSince1970: 2000)))
+  return h
+}
+private func journeySocialMe() throws -> StubResponse {
+  .init(
+    status: 200,
+    body: try JSONSerialization.data(withJSONObject: [
+      "data": ["id": socialOwner], "meta": ["api_version": "v1", "request_id": "journey-me-unit"],
+    ]))
+}
+private func journeySocialResponse(
+  _ data: Any, negotiated: Bool = true, ignoresCancellation: Bool = false
+) throws -> StubResponse {
+  var headers = ["Content-Type": "application/json", "Cache-Control": "no-store"]
+  if negotiated { headers["X-Journey-Social"] = "1" }
+  return .init(
+    status: 200, headers: headers,
+    body: try JSONSerialization.data(withJSONObject: [
+      "data": data, "meta": ["api_version": "v1", "request_id": "journey-social-unit"],
+    ]), ignoresCancellation: ignoresCancellation)
+}
+private func journeyProfile(revision: Int) -> [String: Any] {
+  var p = socialProfile()
+  p["revision"] = revision
+  return p
+}

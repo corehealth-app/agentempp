@@ -87,6 +87,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
     let conversationMediaOwnerID: UUID?
     let feedbackPresentation: ConversationFeedbackPresentationSelection?
     let trainingExecution: MobileTrainingExecutionRequestHeaders?
+    let journeySocial: MobileJourneySocialRequestHeaders?
 
     init(
         method: HTTPMethod,
@@ -99,7 +100,8 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         unauthorizedReplay: MobileAPIUnauthorizedReplay = .standard,
         conversationMediaOwnerID: UUID? = nil,
         feedbackPresentation: ConversationFeedbackPresentationSelection? = nil,
-        trainingExecution: MobileTrainingExecutionRequestHeaders? = nil
+        trainingExecution: MobileTrainingExecutionRequestHeaders? = nil,
+        journeySocial: MobileJourneySocialRequestHeaders? = nil
     ) throws {
         guard MobileAPIRequestPath.isValid(path) else {
             throw MobileAPIRequestError.invalidPath
@@ -108,6 +110,14 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
             throw MobileAPIRequestError.invalidQuery
         }
 
+        if MobileJourneySocialRequestHeaders.required(for: path) || journeySocial != nil {
+            guard let journeySocial, conversation == nil, conversationMediaOwnerID == nil,
+                  feedbackPresentation == nil, trainingExecution == nil
+            else { throw MobileAPIRequestError.invalidJourneySocialHeaders }
+            try journeySocial.validate(
+                method: method, path: path, query: queryItems, body: body,
+                key: idempotencyKey, replay: unauthorizedReplay)
+        }
         if let trainingExecution {
             guard conversation == nil, conversationMediaOwnerID == nil, feedbackPresentation == nil else {
                 throw MobileAPIRequestError.invalidTrainingExecutionHeaders
@@ -136,6 +146,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         self.conversationMediaOwnerID = conversationMediaOwnerID
         self.feedbackPresentation = feedbackPresentation
         self.trainingExecution = trainingExecution
+        self.journeySocial = journeySocial
         if isMutation {
             self.idempotency = .required(
                 idempotencyKey ?? Self.makeIdempotencyKey()

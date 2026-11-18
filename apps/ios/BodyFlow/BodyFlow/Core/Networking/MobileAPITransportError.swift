@@ -10,6 +10,7 @@ enum MobileAPIRequestError: Error, Equatable, Sendable {
     case invalidQuery
     case unexpectedIdempotencyKey
     case invalidConversationHeaders
+    case invalidJourneySocialHeaders
     case invalidTrainingExecutionHeaders
 }
 

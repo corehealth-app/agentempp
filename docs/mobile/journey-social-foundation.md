@@ -1,6 +1,6 @@
 # Jornada social — fundação privada do ranking
 
-Estado: dependência de T6 implementada e qualificada localmente; **não ativada no app nem aplicada no staging**. O plano aprovado de 03/11/2026 continua integralmente aberto. Os controles SQL de bloqueio, denúncia, moderação e paginação foram acrescentados em `20261118152959_journey_social_controls.sql` e qualificados localmente. Os contratos HTTP, a sessão viva, as interfaces e o QA conectado continuam obrigatórios antes da exposição.
+Estado: dependência de T6 implementada e qualificada localmente; **não ativada no app nem aplicada no staging**. O plano aprovado de 03/11/2026 continua integralmente aberto. Os controles SQL de bloqueio, denúncia, moderação e paginação foram acrescentados em `20261118152959_journey_social_controls.sql` e qualificados localmente. Os contratos HTTP e o gateway de sessão viva foram acrescentados no servidor; os contratos nativos estão descritos em [Jornada social no iOS](journey-social-ios-contracts.md). Interfaces, reconciliação persistente e QA conectado continuam obrigatórios antes da exposição.
 
 ## Dados e autoridade
 

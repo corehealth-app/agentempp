@@ -20,12 +20,17 @@ const pageSchema = z
  * environment lookup, legacy fallback, provider retry or global activation.
  * SQL commits closure/lease before external IO and verifies emptiness on ack.
  * Empty barriers are retained; unresolved issuance is never marked reconciled. */
-export function createPrivateMediaDisposalV2(client: ServiceClient) {
+export function createPrivateMediaDisposalV2(
+  client: ServiceClient,
+  assertActive: () => void = () => {},
+) {
   const api = client as unknown as {
     rpc(name: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }>
   }
   async function invoke(name: string, args: Record<string, unknown>) {
+    assertActive()
     const result = await api.rpc(name, args)
+    assertActive()
     if (!result || result.error !== null) throw Error('Private media disposal unavailable')
     return result.data
   }
@@ -46,13 +51,16 @@ export function createPrivateMediaDisposalV2(client: ServiceClient) {
       inspect: () => invoke('inspect_conversation_media_disposal_v2', args),
       acknowledge: () => invoke('acknowledge_conversation_media_disposal_v2', args),
       async removeVersion(version) {
+        assertActive()
         const storage = client.storage.from(claim.bucket_id) as unknown as {
           remove(paths: Array<{ path: string; versionId: string }>): PromiseLike<{ error: unknown }>
         }
         const result = await storage.remove([{ path: claim.object_path, versionId: version }])
+        assertActive()
         if (result.error) throw Error('Private media disposal unavailable')
       },
       async installEmpty(mimeType) {
+        assertActive()
         const result = await client.storage
           .from(claim.bucket_id)
           .upload(claim.object_path, new Uint8Array(0), {
@@ -60,6 +68,7 @@ export function createPrivateMediaDisposalV2(client: ServiceClient) {
             contentType: mimeType,
             cacheControl: '0',
           })
+        assertActive()
         if (result.error) throw Error('Private media disposal unavailable')
       },
     })

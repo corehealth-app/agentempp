@@ -18,6 +18,10 @@ import { openrouterBalanceCheckFn } from './functions/openrouter-balance-check.j
 import { pendingCleanupFn } from './functions/pending-cleanup.js'
 import { pipelineHealthFn } from './functions/pipeline-health.js'
 import {
+  privateConversationMediaRetentionCleanupFn,
+  privateConversationUserDeletionPurgerFn,
+} from './functions/private-conversation-media-cleanup.js'
+import {
   privateConversationMediaProcessingFn,
   privateConversationMediaWorkerEnabled,
 } from './functions/private-conversation-media-worker.js'
@@ -34,6 +38,7 @@ import { trainingDailyDeliveryFn } from './functions/training-daily-delivery.js'
 import { userDeletionPurgerFn } from './functions/user-deletion-purger.js'
 import { waQualityCheckFn } from './functions/wa-quality-check.js'
 import { assertClinicalStagingWorkerTarget } from './lib/clinical-staging-worker-target.js'
+import { privateConversationMediaCleanupEnabled } from './lib/private-conversation-media-cleanup-policy.js'
 
 export const allFunctions = [
   processMessageFn,
@@ -89,15 +94,27 @@ type ServedFunction =
   | typeof conversationMediaRetentionCleanupFn
   | typeof conversationUserDeletionPurgerFn
   | typeof privateConversationMediaProcessingFn
+  | typeof privateConversationMediaRetentionCleanupFn
+  | typeof privateConversationUserDeletionPurgerFn
 export function functionsForSet(name: string | undefined): readonly ServedFunction[] {
   if (name === undefined || name === '') return allFunctions
   const selected = (FUNCTION_SETS as Record<string, readonly ServedFunction[]>)[name]
   if (!selected) throw new Error(`unknown Inngest function set: ${name}`)
   if (name === 'media-clinical-staging' || name === 'media-conversation-staging')
     assertClinicalStagingWorkerTarget(process.env, name)
-  if (name === 'media-conversation-staging' && privateConversationMediaWorkerEnabled())
-    return [...selected, privateConversationMediaProcessingFn]
-  return selected
+  if (name !== 'media-conversation-staging') return selected
+  const cleanup = privateConversationMediaCleanupEnabled()
+  const processing = privateConversationMediaWorkerEnabled()
+  if (!cleanup && !processing) return selected
+  return [
+    ...selected.map((fn) =>
+      cleanup && fn === conversationUserDeletionPurgerFn
+        ? privateConversationUserDeletionPurgerFn
+        : fn,
+    ),
+    ...(cleanup ? [privateConversationMediaRetentionCleanupFn] : []),
+    ...(processing ? [privateConversationMediaProcessingFn] : []),
+  ]
 }
 
 export {
@@ -118,6 +135,8 @@ export {
   pendingCleanupFn,
   pipelineHealthFn,
   privateConversationMediaProcessingFn,
+  privateConversationMediaRetentionCleanupFn,
+  privateConversationUserDeletionPurgerFn,
   processMessageFn,
   reevaluationPhotoDispositionCleanupFn,
   reminderClaimFn,

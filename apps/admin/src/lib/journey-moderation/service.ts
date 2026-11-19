@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { socialUUID } from '../mobile-api/journey-social-contracts'
+import { socialProfileSchema, socialUUID } from '../mobile-api/journey-social-contracts'
 import {
   type ModerateProfileCommand,
   moderatedProfile,
@@ -17,7 +17,7 @@ import {
 
 export interface JourneyModerationRPCPort {
   rpc(
-    name: 'journey_social_operator_authenticated',
+    name: 'journey_social_operator_authenticated' | 'journey_social_operator_profile_authenticated',
     args: Record<string, unknown>,
   ): PromiseLike<{ data: unknown; error: unknown }>
 }
@@ -75,16 +75,22 @@ export function createJourneyModerationService(
     if (id === fixed.actor || id === fixed.login) return unavailable()
   }
   async function call(action: string, input: unknown) {
+    const target =
+      action === 'profile.read' ? z.object({ member_id: socialUUID }).strict().parse(input) : null
     const args = freeze({
       p_actor_id: fixed.actor,
       p_auth_session_id: fixed.login,
-      p_action: action,
-      p_input: input,
+      ...(target ? { p_member_id: target.member_id } : { p_action: action, p_input: input }),
     })
     await authorize()
     let result: Awaited<ReturnType<JourneyModerationRPCPort['rpc']>>
     try {
-      result = await rpc('journey_social_operator_authenticated', args)
+      result = await rpc(
+        target
+          ? 'journey_social_operator_profile_authenticated'
+          : 'journey_social_operator_authenticated',
+        args,
+      )
     } catch {
       return unavailable()
     }
@@ -129,6 +135,13 @@ export function createJourneyModerationService(
     return receipt
   }
   return Object.freeze({
+    async profile(raw: unknown) {
+      const command = freeze(z.object({ member_id: socialUUID }).strict().parse(raw))
+      publicID(command.member_id)
+      const profile = output(socialProfileSchema, await call('profile.read', command))
+      if (profile.member_id !== command.member_id || profile.revision < 1) return unavailable()
+      return profile
+    },
     async queue(raw: unknown) {
       const command = freeze(moderationQueueCommand.parse(raw))
       const result = output(moderationQueue, await call('queue.read', command))

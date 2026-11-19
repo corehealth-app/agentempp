@@ -134,10 +134,13 @@ COMMIT;""")
 DELETE FROM public.users WHERE id IN('{user_a}','{user_b}') AND auth_user_id IN('{auth_a}','{auth_b}');
 DELETE FROM public.admin_users WHERE id='{actor}' AND email='{actor}@example.invalid';
 DELETE FROM auth.users WHERE id IN('{auth_a}','{auth_b}','{actor}') AND email=id::text||'@example.invalid';
+DELETE FROM public.audit_log WHERE entity='admin_users' AND entity_id::text='{actor}'
+ AND (before->>'email'='{actor}@example.invalid' OR after->>'email'='{actor}@example.invalid');
 COMMIT;""")
         assert checked(f"SELECT (SELECT count(*) FROM auth.users WHERE id IN('{auth_a}','{auth_b}','{actor}'))"
                        f"+(SELECT count(*) FROM public.users WHERE id IN('{user_a}','{user_b}'))"
-                       f"+(SELECT count(*) FROM private.journey_social_moderation_operations WHERE actor_id='{actor}');") == '0'
+                       f"+(SELECT count(*) FROM private.journey_social_moderation_operations WHERE actor_id='{actor}')"
+                       f"+(SELECT count(*) FROM public.audit_log WHERE entity='admin_users' AND entity_id::text='{actor}');") == '0'
         print('CLOSED exact owned synthetic fixtures; no service or database removed')
 
 

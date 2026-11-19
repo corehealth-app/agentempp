@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { canOpenAdminPath, canSeeAdminNavItem } from '@/lib/admin-access'
-import { type AdminRole, CONTENT_MODULE_ROLES } from '@/lib/admin-rbac'
+import { type AdminRole, CONTENT_MODULE_ROLES, OPERATIONS_ADMIN_ROLES } from '@/lib/admin-rbac'
 import { attemptContentSignOut } from '@/lib/content/navigation-guard'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -64,6 +64,12 @@ const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Hoje', href: '/dashboard', icon: LayoutDashboard },
       { label: 'Conversas', href: '/messages', icon: MessageSquare },
       { label: 'Usuários', href: '/users', icon: Users },
+      {
+        label: 'Moderação da Jornada',
+        href: '/journey-moderation',
+        icon: UserCog,
+        roles: OPERATIONS_ADMIN_ROLES,
+      },
       { label: 'Publicações', href: '/content', icon: Newspaper, roles: CONTENT_MODULE_ROLES },
       { label: 'Crescimento', href: '/crescimento', icon: TrendingUp },
     ],

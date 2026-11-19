@@ -68,6 +68,22 @@ function fixture(data: unknown, error: unknown = null) {
 }
 
 describe('operational moderation gateway service', () => {
+  it('consults a current public profile for restoration after the report left the queue', async () => {
+    const f = fixture(profile)
+    await expect(f.service.profile({ member_id: member })).resolves.toEqual(profile)
+    expect(f.calls).toEqual([
+      {
+        name: 'journey_social_operator_profile_authenticated',
+        args: { p_actor_id: actor, p_auth_session_id: login, p_member_id: member },
+      },
+    ])
+  })
+  it('refuses a profile projection for another participant', async () => {
+    const f = fixture({ ...profile, member_id: operation })
+    await expect(f.service.profile({ member_id: member })).rejects.toMatchObject({
+      code: 'unavailable',
+    })
+  })
   it('binds operator/session outside the command and uses only the authenticated gateway', async () => {
     const f = fixture({ status: 'applied', receipt, profile })
     await expect(f.service.moderate(command)).resolves.toEqual({

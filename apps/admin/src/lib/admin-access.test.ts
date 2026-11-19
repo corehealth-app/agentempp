@@ -207,18 +207,23 @@ describe('menu lateral, busca rápida e atalhos seguem a mesma matriz', () => {
     expect(visible('content_editor', entries(shortcuts, 'path'))).toEqual(['/prompts'])
   })
 
-  it('os outros papéis continuam com a lista inteira (menos Publicações, para quem já não a via)', () => {
+  it('preserva as listas existentes e reserva somente a nova moderação aos operadores', () => {
     for (const role of ['support', 'operations_admin'] as const) {
       const all = entries(sidebar, 'href').map((item) => item.href)
       expect(all.length).toBeGreaterThanOrEqual(19)
       expect(visible(role, entries(sidebar, 'href'))).toEqual(
-        all.filter((href) => href !== '/content'),
+        all.filter(
+          (href) =>
+            href !== '/content' && (href !== '/journey-moderation' || role === 'operations_admin'),
+        ),
       )
       expect(visible(role, entries(shortcuts, 'path'))).toHaveLength(9)
     }
     for (const role of ['nutrition_admin', 'master_admin'] as const) {
       expect(visible(role, entries(sidebar, 'href'))).toEqual(
-        entries(sidebar, 'href').map((item) => item.href),
+        entries(sidebar, 'href')
+          .map((item) => item.href)
+          .filter((href) => href !== '/journey-moderation' || role === 'master_admin'),
       )
       expect(visible(role, entries(palette, 'href'))).toEqual(
         entries(palette, 'href').map((item) => item.href),

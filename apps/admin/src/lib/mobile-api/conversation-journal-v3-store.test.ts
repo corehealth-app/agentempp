@@ -52,7 +52,7 @@ describe('private journal v3 physical read adapter', () => {
     expect(result.action).toBe('available')
     expect(h.rpc.mock.calls).toEqual([
       [
-        'read_conversation_journal_page_v3',
+        'read_conversation_journal_page_v4',
         {
           p_user_id: ownerId,
           p_expected_epoch: epoch,

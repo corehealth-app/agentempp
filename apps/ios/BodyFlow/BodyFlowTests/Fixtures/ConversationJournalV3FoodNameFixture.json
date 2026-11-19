@@ -1,0 +1,93 @@
+{
+  "schema": "conversation.journal-page.v3",
+  "mode": "historical",
+  "auth_user_id": "a0032a3d-f0c0-514d-bf5f-097583f310d3",
+  "owner_id": "7f4b54d5-67de-50c9-bbe9-f657e8027cdd",
+  "epoch": "73218c3c-f374-5be1-9114-f7da07ad1d47",
+  "observed_at": "2026-11-19T15:34:42.927040Z",
+  "items": [
+    {
+      "event_id": "reply-result/c1302f41-215c-5fa1-a345-ba6cd3a48acb/d84010dd-94c6-599c-a503-9cc9414609e4",
+      "at": "2026-11-19T15:34:17.109725Z",
+      "thread_id": "50a62471-dccb-5ad9-9ef2-085f67e19696",
+      "kind": "reply_result",
+      "lineage": {
+        "kind": "meal.clarify",
+        "intake_id": "50a62471-dccb-5ad9-9ef2-085f67e19696",
+        "command_id": "d84010dd-94c6-599c-a503-9cc9414609e4",
+        "parent_command_id": "c1302f41-215c-5fa1-a345-ba6cd3a48acb",
+        "origin_epoch": "73218c3c-f374-5be1-9114-f7da07ad1d47"
+      },
+      "input": null,
+      "outcome": {
+        "status": "needs_reply",
+        "reason": "reply_required",
+        "observed_question": {
+          "kind": "meal_type",
+          "food_index": null,
+          "food_name": null,
+          "allowed_units": [],
+          "quantity_reference": null
+        },
+        "feedback": null
+      }
+    },
+    {
+      "event_id": "reply/c1302f41-215c-5fa1-a345-ba6cd3a48acb/d84010dd-94c6-599c-a503-9cc9414609e4",
+      "at": "2026-11-19T15:34:12.228172Z",
+      "thread_id": "50a62471-dccb-5ad9-9ef2-085f67e19696",
+      "kind": "reply",
+      "lineage": {
+        "kind": "meal.clarify",
+        "intake_id": "50a62471-dccb-5ad9-9ef2-085f67e19696",
+        "command_id": "d84010dd-94c6-599c-a503-9cc9414609e4",
+        "parent_command_id": "c1302f41-215c-5fa1-a345-ba6cd3a48acb",
+        "origin_epoch": "73218c3c-f374-5be1-9114-f7da07ad1d47"
+      },
+      "input": {
+        "channel": "text",
+        "text": "Correção do alimento: água"
+      },
+      "outcome": {
+        "status": "pending",
+        "reason": "reply_observed",
+        "observed_question": {
+          "field": "description",
+          "text": "Qual é o nome correto de “água”? Os outros alimentos e quantidades serão mantidos."
+        },
+        "feedback": null
+      }
+    },
+    {
+      "event_id": "intake/50a62471-dccb-5ad9-9ef2-085f67e19696",
+      "at": "2026-11-19T15:27:39.100191Z",
+      "thread_id": "50a62471-dccb-5ad9-9ef2-085f67e19696",
+      "kind": "intake",
+      "lineage": {
+        "kind": "intake",
+        "intake_id": "50a62471-dccb-5ad9-9ef2-085f67e19696",
+        "command_id": "c1302f41-215c-5fa1-a345-ba6cd3a48acb",
+        "parent_command_id": null,
+        "origin_epoch": "73218c3c-f374-5be1-9114-f7da07ad1d47"
+      },
+      "input": {
+        "channel": "media",
+        "caption": null
+      },
+      "outcome": {
+        "status": "not_recorded",
+        "reason": "unqualified_whole_name",
+        "observed_question": {
+          "kind": "meal_type",
+          "food_index": null,
+          "food_name": null,
+          "allowed_units": [],
+          "quantity_reference": null
+        },
+        "feedback": null
+      }
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}

@@ -11,7 +11,7 @@ import { workoutSnapshot } from './conversation-workout-contracts'
 import { MobileApiError } from './http'
 export interface ConversationJournalV3RPCPort {
   rpc(
-    name: 'read_conversation_journal_page_v3',
+    name: 'read_conversation_journal_page_v4',
     args: Readonly<Record<string, unknown>>,
   ): PromiseLike<unknown>
 }
@@ -74,7 +74,7 @@ export function createConversationJournalV3Store(
       let snapshot: unknown
       try {
         // The post-observer must never see mutable SDK aliases before detaching.
-        snapshot = workoutSnapshot(await rpc('read_conversation_journal_page_v3', args))
+        snapshot = workoutSnapshot(await rpc('read_conversation_journal_page_v4', args))
       } catch {
         await current()
         return unavailable()

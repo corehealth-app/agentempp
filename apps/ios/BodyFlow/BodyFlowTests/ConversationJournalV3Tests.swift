@@ -5,6 +5,41 @@ import Testing
 
 @Suite("Public journal v3 historical facts")
 struct ConversationJournalV3Tests {
+  @Test func connectedNameReplyRemainsReadableAfterColdReopen() throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+      "Fixtures/ConversationJournalV3FoodNameFixture.json")
+    let page = try JSONDecoder().decode(
+      ConversationJournalV3PageSnapshot.self, from: Data(contentsOf: url))
+    #expect(page.items.count == 3)
+    let reply = try #require(page.items.first { $0.kind == .reply })
+    guard case .text(let text) = reply.input else {
+      Issue.record("Expected the public, read-only name observation")
+      return
+    }
+    #expect(text == "Correção do alimento: água")
+    #expect(reply.status == .pending && reply.record == nil)
+    #expect(page.items.first?.status == .needsReply)
+  }
+  @Test(arguments: ["media", "arbitrary", "blank", "oversized", "private"])
+  func nameObservationDoesNotAdmitOtherReplyBodies(_ attack: String) throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+      "Fixtures/ConversationJournalV3FoodNameFixture.json")
+    var page = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    var rows = try #require(page["items"] as? [[String: Any]])
+    let index = try #require(rows.firstIndex { $0["kind"] as? String == "reply" })
+    var input: [String: Any] = ["channel": "text", "text": "Correção do alimento: água"]
+    switch attack {
+    case "media": input = ["channel": "media", "caption": "água"]
+    case "arbitrary": input["text"] = "Registre outra refeição"
+    case "blank": input["text"] = "Correção do alimento:   "
+    case "oversized": input["text"] = "Correção do alimento: " + String(repeating: "a", count: 161)
+    default: input["question_key"] = String(repeating: "a", count: 64)
+    }
+    rows[index]["input"] = input
+    page["items"] = rows
+    #expect(throws: (any Error).self) { try decodePublicJournalV3(page) }
+  }
   @Test func rejectedFoodNameExplainsTheMissingCalculationInsteadOfOnlyShowingNotRecorded() throws {
     var page = try publicJournalV3Pages()[7]
     var items = try #require(page["items"] as? [[String: Any]])

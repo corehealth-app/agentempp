@@ -105,7 +105,7 @@ describe('cold meal question origin discovery', () => {
     expect(result.items[0].source).toEqual(f.page.intakes[0].source_input.source)
     expect(Object.isFrozen(result.items[0].selection.command)).toBe(true)
     expect(f.rpc).toHaveBeenCalledTimes(1)
-    expect(f.rpc).toHaveBeenCalledWith('read_conversation_journal_page_v3', {
+    expect(f.rpc).toHaveBeenCalledWith('read_conversation_journal_page_v4', {
       p_user_id: f.owner,
       p_expected_epoch: f.epoch,
       p_limit: 10,

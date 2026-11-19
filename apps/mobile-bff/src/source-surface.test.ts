@@ -901,7 +901,7 @@ function certifyIntakeMediaBridgeR102(body: string): void {
  * Certify complete current bodies and their unchanged authoritative sources;
  * keep every physical consumer and global forbidden scan independently checked. */
 function certifyT48OriginPageChunk(chunk: string): void {
-  // R204 changes only the sealed reader's RPC from v2 to v3. The two other
+  // R204 selects the versioned meal and unified readers. The other
   // complete modules and all read-only graph/consumer limits remain unchanged.
   for (const [name, hash] of [
     [
@@ -910,7 +910,7 @@ function certifyT48OriginPageChunk(chunk: string): void {
     ],
     [
       'conversation-journal-v3-store.ts',
-      '0d8d4c37089a2294c4ce8a5897a47ace7d492c6e5e2bb9b4451b060c29765d42',
+      '05818afa3732878413c4b9c0c24b9679e3a4745bae71e5599593029444551d33',
     ],
     [
       'conversation-meal-thread-page-store.ts',
@@ -924,7 +924,7 @@ function certifyT48OriginPageChunk(chunk: string): void {
     ).toBe(hash)
   certifyExactSharedTable(chunk, [
     ['11127', 'af1048cd20f83493747e07f281dda8c9d5adebf9888864a6460321ab95afc9bf'],
-    ['46469', 'de989ba8a001d564412cfc74ea06cb434909299a19c1dd6cd6af7416e68c1d11'],
+    ['46469', '57ef8adb59a381861c2ddcee2dcb6000c88fd2b78fd7824aebfe1f43f0beceab'],
     ['58670', '368c287618c1e8165a1ada7f2673722bf196773c3a9499c8d9052add60ac13dc'],
   ])
 }
@@ -2162,7 +2162,7 @@ describe('authoritative Mobile API source surface', () => {
   })
   test('rejects changed or additional modules in the T48 shared read-page extraction', () => {
     const chunks = semanticChunks([
-      'read_conversation_journal_page_v3',
+      'read_conversation_journal_page_v4',
       'read_conversation_meal_journal_page_v3',
     ])
     expect(chunks).toHaveLength(1)
@@ -2173,7 +2173,7 @@ describe('authoritative Mobile API source surface', () => {
     try {
       expect(() => certifyT48OriginPageChunk(chunk)).not.toThrow()
       for (const mutation of [
-        text.replace('read_conversation_journal_page_v3', 'unapproved_rpc'),
+        text.replace('read_conversation_journal_page_v4', 'unapproved_rpc'),
         text.replace('11127:', '999998:'),
         text.replace('exports.modules={', 'exports.modules={999999:(a,b,c)=>{},'),
       ]) {
@@ -4081,12 +4081,12 @@ describe('authoritative Mobile API source surface', () => {
     // child intake/session and every unrelated route still lack this RPC.
     const originsRoute = '/api/mobile/v1/conversation/intakes/route'
     const originsPageChunk = uniqueChunk([
-      'read_conversation_journal_page_v3',
+      'read_conversation_journal_page_v4',
       'read_conversation_meal_journal_page_v3',
     ])
     certifyT48OriginPageChunk(originsPageChunk)
     expect(chunkConsumers(originsPageChunk)).toEqual([originsRoute, journalRoute])
-    expect(runtimeExactStringRoutes('read_conversation_journal_page_v3')).toEqual([
+    expect(runtimeExactStringRoutes('read_conversation_journal_page_v4')).toEqual([
       originsRoute,
       journalRoute,
     ])

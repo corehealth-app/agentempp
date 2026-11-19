@@ -57,7 +57,7 @@ function setup() {
       },
     },
     rpc = vi.fn(async (name: string, _args: unknown): Promise<unknown> => {
-      if (name !== 'read_conversation_journal_page_v3')
+      if (name !== 'read_conversation_journal_page_v4')
         throw new Error('No other domain or provider call for empty history')
       readCompleted = true
       return { data: raw, error: null }
@@ -95,7 +95,7 @@ describe('actual persisted SQL page through the default historical domain servic
       state.user_id = state.health_state.user_id = who.userId
       state.epoch = row.page.epoch
       const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
-          if (name === 'read_conversation_journal_page_v3') return { data: row.page, error: null }
+          if (name === 'read_conversation_journal_page_v4') return { data: row.page, error: null }
           if (name === 'reconcile_conversation_workout') {
             const actual = row.reconciles.find((r) => r.binding.command_id === args.p_command_id)
             if (!actual) throw new Error('No fabricated workout reconcile')
@@ -127,7 +127,7 @@ describe('actual persisted SQL page through the default historical domain servic
       expect(value.items).toHaveLength(row.page.items.length)
       expect(value.mode).toBe('historical')
       expect(
-        rpc.mock.calls.filter(([name]) => name === 'read_conversation_journal_page_v3'),
+        rpc.mock.calls.filter(([name]) => name === 'read_conversation_journal_page_v4'),
       ).toHaveLength(1)
       for (const key of [
         'source_input',
@@ -242,7 +242,7 @@ describe('real readonly journal v3 composition', () => {
       active = 0,
       maximum = 0
     h.rpc.mockImplementation(async (name, rawArgs) => {
-      if (name === 'read_conversation_journal_page_v3') return { data: h.raw, error: null }
+      if (name === 'read_conversation_journal_page_v4') return { data: h.raw, error: null }
       if (name !== 'reconcile_conversation_workout')
         throw new Error('Read-only history cannot invoke another domain or provider')
       const id = (rawArgs as Record<string, unknown>).p_command_id
@@ -409,7 +409,7 @@ describe('real readonly journal v3 composition', () => {
     let pageRead = false,
       revoked = false
     const rpc = vi.fn(async (name: string) => {
-        if (name === 'read_conversation_journal_page_v3') {
+        if (name === 'read_conversation_journal_page_v4') {
           pageRead = true
           return { data: page, error: null }
         }
@@ -482,7 +482,7 @@ describe('real readonly journal v3 composition', () => {
       expect(feedback.sections).toHaveLength(6)
     } else expect(value.items[0]?.outcome.feedback).toBeNull()
     expect(
-      rpc.mock.calls.filter(([name]) => name === 'read_conversation_journal_page_v3'),
+      rpc.mock.calls.filter(([name]) => name === 'read_conversation_journal_page_v4'),
     ).toHaveLength(1)
     expect(
       rpc.mock.calls.filter(([name]) => name === 'reconcile_conversation_workout'),
@@ -510,7 +510,7 @@ describe('real readonly journal v3 composition', () => {
     })
     // Optional historical enrichment is unavailable; saved facts still remain.
     h.rpc.mockImplementation(async (name) => {
-      if (name === 'read_conversation_journal_page_v3') return { data: h.raw, error: null }
+      if (name === 'read_conversation_journal_page_v4') return { data: h.raw, error: null }
       return { data: null, error: { code: 'SYNTHETIC_OPTIONAL_FEEDBACK_UNAVAILABLE' } }
     })
     h.capture.mockImplementation(async () => journalClinical('2026-11-04T12:03:00.000001Z'))
@@ -716,7 +716,7 @@ describe('real readonly journal v3 composition', () => {
       has_more: false,
       next_cursor: null,
     })
-    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual(['read_conversation_journal_page_v3'])
+    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual(['read_conversation_journal_page_v4'])
     expect(h.currentAuth.verifyAccessToken).toHaveBeenCalled()
     expect(h.currentAuth.loadPatient).toHaveBeenCalled()
     expect(h.currentAuth.isAdmin).toHaveBeenCalled()

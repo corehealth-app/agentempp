@@ -233,6 +233,18 @@ struct ConversationJournalV3PageSnapshot: Decodable, Sendable {
       guard let input else { throw ConversationMealEditInvalid.value }
       switch input {
       case .quantity, .mealType: break
+      case .text(let text):
+        // The public journal projects a name correction as read-only text,
+        // without exposing its private answer body or an actionable lease.
+        let prefix = "Correção do alimento: "
+        try editCheck(text.hasPrefix(prefix))
+        let name = String(text.dropFirst(prefix.count))
+        try editCheck(
+          !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && name.count <= 160
+            && !name.unicodeScalars.contains {
+              ($0.value < 32 && ![9, 10, 13].contains($0.value)) || $0.value == 127
+            })
       default: throw ConversationMealEditInvalid.value
       }
     } else {

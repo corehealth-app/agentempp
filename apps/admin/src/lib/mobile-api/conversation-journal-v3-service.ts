@@ -132,7 +132,7 @@ const requestSchema = z
   })
   .strict()
 const readonlyRPCs = new Set([
-  'read_conversation_journal_page_v3',
+  'read_conversation_journal_page_v4',
   'reconcile_conversation_workout',
   'capture_mobile_registration_feedback_v3',
   'read_mobile_registration_feedback_v3',

@@ -72,3 +72,26 @@ transaction. The migration refuses conflicting aliases or altered upstream facts
 No application code or provider configuration changes in this follow-up.
 Existing photo interpretation and original refusal remain immutable; continue
 through the linked reply rather than resubmitting the photo.
+
+## Connected historical compatibility
+
+The connected name reply exposed two additional read boundaries: the native v3
+journal had accepted only quantity/meal-type replies, and the old server's unified
+page could enumerate name threads unsupported by its meal reader. A captured
+synthetic public page now reproduces the native failure. The decoder accepts only
+the bounded, read-only name-observation text; arbitrary/media/private reply bodies
+remain rejected. Fifty-four focused native tests pass, including cold-history
+composition and negative packets.
+
+The additive `read_conversation_journal_page_v4` RPC preserves the closed public
+v3 page schema and qualified media validators. New servers select v4. The old
+v3 RPC filters unsupported name threads before pagination, including their intake
+root, while retaining supported old history. The migration fingerprints its exact
+predecessor and preserves immutable observations and effects. An actual staging
+dry run verifies both reader generations against the same synthetic QA photo;
+the full synthetic SQL regression also passes and rolls back.
+
+Connected QA has observed one saved breakfast from the gallery photo, all six
+feedback sections, matching nutrition values after cold reopen, and an exact
+technical replay returning the same receipt. Distribution and final runtime
+closeout remain separate release gates.

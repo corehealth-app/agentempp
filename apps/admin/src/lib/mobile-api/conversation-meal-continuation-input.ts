@@ -22,6 +22,18 @@ const revision = z.number().finite().int().min(0).max(2147483647)
 const foodIndex = z.number().finite().int().min(0).max(29)
 const unit = z.enum(['g', 'kg', 'mL', 'L', 'unit', 'scoop', 'caneca'])
 const mealType = z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro'])
+const foodName = z
+  .string()
+  .min(1)
+  .max(160)
+  .refine(
+    (s) =>
+      s.trim().length > 0 &&
+      !Array.from(s).some((character) => {
+        const code = character.charCodeAt(0)
+        return (code < 32 && ![9, 10, 13].includes(code)) || code === 127
+      }),
+  )
 const answer = z.discriminatedUnion('kind', [
   z
     .object({
@@ -32,6 +44,7 @@ const answer = z.discriminatedUnion('kind', [
     })
     .strict(),
   z.object({ kind: z.literal('meal_type'), meal_type: mealType }).strict(),
+  z.object({ kind: z.literal('food_name'), food_index: foodIndex, name: foodName }).strict(),
 ])
 const bodySchema = z
   .object({
@@ -67,24 +80,22 @@ const referenceSchema = z
     estimated: z.literal(true),
   })
   .strict()
-const foodName = z
-  .string()
-  .min(1)
-  .max(160)
-  .refine(
-    (s) =>
-      s.trim().length > 0 &&
-      !Array.from(s).some((character) => {
-        const code = character.charCodeAt(0)
-        return (code < 32 && ![9, 10, 13].includes(code)) || code === 127
-      }),
-  )
 const questionBase = {
   schema: z.literal('conversation.meal-question.v1'),
   question_key: hash,
   revision,
 }
 const questionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...questionBase,
+      kind: z.literal('food_name'),
+      food_index: foodIndex,
+      food_name: foodName,
+      allowed_units: z.array(unit).length(0),
+      quantity_reference: z.null(),
+    })
+    .strict(),
   z
     .object({
       ...questionBase,
@@ -176,7 +187,7 @@ export function bindConversationMealReply(raw: {
 }
 export function parseConversationMealQuestion(raw: unknown): ConversationMealQuestion {
   const question = closed(questionSchema, raw, 'invalid_question')
-  if (question.kind === 'meal_type') return question
+  if (question.kind !== 'quantity') return question
   const reference = mobileQuantityDisplay(question.food_name)
   const allowed: z.infer<typeof unit>[] = ['g', 'kg']
   if (reference?.unit === 'mL') {
@@ -202,6 +213,12 @@ export function validateConversationMealReplyQuestion(
     input.expected_revision !== question.revision ||
     input.question_key !== question.question_key ||
     input.answer.kind !== question.kind
+  )
+    fail('question_conflict')
+  if (
+    input.answer.kind === 'food_name' &&
+    question.kind === 'food_name' &&
+    input.answer.food_index !== question.food_index
   )
     fail('question_conflict')
   if (

@@ -426,6 +426,13 @@ export function createConversationJournalV3Service(
           mealThreads = new Map(mealView.threads.map((t) => [t.thread_id, t]))
         function question(q: MealQuestion): ObservedQuestion | null {
           if (!q) return null
+          // Keep v3 historical readers compatible: the new interactive name
+          // question is represented by the existing observational text shape.
+          if (q.kind === 'food_name')
+            return {
+              field: 'description',
+              text: `Qual é o nome correto de “${q.food_name}”? Os outros alimentos e quantidades serão mantidos.`,
+            }
           const { schema: _schema, question_key: _key, revision: _revision, ...observed } = q
           return observed
         }
@@ -604,7 +611,9 @@ export function createConversationJournalV3Service(
                 e.kind === 'report'
                   ? observedInput(t.original_command.source)
                   : e.kind === 'reply'
-                    ? { channel: 'structured', answer: e.body.answer }
+                    ? e.body.answer.kind === 'food_name'
+                      ? { channel: 'text', text: `Correção do alimento: ${e.body.answer.name}` }
+                      : { channel: 'structured', answer: e.body.answer }
                     : null,
               outcome: mealOutcome(e, t),
             }

@@ -2,6 +2,7 @@ import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import { anotherJournalCommand, journalCommand } from './__fixtures__/conversation-journal'
 import { editReceipt } from './__fixtures__/conversation-meal-edit'
+import nameSQL from './__fixtures__/conversation-meal-name-read-sql.json'
 import {
   type threadFulfillment,
   threadPage,
@@ -36,13 +37,34 @@ function admittedPage() {
   }
 }
 describe('closed compact actual thread transport', () => {
+  it('reads both compatibility views and current name questions from actual transactional SQL output', () => {
+    for (const [name, page] of Object.entries(nameSQL.samples)) {
+      const decoded = parseConversationMealThreadPage(page, {
+        ownerId: page.owner_id,
+        epoch: page.epoch,
+        limit: 25,
+        cursor: null,
+      })
+      expect(decoded.action, name).toBe('available')
+      if (decoded.action !== 'available') throw new Error('actual SQL page unavailable')
+      expect(decoded.items).toHaveLength(page.items.length)
+      if (name.startsWith('legacy'))
+        expect(decoded.threads.every((t) => t.continuation?.question?.kind !== 'food_name')).toBe(
+          true,
+        )
+      else
+        expect(decoded.threads.some((t) => t.continuation?.question?.kind === 'food_name')).toBe(
+          true,
+        )
+    }
+  })
   it('constructs inertly, calls only the real RPC once and returns immutable actual child protocol', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: threadPage(), error: null })
     const s = createSupabaseConversationMealThreadPageStore({ rpc } as unknown as ServiceClient)
     expect(rpc).not.toHaveBeenCalled()
     const p = await s.read(threadQuery())
     expect(rpc).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledWith('read_conversation_meal_journal_page_v2', {
+    expect(rpc).toHaveBeenCalledWith('read_conversation_meal_journal_page_v3', {
       p_user_id: threadQuery().ownerId,
       p_expected_epoch: threadQuery().epoch,
       p_limit: 10,

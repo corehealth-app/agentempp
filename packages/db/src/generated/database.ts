@@ -4224,6 +4224,10 @@ export type Database = {
         Args: { p_user_id: string; p_expected_epoch: string; p_limit?: number; p_cursor?: Json | null }
         Returns: Json
       }
+      read_conversation_meal_journal_page_v3: {
+        Args: { p_user_id: string; p_expected_epoch: string; p_limit?: number; p_cursor?: Json | null }
+        Returns: Json
+      }
       admit_conversation_meal_command_fenced: {
         Args: { p_user_id: string; p_input: Json; p_expected_epoch: string }
         Returns: Json

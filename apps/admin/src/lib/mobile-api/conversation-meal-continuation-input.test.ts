@@ -61,6 +61,33 @@ const bind = (input: unknown = body()) =>
   })
 
 describe('closed linked meal clarification inputs', () => {
+  it('binds a corrected food name to the exact pending item without accepting nutrition or quantity overrides', () => {
+    const input = {
+        ...body(),
+        answer: { kind: 'food_name', food_index: 0, name: 'pão francês' },
+      },
+      pending = {
+        ...question('alimento desconhecido'),
+        kind: 'food_name',
+        allowed_units: [],
+        quantity_reference: null,
+      }
+    expect(parseConversationMealQuestion(pending)).toEqual(pending)
+    expect(bind(input).input).toEqual(input)
+    expect(() => validateConversationMealReplyQuestion(input, pending)).not.toThrow()
+    expect(() =>
+      validateConversationMealReplyQuestion(
+        { ...input, answer: { ...input.answer, food_index: 1 } },
+        pending,
+      ),
+    ).toThrow()
+    expect(() =>
+      parseConversationMealReplyBody({
+        ...input,
+        answer: { ...input.answer, quantity_g: 500, kcal: 10 },
+      }),
+    ).toThrow()
+  })
   it('freezes detached original intent/binding and keeps exact reply identity and opaque tokens', () => {
     const input = body(),
       original = binding()

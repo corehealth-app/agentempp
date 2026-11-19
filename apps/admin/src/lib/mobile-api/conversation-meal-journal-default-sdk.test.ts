@@ -89,7 +89,7 @@ function setup(
       }
     else if (url.pathname.endsWith('/get_mobile_current_clinical_state'))
       data = profiles++ === 0 ? journalClinical('2026-11-04T12:02:00.000001Z') : journalClinical()
-    else if (url.pathname.endsWith('/read_conversation_meal_journal_page_v2')) {
+    else if (url.pathname.endsWith('/read_conversation_meal_journal_page_v3')) {
       data = page
       if (options.remapDuringRead) remapped = true
       if (options.mutateRequestDuringRead)
@@ -140,7 +140,7 @@ describe('actual default journal version Auth dispatch', () => {
     expect(f.calls.some((p) => p.endsWith('/bootstrap_patient_profile'))).toBe(false)
     expect(f.calls.some((p) => p === '/auth/v1/user')).toBe(true)
     expect(
-      f.calls.filter((p) => p.endsWith('/read_conversation_meal_journal_page_v2')),
+      f.calls.filter((p) => p.endsWith('/read_conversation_meal_journal_page_v3')),
     ).toHaveLength(query === '?version=2' ? 1 : 0)
     expect(f.read).not.toHaveBeenCalled()
     expect(r.headers.get('cache-control')).toBe('no-store')
@@ -157,7 +157,7 @@ describe('actual default journal version Auth dispatch', () => {
     expect(json).not.toHaveProperty('data')
     expect(f.calls.some((p) => p.endsWith('/bootstrap_patient_profile'))).toBe(false)
     expect(
-      f.calls.filter((p) => p.endsWith('/read_conversation_meal_journal_page_v2')),
+      f.calls.filter((p) => p.endsWith('/read_conversation_meal_journal_page_v3')),
     ).toHaveLength(1)
     expect(f.outside).not.toHaveBeenCalled()
   })
@@ -170,7 +170,7 @@ describe('actual default journal version Auth dispatch', () => {
     expect(r.status).toBe(200)
     expect((await r.json()).data).toEqual(f.legacy)
     expect(f.calls.filter((p) => p.endsWith('/bootstrap_patient_profile'))).toHaveLength(1)
-    expect(f.calls.some((p) => p.endsWith('/read_conversation_meal_journal_page_v2'))).toBe(false)
+    expect(f.calls.some((p) => p.endsWith('/read_conversation_meal_journal_page_v3'))).toBe(false)
     expect(f.read).toHaveBeenCalledTimes(1)
     expect(f.outside).not.toHaveBeenCalled()
   })

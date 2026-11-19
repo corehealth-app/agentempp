@@ -1,0 +1,507 @@
+{
+  "samples": {
+    "legacy_after": {
+      "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+      "items": [
+        {
+          "at": "2026-11-19T14:46:25.633119Z",
+          "kind": "report",
+          "status": "not_recorded",
+          "receipt": null,
+          "event_id": "command/c2040000-0000-4000-8000-000000000007",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "feedback_ref": null
+        }
+      ],
+      "action": "available",
+      "schema": "conversation.journal-page-private.v2",
+      "threads": [
+        {
+          "schema": "conversation.meal-thread.v1",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "continuation": {
+            "question": {
+              "kind": "quantity",
+              "schema": "conversation.meal-question.v1",
+              "revision": 0,
+              "food_name": "arroz",
+              "food_index": 0,
+              "question_key": "933188d0113d37530ecd27fe1b3d402f334461ab28ee05f1c3f04beb72825883",
+              "allowed_units": [
+                "g",
+                "kg"
+              ],
+              "quantity_reference": null
+            },
+            "revision": 0,
+            "fulfilled_by": null
+          },
+          "parent_binding": {
+            "kind": "meal.report",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "admitted_at": "2026-11-19T14:46:25.633119Z",
+            "command_protocol": "conversation.command.v1"
+          },
+          "original_command": {
+            "kind": "meal.report",
+            "source": {
+              "text": "Comi arroz",
+              "channel": "text"
+            },
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "command_protocol": "conversation.command.v1"
+          },
+          "terminal_receipt": {
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "reason": "missing_quantity",
+            "schema": "conversation.meal-decision-public.v1",
+            "status": "not_recorded",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "sealed_at": "2026-11-19T14:46:25.689131Z",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "food_indexes": [
+              0
+            ],
+            "decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4"
+          }
+        }
+      ],
+      "has_more": false,
+      "owner_id": "c2040000-0000-4000-8000-000000000001",
+      "next_cursor": null,
+      "observed_at": "2026-11-19T14:46:25.770892Z"
+    },
+    "current_after": {
+      "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+      "items": [
+        {
+          "at": "2026-11-19T14:46:25.760095Z",
+          "body": {
+            "answer": {
+              "kind": "food_name",
+              "name": "pão francês",
+              "food_index": 0
+            },
+            "schema": "conversation.meal-clarification.v1",
+            "question_key": "9dd84122b673673bba905dd6e8423c95c0f42601de6aedbbf510196def67a9a6",
+            "expected_revision": 0
+          },
+          "kind": "reply",
+          "event_id": "reply/c2040000-0000-4000-8000-000000000003/c2040000-0000-4000-8000-000000000004",
+          "question": {
+            "kind": "food_name",
+            "schema": "conversation.meal-question.v1",
+            "revision": 0,
+            "food_name": "alimento do buffet",
+            "food_index": 0,
+            "question_key": "9dd84122b673673bba905dd6e8423c95c0f42601de6aedbbf510196def67a9a6",
+            "allowed_units": [],
+            "quantity_reference": null
+          },
+          "thread_id": "c2040000-0000-4000-8000-000000000003",
+          "child_binding": {
+            "kind": "meal.clarify",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000004",
+            "input_hash": "0741b2fb7f6060627e19af1fbcd69535ab7959a4aced0feeb5af5636d19fc95d",
+            "admitted_at": "2026-11-19T14:46:25.760095Z",
+            "command_protocol": "conversation.clarification.v1"
+          }
+        },
+        {
+          "at": "2026-11-19T14:46:25.633119Z",
+          "kind": "report",
+          "status": "not_recorded",
+          "receipt": null,
+          "event_id": "command/c2040000-0000-4000-8000-000000000007",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "feedback_ref": null
+        },
+        {
+          "at": "2026-11-19T14:46:25.518136Z",
+          "kind": "report",
+          "status": "not_recorded",
+          "receipt": null,
+          "event_id": "command/c2040000-0000-4000-8000-000000000003",
+          "thread_id": "c2040000-0000-4000-8000-000000000003",
+          "feedback_ref": null
+        }
+      ],
+      "action": "available",
+      "schema": "conversation.journal-page-private.v2",
+      "threads": [
+        {
+          "schema": "conversation.meal-thread.v1",
+          "thread_id": "c2040000-0000-4000-8000-000000000003",
+          "continuation": {
+            "question": {
+              "kind": "food_name",
+              "schema": "conversation.meal-question.v1",
+              "revision": 0,
+              "food_name": "alimento do buffet",
+              "food_index": 0,
+              "question_key": "9dd84122b673673bba905dd6e8423c95c0f42601de6aedbbf510196def67a9a6",
+              "allowed_units": [],
+              "quantity_reference": null
+            },
+            "revision": 0,
+            "fulfilled_by": null
+          },
+          "parent_binding": {
+            "kind": "meal.report",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "input_hash": "b7d8297e60300042510ccf1ade7a7c95f7af8a852d52b01bb1f475ff06020c94",
+            "admitted_at": "2026-11-19T14:46:25.518136Z",
+            "command_protocol": "conversation.command.v1"
+          },
+          "original_command": {
+            "kind": "meal.report",
+            "source": {
+              "channel": "media",
+              "user_action": "register_consumed_meal",
+              "media_asset_id": "c2040000-0000-4000-8000-000000000005"
+            },
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "command_protocol": "conversation.command.v1"
+          },
+          "terminal_receipt": {
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "reason": "unqualified_whole_name",
+            "schema": "conversation.meal-decision-public.v1",
+            "status": "not_recorded",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "sealed_at": "2026-11-19T14:46:25.627638Z",
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "input_hash": "b7d8297e60300042510ccf1ade7a7c95f7af8a852d52b01bb1f475ff06020c94",
+            "food_indexes": [
+              0
+            ],
+            "decision_hash": "b1be283fb266d9feb2b66fac168d6da575d0c7de8ba5990024dd535c7eceea6d"
+          }
+        },
+        {
+          "schema": "conversation.meal-thread.v1",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "continuation": {
+            "question": {
+              "kind": "quantity",
+              "schema": "conversation.meal-question.v1",
+              "revision": 0,
+              "food_name": "arroz",
+              "food_index": 0,
+              "question_key": "933188d0113d37530ecd27fe1b3d402f334461ab28ee05f1c3f04beb72825883",
+              "allowed_units": [
+                "g",
+                "kg"
+              ],
+              "quantity_reference": null
+            },
+            "revision": 0,
+            "fulfilled_by": null
+          },
+          "parent_binding": {
+            "kind": "meal.report",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "admitted_at": "2026-11-19T14:46:25.633119Z",
+            "command_protocol": "conversation.command.v1"
+          },
+          "original_command": {
+            "kind": "meal.report",
+            "source": {
+              "text": "Comi arroz",
+              "channel": "text"
+            },
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "command_protocol": "conversation.command.v1"
+          },
+          "terminal_receipt": {
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "reason": "missing_quantity",
+            "schema": "conversation.meal-decision-public.v1",
+            "status": "not_recorded",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "sealed_at": "2026-11-19T14:46:25.689131Z",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "food_indexes": [
+              0
+            ],
+            "decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4"
+          }
+        }
+      ],
+      "has_more": false,
+      "owner_id": "c2040000-0000-4000-8000-000000000001",
+      "next_cursor": null,
+      "observed_at": "2026-11-19T14:46:25.788334Z"
+    },
+    "legacy_before": {
+      "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+      "items": [
+        {
+          "at": "2026-11-19T14:46:25.633119Z",
+          "kind": "report",
+          "status": "not_recorded",
+          "receipt": null,
+          "event_id": "command/c2040000-0000-4000-8000-000000000007",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "feedback_ref": null
+        },
+        {
+          "at": "2026-11-19T14:46:25.518136Z",
+          "kind": "report",
+          "status": "not_recorded",
+          "receipt": null,
+          "event_id": "command/c2040000-0000-4000-8000-000000000003",
+          "thread_id": "c2040000-0000-4000-8000-000000000003",
+          "feedback_ref": null
+        }
+      ],
+      "action": "available",
+      "schema": "conversation.journal-page-private.v2",
+      "threads": [
+        {
+          "schema": "conversation.meal-thread.v1",
+          "thread_id": "c2040000-0000-4000-8000-000000000003",
+          "continuation": null,
+          "parent_binding": {
+            "kind": "meal.report",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "input_hash": "b7d8297e60300042510ccf1ade7a7c95f7af8a852d52b01bb1f475ff06020c94",
+            "admitted_at": "2026-11-19T14:46:25.518136Z",
+            "command_protocol": "conversation.command.v1"
+          },
+          "original_command": {
+            "kind": "meal.report",
+            "source": {
+              "channel": "media",
+              "user_action": "register_consumed_meal",
+              "media_asset_id": "c2040000-0000-4000-8000-000000000005"
+            },
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "command_protocol": "conversation.command.v1"
+          },
+          "terminal_receipt": {
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "reason": "unqualified_whole_name",
+            "schema": "conversation.meal-decision-public.v1",
+            "status": "not_recorded",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "sealed_at": "2026-11-19T14:46:25.627638Z",
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "input_hash": "b7d8297e60300042510ccf1ade7a7c95f7af8a852d52b01bb1f475ff06020c94",
+            "food_indexes": [
+              0
+            ],
+            "decision_hash": "b1be283fb266d9feb2b66fac168d6da575d0c7de8ba5990024dd535c7eceea6d"
+          }
+        },
+        {
+          "schema": "conversation.meal-thread.v1",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "continuation": {
+            "question": {
+              "kind": "quantity",
+              "schema": "conversation.meal-question.v1",
+              "revision": 0,
+              "food_name": "arroz",
+              "food_index": 0,
+              "question_key": "933188d0113d37530ecd27fe1b3d402f334461ab28ee05f1c3f04beb72825883",
+              "allowed_units": [
+                "g",
+                "kg"
+              ],
+              "quantity_reference": null
+            },
+            "revision": 0,
+            "fulfilled_by": null
+          },
+          "parent_binding": {
+            "kind": "meal.report",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "admitted_at": "2026-11-19T14:46:25.633119Z",
+            "command_protocol": "conversation.command.v1"
+          },
+          "original_command": {
+            "kind": "meal.report",
+            "source": {
+              "text": "Comi arroz",
+              "channel": "text"
+            },
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "command_protocol": "conversation.command.v1"
+          },
+          "terminal_receipt": {
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "reason": "missing_quantity",
+            "schema": "conversation.meal-decision-public.v1",
+            "status": "not_recorded",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "sealed_at": "2026-11-19T14:46:25.689131Z",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "food_indexes": [
+              0
+            ],
+            "decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4"
+          }
+        }
+      ],
+      "has_more": false,
+      "owner_id": "c2040000-0000-4000-8000-000000000001",
+      "next_cursor": null,
+      "observed_at": "2026-11-19T14:46:25.709159Z"
+    },
+    "current_before": {
+      "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+      "items": [
+        {
+          "at": "2026-11-19T14:46:25.633119Z",
+          "kind": "report",
+          "status": "not_recorded",
+          "receipt": null,
+          "event_id": "command/c2040000-0000-4000-8000-000000000007",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "feedback_ref": null
+        },
+        {
+          "at": "2026-11-19T14:46:25.518136Z",
+          "kind": "report",
+          "status": "not_recorded",
+          "receipt": null,
+          "event_id": "command/c2040000-0000-4000-8000-000000000003",
+          "thread_id": "c2040000-0000-4000-8000-000000000003",
+          "feedback_ref": null
+        }
+      ],
+      "action": "available",
+      "schema": "conversation.journal-page-private.v2",
+      "threads": [
+        {
+          "schema": "conversation.meal-thread.v1",
+          "thread_id": "c2040000-0000-4000-8000-000000000003",
+          "continuation": {
+            "question": {
+              "kind": "food_name",
+              "schema": "conversation.meal-question.v1",
+              "revision": 0,
+              "food_name": "alimento do buffet",
+              "food_index": 0,
+              "question_key": "9dd84122b673673bba905dd6e8423c95c0f42601de6aedbbf510196def67a9a6",
+              "allowed_units": [],
+              "quantity_reference": null
+            },
+            "revision": 0,
+            "fulfilled_by": null
+          },
+          "parent_binding": {
+            "kind": "meal.report",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "input_hash": "b7d8297e60300042510ccf1ade7a7c95f7af8a852d52b01bb1f475ff06020c94",
+            "admitted_at": "2026-11-19T14:46:25.518136Z",
+            "command_protocol": "conversation.command.v1"
+          },
+          "original_command": {
+            "kind": "meal.report",
+            "source": {
+              "channel": "media",
+              "user_action": "register_consumed_meal",
+              "media_asset_id": "c2040000-0000-4000-8000-000000000005"
+            },
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "command_protocol": "conversation.command.v1"
+          },
+          "terminal_receipt": {
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "reason": "unqualified_whole_name",
+            "schema": "conversation.meal-decision-public.v1",
+            "status": "not_recorded",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "sealed_at": "2026-11-19T14:46:25.627638Z",
+            "command_id": "c2040000-0000-4000-8000-000000000003",
+            "input_hash": "b7d8297e60300042510ccf1ade7a7c95f7af8a852d52b01bb1f475ff06020c94",
+            "food_indexes": [
+              0
+            ],
+            "decision_hash": "b1be283fb266d9feb2b66fac168d6da575d0c7de8ba5990024dd535c7eceea6d"
+          }
+        },
+        {
+          "schema": "conversation.meal-thread.v1",
+          "thread_id": "c2040000-0000-4000-8000-000000000007",
+          "continuation": {
+            "question": {
+              "kind": "quantity",
+              "schema": "conversation.meal-question.v1",
+              "revision": 0,
+              "food_name": "arroz",
+              "food_index": 0,
+              "question_key": "933188d0113d37530ecd27fe1b3d402f334461ab28ee05f1c3f04beb72825883",
+              "allowed_units": [
+                "g",
+                "kg"
+              ],
+              "quantity_reference": null
+            },
+            "revision": 0,
+            "fulfilled_by": null
+          },
+          "parent_binding": {
+            "kind": "meal.report",
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "admitted_at": "2026-11-19T14:46:25.633119Z",
+            "command_protocol": "conversation.command.v1"
+          },
+          "original_command": {
+            "kind": "meal.report",
+            "source": {
+              "text": "Comi arroz",
+              "channel": "text"
+            },
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "command_protocol": "conversation.command.v1"
+          },
+          "terminal_receipt": {
+            "epoch": "b05f636a-add6-492c-9dc2-40657596e767",
+            "reason": "missing_quantity",
+            "schema": "conversation.meal-decision-public.v1",
+            "status": "not_recorded",
+            "owner_id": "c2040000-0000-4000-8000-000000000001",
+            "sealed_at": "2026-11-19T14:46:25.689131Z",
+            "command_id": "c2040000-0000-4000-8000-000000000007",
+            "input_hash": "3b3c3c999963c88314a9b8c33d3d475d1ed3f86a11bda9a58267227e9d10733c",
+            "food_indexes": [
+              0
+            ],
+            "decision_hash": "92f4c2ec4a3a2dafd73866766e37c077021794f75ddc7e9657a3100771bafbc4"
+          }
+        }
+      ],
+      "has_more": false,
+      "owner_id": "c2040000-0000-4000-8000-000000000001",
+      "next_cursor": null,
+      "observed_at": "2026-11-19T14:46:25.724823Z"
+    }
+  },
+  "assertions": 11
+}

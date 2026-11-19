@@ -82,6 +82,8 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
       if kind == "meal_type" {
         try editCheck(
           foodIndex == nil && foodName == nil && allowedUnits.isEmpty && quantityReference == nil)
+      } else if kind == "food_name" {
+        try editCheck(foodIndex != nil && foodName != nil && allowedUnits.isEmpty && quantityReference == nil)
       } else {
         try editCheck(kind == "quantity" && foodIndex != nil && foodName != nil)
         let actualReference = foodName.flatMap { MealQuantityDisplay.reference(for: $0) }
@@ -103,6 +105,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
   struct ReplyBody: Sendable {
     enum Answer: Sendable {
       case quantity(foodIndex: Int, amount: Double, unit: String)
+      case foodName(foodIndex: Int, name: String)
       case mealType(ConversationMealCommand.MealType)
     }
     let expectedRevision: Int
@@ -127,6 +130,13 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
         answer = try .quantity(
           foodIndex: index, amount: a.required("amount").amount(max: 9999, positive: true),
           unit: unit)
+      } else if kind == "food_name" {
+        let a = try value.object(["kind", "food_index", "name"])
+        let index = try threadFoodIndex(a.required("food_index"))
+        let name = try a.required("name").text(limit: 160)
+        try editCheck(question.kind == kind && index == question.foodIndex
+          && !name.unicodeScalars.contains { ($0.value < 32 && ![9, 10, 13].contains($0.value)) || $0.value == 127 })
+        answer = .foodName(foodIndex: index, name: name)
       } else {
         let a = try value.object(["kind", "meal_type"])
         guard kind == "meal_type", question.kind == kind,

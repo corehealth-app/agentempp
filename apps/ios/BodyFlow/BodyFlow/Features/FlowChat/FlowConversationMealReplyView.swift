@@ -39,17 +39,27 @@ import SwiftUI
         if model.isLocked {
           Text(english ? "Original answer preserved" : "Resposta original preservada")
             .font(BodyFlowTypography.cardTitle)
-          if question.kind == "quantity" {
+          if question.kind == "food_name" {
+            Text(verbatim: model.amountText)
+              .accessibilityIdentifier("conversation.reply.locked-food-name")
+          } else if question.kind == "quantity" {
             Text(verbatim: "\(model.amountText) \(model.quantityUnit)")
               .accessibilityIdentifier("conversation.reply.locked-quantity")
           } else if let meal = model.mealType {
-            Text(verbatim: mealLabel(meal)).accessibilityIdentifier(
-              "conversation.reply.locked-meal")
+            Text(verbatim: mealLabel(meal)).accessibilityIdentifier("conversation.reply.locked-meal")
           }
-          Text(
-            english
-              ? "Check this answer's status before making another attempt."
-              : "Consulte o status desta resposta antes de tentar novamente.")
+          Text(english
+            ? "Check this answer's status before making another attempt."
+            : "Consulte o status desta resposta antes de tentar novamente.")
+        } else if question.kind == "food_name" {
+          TextField(english ? "Food name" : "Nome do alimento",
+            text: Binding(get: { model.amountText }, set: { model.amountText = $0 }))
+            .textFieldStyle(.roundedBorder).disabled(model.isWorking)
+            .accessibilityIdentifier("conversation.reply.food-name")
+          Text(english
+            ? "The other foods and quantities will be preserved."
+            : "Os outros alimentos e quantidades serão mantidos.")
+            .font(BodyFlowTypography.caption)
         } else if question.kind == "quantity" {
           TextField(
             english ? "Quantity" : "Quantidade",

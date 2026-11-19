@@ -240,7 +240,7 @@ final class FlowNeutralIntakeModel {
     guard isVisible, let row = terminalRecords.first(where: { $0.id == intakeID }),
       row.identity == context?.identity, case .meal(.state(let state)) = row.response.result,
       state.status == .notRecorded,
-      state.reason.map({ ["missing_quantity", "meal_type_required"].contains($0) }) == true,
+      state.reason.map({ ["missing_quantity", "meal_type_required", "unqualified_whole_name"].contains($0) }) == true,
       let selection = row.response.selection,
       selection.child.kind == .meal
     else { return nil }

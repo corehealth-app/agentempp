@@ -144,7 +144,9 @@ export function createConversationMealQuestionOriginsService(
           head = thread?.continuation
         if (
           !thread?.terminal_receipt ||
-          !['missing_quantity', 'meal_type_required'].includes(thread.terminal_receipt.reason) ||
+          !['missing_quantity', 'meal_type_required', 'unqualified_whole_name'].includes(
+            thread.terminal_receipt.reason,
+          ) ||
           !head ||
           head.fulfilled_by !== null ||
           head.question === null

@@ -36,6 +36,11 @@ struct FlowConversationJournalV3Presentation {
     case nil: source = nil
     }
     var facts: [String] = []
+    if entry.status == .notRecorded,
+      let explanation = Self.notRecordedReason(entry.reason, english: english)
+    {
+      facts.append(explanation)
+    }
     if case .media = entry.input {
       facts.append(
         english
@@ -89,6 +94,31 @@ struct FlowConversationJournalV3Presentation {
           : "Observação histórica da resposta. Este evento isolado não é um registro.")
     }
     lines = facts
+  }
+  static func notRecordedReason(_ reason: String?, english: Bool) -> String? {
+    switch reason {
+    case "unqualified_whole_name", "personal_correction_unproven":
+      return english
+        ? "A food name could not be matched for the nutrition calculation. This report did not record consumption."
+        : "O nome de um alimento não foi reconhecido pelo cálculo nutricional. Este envio não registrou consumo."
+    case "nutrition_unresolved":
+      return english
+        ? "Nutrition information is still missing for an item. This report did not record consumption."
+        : "Ainda faltam informações nutricionais de um item. Este envio não registrou consumo."
+    case "low_confidence", "ambiguous_source_group", "conflicting_user_sources":
+      return english
+        ? "An item could not be identified reliably. This report did not record consumption."
+        : "Não foi possível identificar um item com segurança. Este envio não registrou consumo."
+    case "missing_quantity", "unsupported_quantity":
+      return english
+        ? "An item's quantity needs clarification. This report did not record consumption."
+        : "A quantidade de um item precisa de esclarecimento. Este envio não registrou consumo."
+    case "meal_type_required":
+      return english
+        ? "The meal still needs to be selected. This report did not record consumption."
+        : "Falta selecionar a refeição. Este envio não registrou consumo."
+    default: return nil
+    }
   }
   private static func meal(_ type: String, english: Bool) -> String {
     switch type {

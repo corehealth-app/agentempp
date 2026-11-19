@@ -447,6 +447,12 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
   private func answer() -> ConversationMealReplyIntent.Answer? {
     guard let q = offer?.question else { return nil }
     if q.kind == "meal_type" { return selectedMeal.map { .mealType($0) } }
+    if q.kind == "food_name" {
+      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.count <= 160,
+        !text.unicodeScalars.contains(where: { ($0.value < 32 && ![9, 10, 13].contains($0.value)) || $0.value == 127 })
+      else { return nil }
+      return .foodName(text)
+    }
     guard q.allowedUnits.contains(unit),
       let n = MealProposalNumberParser.parse(text, language: language), n > 0, n <= 9999
     else { return nil }
@@ -460,6 +466,7 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     else { return }
     if let type = answer["meal_type"] as? String { selectedMeal = .init(rawValue: type) }
     if let amount = answer["amount"] as? NSNumber { text = amount.stringValue }
+    if let name = answer["name"] as? String { text = name }
     if let unit = answer["unit"] as? String { self.unit = unit }
   }
   private func clearForm() {

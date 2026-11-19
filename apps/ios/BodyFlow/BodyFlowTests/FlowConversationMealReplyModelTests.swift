@@ -133,6 +133,57 @@ import Testing
     #expect(b.lastDelivered?.receipt != nil)
     await b.close()
   }
+  @Test func nameCorrectionUsesItsOriginalItemAndFreezesOnUnknownNetworkOutcome() async throws {
+    let f = try ReplyControllerFixture()
+    defer { f.disk.remove() }
+    await f.http.lifecycle.replace(f.disk.lease)
+    await f.http.stub.respond { _, _ in throw URLError(.networkConnectionLost) }
+    let c = try await f.open()
+    let m = try await FlowConversationMealReplyModel.open(
+      controller: c, lifecycle: f.http.lifecycle, lease: f.disk.lease
+    ) { _, _ in }
+    m.accept(f.context)
+    let original = try f.disk.intent()
+    var raw = try #require(JSONSerialization.jsonObject(with: original.question.encodedData) as? [String: Any])
+    raw["kind"] = "food_name"
+    raw["food_index"] = 0
+    raw["food_name"] = "alimento do buffet"
+    let question = try JSONDecoder().decode(ConversationThreadPageSnapshot.Question.self,
+      from: JSONSerialization.data(withJSONObject: raw))
+    try m.begin(parentBinding: original.parentBinding,
+      parentDecisionHash: original.parentDecisionHash, question: question)
+    #expect(!m.canSubmit)
+    m.amountText = "   "
+    #expect(!m.canSubmit)
+    m.amountText = "pão francês"
+    #expect(m.canSubmit)
+    #if canImport(UIKit)
+      // Observe the real UITextField: SwiftUI does not expose its identifier
+      // to this in-process accessibility walker (same limitation as the editor).
+      let host = PremiumRenderingTestSupport.liveAccessibilityHost(
+        FlowConversationMealReplyContent(model: m)
+          .environment(\.locale, Locale(identifier: "pt_BR")), width: 390)
+      let fields = host.nativeViews(UITextField.self)
+      #expect(fields.count == 1)
+      let field = try #require(fields.first)
+      #expect(field.text == "pão francês" && field.isEnabled && field.bounds.width > 0)
+      #expect(field.placeholder == "Nome do alimento")
+      host.detach()
+    #endif
+    await m.submit()
+    let intent = try #require(m.pendingIntent)
+    let submitted = try #require(JSONSerialization.jsonObject(with: intent.wireBody) as? [String: Any])
+    let input = try #require(submitted["input"] as? [String: Any])
+    let answer = try #require(input["answer"] as? [String: Any])
+    #expect(answer["kind"] as? String == "food_name" && answer["food_index"] as? Int == 0)
+    #expect(answer["name"] as? String == "pão francês" && answer["amount"] == nil)
+    #expect(input["question_key"] as? String == question.questionKey)
+    m.amountText = "feijão"
+    #expect(m.amountText == "pão francês" && m.isLocked && m.canCheckStatus)
+    #expect(await f.http.stub.requests.count == 1)
+    #expect(await f.http.stub.requests.first?.httpBody == intent.wireBody)
+    await m.close()
+  }
   @Test func quantityAnswerPreservesAuthoredDecimalAndUnitWithoutLocalGramConversion() async throws
   {
     let f = try ReplyControllerFixture()

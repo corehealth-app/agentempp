@@ -40,6 +40,8 @@ struct FlowConversationThreadEventPresentation {
       sourceText = nil
       var answer: String
       switch reply.body.answer {
+      case .foodName(_, let name):
+        answer = (english ? "Food name correction: " : "Correção do alimento: ") + name
       case .quantity(_, let amount, let unit):
         let raw = String(amount)
         answer = (raw.hasSuffix(".0") ? String(raw.dropLast(2)) : raw) + " " + unit
@@ -125,6 +127,9 @@ struct FlowConversationThreadEventPresentation {
   }
   static func question(_ question: ConversationThreadPageSnapshot.Question, english: Bool) -> String
   {
+    if question.kind == "food_name", let food = question.foodName {
+      return english ? "What is the correct name for \(food)?" : "Qual é o nome correto de \(food)?"
+    }
     if let food = question.foodName {
       return english
         ? "What quantity of \(food) did you consume?" : "Qual quantidade de \(food) você consumiu?"

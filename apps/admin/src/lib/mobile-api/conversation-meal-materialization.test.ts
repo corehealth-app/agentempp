@@ -417,6 +417,37 @@ describe('actual command interpretation materialization', () => {
       food_indexes: [0],
     })
   })
+  it('qualifies an ordinary French bread photo against its complete verified catalogue name without losing other items', async () => {
+    const f = visualFixture([
+        { name: 'pão francês', quantity_g_estimate: 50, confidence: 0.9 },
+        { name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 },
+      ]),
+      state = db()
+    state.rpc.mockImplementation(async (_name, args) => ({
+      data: args.search_term === 'pao trigo frances' ? [row('Pão, trigo, francês', 210)] : [],
+      error: null,
+    }))
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs.map((item) => item.calculation_input)).toEqual([
+      { food_name: 'pão francês', quantity_g: 50 },
+      { food_name: 'arroz', quantity_g: 100 },
+    ])
+    expect(result.source_groups.map((group) => group.source_positions[0]?.visual_index)).toEqual([
+      0, 1,
+    ])
+  })
+  it('does not erase an explicit bread variety when qualifying a familiar catalogue alias', async () => {
+    const f = visualFixture([
+        { name: 'pão francês integral', quantity_g_estimate: 50, confidence: 0.9 },
+      ]),
+      state = db()
+    state.rpc.mockResolvedValue({ data: [row('Pão, trigo, francês', 210)], error: null })
+    expect(await materialize(f, state)).toMatchObject({
+      status: 'clarification_required',
+      reason: 'unqualified_whole_name',
+      food_indexes: [0],
+    })
+  })
   it('recognizes the full catalogue wording despite its editorial comma, preserving the stated input', async () => {
     const f = fixture('iogurte natural200g', [
         { name: 'iogurte natural', quantity: '200', unit: 'g' },
@@ -1865,6 +1896,42 @@ function storedRun(
   )
 }
 describe('actual stored linked-answer materialization without historical questions', () => {
+  it('applies an explicit linked name correction to one photo item while preserving all original quantities, other foods and source positions', async () => {
+    const f = continuationFixture(
+        visualFixture([
+          { name: 'alimento do buffet', quantity_g_estimate: 50, confidence: 0.9 },
+          { name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 },
+        ]),
+      ),
+      original = structuredClone(f.interpretation),
+      originalContext = structuredClone(f.capture.context),
+      state = db()
+    state.rpc.mockImplementation(async (_name, args) => ({
+      data: args.search_term === 'pao trigo frances' ? [row('Pão, trigo, francês', 210)] : [],
+      error: null,
+    }))
+    const result = await storedRun(
+      f,
+      [
+        {
+          ...storedLink(),
+          answer: { kind: 'food_name', food_index: 0, name: 'pão francês' },
+        },
+      ],
+      state,
+    )
+    const material = prepared(result.materialization)
+    expect(material.inputs.map((item) => item.calculation_input)).toEqual([
+      { food_name: 'pão francês', quantity_g: 50 },
+      { food_name: 'arroz', quantity_g: 100 },
+    ])
+    expect(material.source_groups.map((group) => group.source_positions[0]?.visual_index)).toEqual([
+      0, 1,
+    ])
+    expect(result.quantity_witnesses).toEqual([])
+    expect(f.interpretation).toEqual(original)
+    expect(f.capture.context).toEqual(originalContext)
+  })
   it('uses the original missing rice occurrence and preserves explicit beans and original evidence', async () => {
     const f = continuationFixture(
       fixture('Comi arroz e feijão 100 g', [

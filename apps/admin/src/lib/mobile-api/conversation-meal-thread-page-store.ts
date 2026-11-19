@@ -577,7 +577,7 @@ export function createSupabaseConversationMealThreadPageStore(
     async read(raw: ConversationMealThreadQuery) {
       try {
         const q = exact(conversationThreadQuerySchema, raw),
-          r = await rpc('read_conversation_meal_journal_page_v2', {
+          r = await rpc('read_conversation_meal_journal_page_v3', {
             p_user_id: q.ownerId,
             p_expected_epoch: q.epoch,
             p_limit: q.limit,

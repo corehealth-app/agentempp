@@ -5,6 +5,21 @@ import Testing
 
 @Suite("Public journal v3 historical facts")
 struct ConversationJournalV3Tests {
+  @Test func rejectedFoodNameExplainsTheMissingCalculationInsteadOfOnlyShowingNotRecorded() throws {
+    var page = try publicJournalV3Pages()[7]
+    var items = try #require(page["items"] as? [[String: Any]])
+    var outcome = try #require(items[0]["outcome"] as? [String: Any])
+    outcome["reason"] = "unqualified_whole_name"
+    items[0]["outcome"] = outcome
+    page["items"] = items
+    let entry = try #require(decodePublicJournalV3(page).items.first)
+    let portuguese = FlowConversationJournalV3Presentation(entry: entry, english: false)
+    #expect(portuguese.lines.contains { $0.contains("nome de um alimento") })
+    #expect(portuguese.lines.contains { $0.contains("cálculo nutricional") })
+    let english = FlowConversationJournalV3Presentation(entry: entry, english: true)
+    #expect(english.lines.contains { $0.contains("food name") })
+    #expect(!portuguese.lines.contains { $0.contains("unqualified_whole_name") })
+  }
   @Test func actualPublicServicePagesDecodeWithoutPrivateSchemaOrWriteProofs() throws {
     let pages = try publicJournalV3Pages()
     #expect(pages.count == 10)

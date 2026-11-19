@@ -268,6 +268,8 @@ interface QuantityOverlay {
 interface ContinuationOverlay {
   readonly resolutionSource: CapturedConversationMealSource
   readonly answers: readonly QuantityOverlay[]
+  readonly names: ReadonlyMap<number, string>
+  readonly appliedNames: Set<number>
   readonly applied: Set<number>
 }
 
@@ -328,6 +330,8 @@ export async function materializeConversationMealContinuation(
     const overlay: ContinuationOverlay = {
       resolutionSource: descriptors.resolutionSource?.value ?? unavailable(),
       answers,
+      names: new Map(),
+      appliedNames: new Set(),
       applied: new Set(),
     }
     return await materializeOverlay(db, command, captured, originalInterpretation, options, overlay)
@@ -374,6 +378,7 @@ export async function materializeStoredConversationMealContinuation(
       targets = new Set<number>()
     let mealType = false
     const answers: QuantityOverlay[] = []
+    const names = new Map<number, string>()
     for (let n = 0; n < raw.length; n++) {
       const d = descriptors[String(n)]
       if (!d?.enumerable || !('value' in d)) unavailable()
@@ -398,6 +403,27 @@ export async function materializeStoredConversationMealContinuation(
         mealType = true
         continue
       }
+      if (kind.value === 'food_name') {
+        const a = closedPrimitiveObject(link.answer, ['kind', 'food_index', 'name'])
+        const index = z.number().finite().int().min(0).max(29).parse(a.food_index)
+        if (!interpretation.foods.some((food) => food.index === index) || targets.has(index))
+          unavailable()
+        const name = z
+          .string()
+          .min(1)
+          .max(160)
+          .refine(
+            (value) =>
+              value.trim().length > 0 &&
+              !Array.from(value).some((char) => {
+                const code = char.charCodeAt(0)
+                return (code < 32 && ![9, 10, 13].includes(code)) || code === 127
+              }),
+          )
+          .parse(a.name)
+        names.set(index, name)
+        continue
+      }
       const a = closedPrimitiveObject(link.answer, ['kind', 'food_index', 'amount', 'unit'])
       if (a.kind !== 'quantity') unavailable()
       const index = z.number().finite().int().min(0).max(29).parse(a.food_index)
@@ -410,9 +436,9 @@ export async function materializeStoredConversationMealContinuation(
         food.visual_index === null
           ? null
           : source.sources.find((s) => s.unit === 'vision_items')?.visual_items[food.visual_index]
-      const name = food.name
-        ? unit?.text?.slice(food.name.start, food.name.end)
-        : record(visual)?.name
+      const name =
+        names.get(index) ??
+        (food.name ? unit?.text?.slice(food.name.start, food.name.end) : record(visual)?.name)
       if (typeof name !== 'string') unavailable()
       answers.push({
         replyId,
@@ -426,6 +452,8 @@ export async function materializeStoredConversationMealContinuation(
     return await materializeOverlay(db, command, captured, originalInterpretation, options, {
       resolutionSource: values.resolutionSource as CapturedConversationMealSource,
       answers: freezeInterpretation(answers),
+      names,
+      appliedNames: new Set(),
       applied: new Set(),
     })
   } catch {
@@ -469,7 +497,11 @@ async function materializeOverlay(
     options,
     overlay,
   )
-  if (overlay.applied.size !== overlay.answers.length) unavailable()
+  if (
+    overlay.applied.size !== overlay.answers.length ||
+    overlay.appliedNames.size !== overlay.names.size
+  )
+    unavailable()
   const quantity_witnesses = overlay.answers.map(({ replyId, facts }) => {
     let input_indexes: readonly number[] = []
     if (materialization.status === 'materialized') {
@@ -615,7 +647,8 @@ async function materializeConversationMealCore(
           food.visual_index === null
             ? null
             : record(byUnit.get('vision_items')?.visual_items[food.visual_index])
-        const name = food.name ? read(food.name) : visual?.name
+        const name =
+          continuation.names.get(food.index) ?? (food.name ? read(food.name) : visual?.name)
         if (name !== answer.facts.food_name) unavailable()
         if (
           visual &&
@@ -657,8 +690,16 @@ async function materializeConversationMealCore(
       ) {
         return true
       }
+      // The Brazilian catalogue calls ordinary French bread "Pão, trigo,
+      // francês". Qualify this reviewed whole-name alias against that exact
+      // catalogue wording, rather than weakening matching for unknown prose.
+      // The original food name/quantity and its visual provenance stay intact.
+      const catalogueTerm =
+        country === 'BR' && ['pao frances', 'paes franceses', 'paozinho'].includes(whole)
+          ? 'pao trigo frances'
+          : whole
       const result = await rpc('search_food_trgm', {
-        search_term: whole,
+        search_term: catalogueTerm,
         min_similarity: 0.9,
         max_results: 5,
         p_country: country,
@@ -667,7 +708,7 @@ async function materializeConversationMealCore(
       const raw = structuredClone(result.data),
         rows = z.array(catalogRow).max(5).parse(raw)
       if (!isDeepStrictEqual(raw, rows)) unavailable()
-      const found = rows.some((row) => catalogueWording(row.name_pt) === whole)
+      const found = rows.some((row) => catalogueWording(row.name_pt) === catalogueTerm)
       wholeQualified.set(whole, found)
       return found
     }
@@ -701,7 +742,9 @@ async function materializeConversationMealCore(
     const inputs: MaterializedConversationMeal['inputs'][number][] = [],
       groups: ConversationMealSourceGroup[] = []
     for (const food of interpretation.foods) {
-      const name = read(food.name),
+      const originalName = read(food.name),
+        replacementName = continuation?.names.get(food.index),
+        name = replacementName ?? originalName,
         quantityText = read(food.quantity),
         unitText = read(food.unit)
       const positions: ConversationMealSourceGroup['source_positions'] = [
@@ -716,6 +759,7 @@ async function materializeConversationMealCore(
           visual_index: food.visual_index,
         },
       ]
+      if (replacementName !== undefined) continuation?.appliedNames.add(food.index)
       const candidates: Candidate[] = []
       let rule: Rule = 'literal'
       if (food.visual_index !== null) {
@@ -735,18 +779,20 @@ async function materializeConversationMealCore(
         const literal = v.name.replace(/^\s*\d{1,2}\s*x\s+/iu, '').trim()
         if (mapped.length !== 1 || !visual || normalized(literal) !== normalized(visual.name))
           return clarify('ambiguous_source_group', [food.index])
-        if (name !== null && normalized(name) !== normalized(literal))
+        if (originalName !== null && normalized(originalName) !== normalized(literal))
           return clarify('conflicting_user_sources', [food.index])
         // Text mass overriding a visual mass needs explicit user association;
         // never silently choose a caption quantity or multiply a 2x estimate.
         if (quantityText !== null || unitText !== null)
           return clarify('ambiguous_source_group', [food.index])
-        const qualification = await qualify(visual.name)
+        const correctedName = replacementName ?? visual.name
+        const qualification = await qualify(correctedName)
         if (qualification !== 'qualified') return clarify(qualification, [food.index])
-        const indexed = freshCandidate({ name: visual.name }, inputs.length)
+        const indexed = freshCandidate({ name: correctedName }, inputs.length)
         if (!indexed) return clarify('ambiguous_source_group', [food.index])
         candidates.push({
           ...visual,
+          name: correctedName,
           candidate_id: indexed.candidate_id,
           ...(indexed.quantity_display ? { quantity_display: indexed.quantity_display } : {}),
         })

@@ -17,11 +17,14 @@ import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 import { describe, expect, test } from 'vitest'
 import {
+  journeySocialBuildPaths,
+  journeySocialTransports,
+} from '../scripts/journey-social-surface.mjs'
+import {
   completionBuildPaths,
   completionTransports,
 } from '../scripts/training-completion-surface.mjs'
 import { inspectBuildSurface } from '../scripts/verify-build-surface.mjs'
-import { journeySocialTransports, journeySocialBuildPaths } from '../scripts/journey-social-surface.mjs'
 import { currentClinicalRouteAdditions } from './current-clinical-route-inventory'
 
 const sourceRoot = resolve(
@@ -279,6 +282,10 @@ function restorePrivateMediaContractR168(id: string, body: string): string {
 }
 
 function certifyOrdinaryPhotoSourcesR102(): void {
+  // R204 intentionally extends the exact materializer and closed linked-name
+  // contracts. All383 chunk module identities remain;379 complete bodies are
+  // byte-identical. Pin the four changed complete bodies; do not exempt imports,
+  // providers, executable bytes, module counts or negative tampering controls.
   // R165 adds only the exact app-only whey protein alias. All377 actual module
   // identities were compared:375 whole bodies remain byte-identical; the two
   // changed bodies (agent export/consumer) are sealed in full, with no edge or
@@ -296,7 +303,8 @@ function certifyOrdinaryPhotoSourcesR102(): void {
         .digest('hex'),
     ).toBe(hash)
   for (const [id, hash] of [
-    ['26432', 'a480fe25475fdd2728097553d30170e46e0595cd101f7cb6ca15eaa88c951da2'],
+    ['26432', '39bcf831bdae5453636b97e13dd9ef736585df527db9b0558b65f50bc69c8867'],
+    ['418', 'b6f37d51d0e565142e530832b760faac2dbb8328acc25a2e129a8a6ab0ffdfb9'],
     ['69702', '9ecc51ff37b728c9b9c5a0fad60663f69af28cf5f0895464ec4ab3606b9cb7da'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
@@ -325,7 +333,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-materialization.ts',
-      '6f23187323798d4752f84c47e8cb464f6ee95d8b3eddb982bed069717ca3e4e3',
+      '5338bc9c0c590ef42ef0b449e90c52358f044e617c118722d71f3fe11a1fc4b5',
     ],
     [
       'conversation-meal-source.ts',
@@ -541,10 +549,10 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '11098:d8cccef169992ad42803f27d81d5b753a50e5798e8f649ad3acd7aea98fa6925',
       '40747:411b3586832f4b981362200d53a3836cff6395e29cee48554464d97d48fa94a9',
       '93639:ce2fe7a229147bad36167351267198cbd255aa881701566612da47ce193e2e04',
-      '49634:fc711f099281a69d5ecf62a254ec8ffcfe202d33a181bcefae7d82d7e7e7dfe6',
+      '49634:e0cfd36f17df52ccd53f400f3f6f311cebf661ac8cdf5e5ab1feada0a7114902',
       '85685:41deccfd9e90c2b6a6de3cf6e0493c94e9776c8a1bbc1f5fe4ee3bfe76475b1a',
       '13300:6447848bbd6a737c168e7027e61dc5c57a12e9881a8104ffbc9829810b07122c',
-      '19514:a189839890f820d1a04f8f29b5dd89af51577d935e8af5e7a344cc8a5a9344fd',
+      '19514:571af417dce8a1714280e41071d29fd1b66446c8309cd124f40b8942f8422c13',
       '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
       '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
       '36693:a67fde03374f03e52ce2cc12031cb0be06174e20443bb57226f2ef986828389c',
@@ -893,6 +901,8 @@ function certifyIntakeMediaBridgeR102(body: string): void {
  * Certify complete current bodies and their unchanged authoritative sources;
  * keep every physical consumer and global forbidden scan independently checked. */
 function certifyT48OriginPageChunk(chunk: string): void {
+  // R204 changes only the sealed reader's RPC from v2 to v3. The two other
+  // complete modules and all read-only graph/consumer limits remain unchanged.
   for (const [name, hash] of [
     [
       'conversation-journal-v3-contracts.ts',
@@ -904,7 +914,7 @@ function certifyT48OriginPageChunk(chunk: string): void {
     ],
     [
       'conversation-meal-thread-page-store.ts',
-      '49c9d4b0d281f757b4275bbe95f1f83d6426c67e07844dfd44b0ac0c30cdfd40',
+      'f18c1ac5025b5e3273fb7dfc8b12581227e6f2a9da0f2abed794ee98fb88325c',
     ],
   ] as const)
     expect(
@@ -915,7 +925,7 @@ function certifyT48OriginPageChunk(chunk: string): void {
   certifyExactSharedTable(chunk, [
     ['11127', 'af1048cd20f83493747e07f281dda8c9d5adebf9888864a6460321ab95afc9bf'],
     ['46469', 'de989ba8a001d564412cfc74ea06cb434909299a19c1dd6cd6af7416e68c1d11'],
-    ['58670', 'c4f78ed80cc83d026c3a0079b132b7951835b782e969029c94fb4129d8c00e1b'],
+    ['58670', '368c287618c1e8165a1ada7f2673722bf196773c3a9499c8d9052add60ac13dc'],
   ])
 }
 const photoPurposeRoutesR59 = [
@@ -989,6 +999,43 @@ function restoreBoundedMealGrammarR184(text: string, kind: 'source' | 'build'): 
     )
   }
   if (kind === 'build') {
+    // R204 changes only the materializer in this eight-module provider
+    // chunk. Seal its complete current bytes, then restore the sealed prior
+    // module solely for the historical provider certificate. Actual runtime
+    // graph scans and the R204 source/body certificates still use current code.
+    expect(createHash('sha256').update(text).digest('hex')).toBe(
+      '94b37cb11a37365bba87e9b9130bf3fd4b9f5d274ffb7a13f4ab705ed5aad1b7',
+    )
+    const tree = ts.createSourceFile('r204-provider.js', text, ts.ScriptTarget.Latest, true)
+    const found: ts.ArrowFunction[] = []
+    function visit(node: ts.Node): void {
+      if (
+        ts.isPropertyAssignment(node) &&
+        node.name.getText(tree) === '26432' &&
+        ts.isArrowFunction(node.initializer)
+      )
+        found.push(node.initializer)
+      ts.forEachChild(node, visit)
+    }
+    visit(tree)
+    expect(found).toHaveLength(1)
+    const current = found[0]?.getText(tree) ?? ''
+    expect(createHash('sha256').update(current).digest('hex')).toBe(
+      '39bcf831bdae5453636b97e13dd9ef736585df527db9b0558b65f50bc69c8867',
+    )
+    const prior = (
+      JSON.parse(
+        readFileSync(
+          resolve(dedicatedSourceRoot, '__fixtures__/r204-materializer-before.json'),
+          'utf8',
+        ),
+      ) as { body: string }
+    ).body
+    expect(createHash('sha256').update(prior).digest('hex')).toBe(
+      'a480fe25475fdd2728097553d30170e46e0595cd101f7cb6ca15eaa88c951da2',
+    )
+    expect(text.split(current)).toHaveLength(2)
+    text = text.replace(current, prior)
     expect(createHash('sha256').update(text).digest('hex')).toBe(
       '056663c4f528c4c4455c032f8126b170e5e62f60931671d8890a0ae837952b41',
     )
@@ -1393,22 +1440,26 @@ function certifyPhotoPurposeEdgesR62() {
     expect(sharedText).toContain(`${parserId}:`)
     certifyNutritionJournalSplitContent(sharedText)
   }
-  const bodies = certifyExactSharedTable(chunk, [
+  const bodies = certifyExactSharedTable(
+    chunk,
     [
-      '84359',
-      parserId === '86248'
-        ? 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'
-        : '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab',
+      [
+        '84359',
+        parserId === '86248'
+          ? 'f3c74b65ac87a664ca460702b4dfc99fc11a910983a3a751a240f2239c16b4ed'
+          : '1cca149ffc7a9278307e03f6771ba28c93f3b19eae40409afb60f8e623d203ab',
+      ],
+      ...(parserCoLocated
+        ? [
+            [parserId, 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'] as [
+              string,
+              string,
+            ],
+          ]
+        : []),
     ],
-    ...(parserCoLocated
-      ? [
-          [parserId, 'bca65f93158ff60efe08f14a45537b8db4e719a9deb863c2b452b37a11862673'] as [
-            string,
-            string,
-          ],
-        ]
-      : []),
-  ], (id, body) => id === '84359' ? restoreVisionFetchBodyR180(body) : body)
+    (id, body) => (id === '84359' ? restoreVisionFetchBodyR180(body) : body),
+  )
   // R62's routing diagnostics import the existing OpenAI error classes directly.
   // Webpack factors that SDK differently: Gemini changes only this loader ID.
   // Reverse exactly one link to retain the independent full R59 body pin; no
@@ -1472,9 +1523,13 @@ function certifyPhotoPurposeEdgesR62() {
   ])
     expect(
       createHash('sha256')
-        .update(source === 'vision/gemini.ts'
-          ? restoreVisionFetchSourceR180(readFileSync(resolve(appRoot, '../../packages/providers/src', source), 'utf8'))
-          : readFileSync(resolve(appRoot, '../../packages/providers/src', source ?? '')))
+        .update(
+          source === 'vision/gemini.ts'
+            ? restoreVisionFetchSourceR180(
+                readFileSync(resolve(appRoot, '../../packages/providers/src', source), 'utf8'),
+              )
+            : readFileSync(resolve(appRoot, '../../packages/providers/src', source ?? '')),
+        )
         .digest('hex'),
     ).toBe(hash)
   expect(chunkConsumers(chunk)).toEqual(photoPurposeRoutesR59)
@@ -1836,7 +1891,9 @@ function certifyPhysicalModule(
   }
   visit(source)
   expect(found, `one physical reviewed module ${id}`).toHaveLength(1)
-  const raw = restoreMediaFactoryLinkR173(restoreSocialRecoveryParserLinkR196(found[0]?.getText(source) ?? ''))
+  const raw = restoreMediaFactoryLinkR173(
+    restoreSocialRecoveryParserLinkR196(found[0]?.getText(source) ?? ''),
+  )
   const body = restoreWorkoutFacadeLinkR140(restore ? restore(raw) : raw)
   expect(allowedHashes).toContain(createHash('sha256').update(body).digest('hex'))
   expect(text.startsWith('"use strict";') || body.startsWith('(a,b,c)=>{"use strict";')).toBe(true)
@@ -2082,9 +2139,12 @@ describe('authoritative Mobile API source surface', () => {
       expect(originalProcessingSourceR173(name)).toBeTypeOf('string')
     const entry = currentAppPathsManifest()['/api/mobile/v1/media/[id]/process/route']
     const file = resolve(buildRoot, 'server', entry ?? '')
-    const body = certifyPhysicalModule(file, '40550', [
-      '7b0cddcee34fc1887c109d933b0f0ac48b815bbd7c35de35b777afb6bfef1fb7',
-    ], restorePrivateProcessBodyR180)
+    const body = certifyPhysicalModule(
+      file,
+      '40550',
+      ['7b0cddcee34fc1887c109d933b0f0ac48b815bbd7c35de35b777afb6bfef1fb7'],
+      restorePrivateProcessBodyR180,
+    )
     certifyPhysicalModule(file, '72262', [
       'c50d3d95cbb616ce76dd8d84d9312750bdd67047b88fdb489e12f94a8deaf1e0',
     ])
@@ -2103,7 +2163,7 @@ describe('authoritative Mobile API source surface', () => {
   test('rejects changed or additional modules in the T48 shared read-page extraction', () => {
     const chunks = semanticChunks([
       'read_conversation_journal_page_v3',
-      'read_conversation_meal_journal_page_v2',
+      'read_conversation_meal_journal_page_v3',
     ])
     expect(chunks).toHaveLength(1)
     const chunk = chunks[0] ?? '',
@@ -2554,12 +2614,14 @@ describe('authoritative Mobile API source surface', () => {
     const paths = currentSurface.routePaths.filter(
       (path) =>
         !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
-        !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path),
+        !completionBuildPaths.has(path) &&
+        !journeySocialBuildPaths.has(path),
     )
     const mobile = currentSurface.mobileRoutePaths.filter(
       (path) =>
         !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
-        !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path),
+        !completionBuildPaths.has(path) &&
+        !journeySocialBuildPaths.has(path),
     )
     const digest = (values: string[]) =>
       createHash('sha256')
@@ -2800,7 +2862,10 @@ describe('authoritative Mobile API source surface', () => {
   })
 
   test('confines the durable private processing transport to the owned process POST', () => {
-    for (const marker of ['enqueue_conversation_media_processing_job_v2', 'dispatch_due_conversation_media_processing_v2'])
+    for (const marker of [
+      'enqueue_conversation_media_processing_job_v2',
+      'dispatch_due_conversation_media_processing_v2',
+    ])
       expect(runtimeExactStringRoutes(marker)).toEqual(['/api/mobile/v1/media/[id]/process/route'])
     expect(runtimeMarkerRoutes('MOBILE_CONVERSATION_PROCESSING_BRIDGE_ENABLED')).toEqual([
       '/api/mobile/v1/media/[id]/process/route',
@@ -3320,7 +3385,11 @@ describe('authoritative Mobile API source surface', () => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
         return [appPath, `app${appPath}.js`]
       }),
-      ...[...executionRouteFiles, ...completionTransports.keys(), ...journeySocialTransports.keys()].map((path) => {
+      ...[
+        ...executionRouteFiles,
+        ...completionTransports.keys(),
+        ...journeySocialTransports.keys(),
+      ].map((path) => {
         const appPath = `/api/mobile/v1/${path.replace(/\.ts$/, '')}`
         return [appPath, `app${appPath}.js`]
       }),
@@ -3344,7 +3413,10 @@ describe('authoritative Mobile API source surface', () => {
           resolve(dirname(script), 'training-completion-surface.mjs'),
           readFileSync(resolve(appRoot, 'scripts/training-completion-surface.mjs')),
         )
-        writeFileSync(resolve(dirname(script), 'journey-social-surface.mjs'), readFileSync(resolve(appRoot, 'scripts/journey-social-surface.mjs')))
+        writeFileSync(
+          resolve(dirname(script), 'journey-social-surface.mjs'),
+          readFileSync(resolve(appRoot, 'scripts/journey-social-surface.mjs')),
+        )
         symlinkSync(syntheticBuild, resolve(root, '.next'), 'dir')
         const result = spawnSync(process.execPath, [script], {
           encoding: 'utf8',
@@ -4010,7 +4082,7 @@ describe('authoritative Mobile API source surface', () => {
     const originsRoute = '/api/mobile/v1/conversation/intakes/route'
     const originsPageChunk = uniqueChunk([
       'read_conversation_journal_page_v3',
-      'read_conversation_meal_journal_page_v2',
+      'read_conversation_meal_journal_page_v3',
     ])
     certifyT48OriginPageChunk(originsPageChunk)
     expect(chunkConsumers(originsPageChunk)).toEqual([originsRoute, journalRoute])
@@ -4054,7 +4126,7 @@ describe('authoritative Mobile API source surface', () => {
         'read_conversation_meal_journal_page',
         [...commandRoutes, nutritionWindowAppPath, '/api/mobile/v1/training/window/route'].sort(),
       ],
-      ['read_conversation_meal_journal_page_v2', [originsRoute, journalRoute]],
+      ['read_conversation_meal_journal_page_v3', [originsRoute, journalRoute]],
       [
         'conversation.meal-edit-effect-public.v1',
         [...editRoutes, originsRoute, journalRoute].sort(),
@@ -4215,7 +4287,9 @@ describe('authoritative Mobile API source surface', () => {
         5 * 120, // R140: five explicit completion traces; all included in scans.
     )
     expect(surface.nftUniqueTargetCount - 6).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
-    expect(surface.nftRegularFileTargetCount - 6).toBe(215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
+    expect(surface.nftRegularFileTargetCount - 6).toBe(
+      215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6,
+    )
     expect(surface.nftDirectoryTargetCount).toBe(2)
 
     // The three new routes add exactly one fully certified shared chunk and
@@ -5292,10 +5366,13 @@ describe('current96 execution build extension', () => {
     const surface = inspectBuildSurface(buildRoot)
     expect(surface.mobileRoutePaths).toHaveLength(106)
     expect(surface.routePaths).toHaveLength(107)
-    expect(surface.mobileRoutePaths.filter((path) => !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path))).toHaveLength(
-      96,
-    )
-    for (const path of [...completionBuildPaths, ...journeySocialBuildPaths]) expect(surface.mobileRoutePaths).toContain(path)
+    expect(
+      surface.mobileRoutePaths.filter(
+        (path) => !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path),
+      ),
+    ).toHaveLength(96)
+    for (const path of [...completionBuildPaths, ...journeySocialBuildPaths])
+      expect(surface.mobileRoutePaths).toContain(path)
     for (const path of [
       '/api/mobile/v1/training/execution',
       '/api/mobile/v1/training/execution/[sessionId]',

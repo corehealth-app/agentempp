@@ -75,6 +75,7 @@ const answer = z.discriminatedUnion('kind', [
     })
     .strict(),
   z.object({ kind: z.literal('meal_type'), meal_type: mealType }).strict(),
+  z.object({ kind: z.literal('food_name'), food_index: index, name: text(160) }).strict(),
 ])
 const ref = z
   .object({
@@ -276,7 +277,7 @@ const materialized = z
 const incomplete = z
   .object({
     status: z.literal('clarification_required'),
-    reason: z.literal('missing_quantity'),
+    reason: z.enum(['missing_quantity', 'unqualified_whole_name']),
     food_indexes: ids.refine((a) => a.length === 1),
   })
   .strict()
@@ -360,7 +361,10 @@ const preparation = z.discriminatedUnion('status', [
       ...prepBase,
       status: z.literal('needs_reply'),
       next_need: z
-        .object({ kind: z.enum(['quantity', 'meal_type']), food_index: index.nullable() })
+        .object({
+          kind: z.enum(['quantity', 'meal_type', 'food_name']),
+          food_index: index.nullable(),
+        })
         .strict(),
     })
     .strict(),
@@ -556,7 +560,7 @@ function proveLinks(chain: Chain, parent: Parent): void {
   const context = parent.source.context as ReturnType<
     typeof parseConversationMealStoredSource
   >['context']
-  for (const l of chain) {
+  for (const [position, l] of chain.entries()) {
     if (l.reply_id === parent.binding.command_id) conversationContinuationReadUnavailable()
     if (l.answer.kind === 'quantity') {
       const f = result.foods[l.answer.food_index]
@@ -582,7 +586,7 @@ function proveLinks(chain: Chain, parent: Parent): void {
               ? context.source_evidence.context_text
               : context.source_evidence.transcript
       if (typeof sourceText !== 'string') conversationContinuationReadUnavailable()
-      const name = sourceText.slice(f.name.start, f.name.end),
+      const name = continuationFoodName(parent, f.index, chain.slice(0, position)),
         reference = mobileQuantityDisplay(name)
       if (
         !['g', 'kg'].includes(l.answer.unit) &&
@@ -590,6 +594,10 @@ function proveLinks(chain: Chain, parent: Parent): void {
         !(l.answer.unit === 'L' && reference?.unit === 'mL') &&
         !(l.answer.unit === 'caneca' && reference?.reference_id === 'fao-infoods-v2-whole-milk-tb')
       )
+        conversationContinuationReadUnavailable()
+    } else if (l.answer.kind === 'food_name') {
+      const target = l.answer.food_index
+      if (!result.foods.some((food) => food.index === target) || quantities.has(target))
         conversationContinuationReadUnavailable()
     } else {
       if (typed || context.source_input.meal_type !== undefined)
@@ -662,7 +670,9 @@ function parentParts(
     conversationContinuationReadUnavailable()
   const decision = parseConversationMealDecisionReceipt(p.decision, b)
   if (
-    !['missing_quantity', 'meal_type_required'].includes(decision.reason) ||
+    !['missing_quantity', 'meal_type_required', 'unqualified_whole_name'].includes(
+      decision.reason,
+    ) ||
     decision.source_hash !== p.source.source_hash ||
     decision.attempt_id !== p.semantic.attempt_id ||
     decision.semantic_result_hash !== p.semantic.result_hash ||
@@ -679,10 +689,61 @@ function parentParts(
     conversationContinuationReadUnavailable()
   return { command, stored, semantic, decision, sourcePacket }
 }
+function continuationFoodName(p: Parent, index: number, answers: Chain): string {
+  const replacement = answers
+    .filter((link) => link.answer.kind === 'food_name' && link.answer.food_index === index)
+    .at(-1)?.answer
+  if (replacement?.kind === 'food_name') return replacement.name
+  const context = p.source.context as ReturnType<
+    typeof parseConversationMealStoredSource
+  >['context']
+  const command = bindConversationCommand(
+    p.binding.owner_id,
+    `cmsg1:${p.binding.command_id}`,
+    context.source_input,
+  )
+  const source = buildConversationMealInterpretationSource(
+    command,
+    parseConversationMealStoredSource(
+      {
+        sourceHash: p.source.source_hash,
+        capturedAt: p.source.captured_at,
+        epoch: p.binding.epoch,
+        context,
+      },
+      command,
+    ),
+  )
+  const food = (p.semantic.result as ReturnType<typeof parseConversationMealInterpretation>).foods[
+    index
+  ]
+  if (!food) return conversationContinuationReadUnavailable()
+  const name = food.name
+    ? source.sources
+        .find((unit) => unit.unit === food.name?.unit)
+        ?.text?.slice(food.name.start, food.name.end)
+    : food.visual_index === null
+      ? null
+      : (
+          source.sources.find((unit) => unit.unit === 'vision_items')?.visual_items[
+            food.visual_index
+          ] as { name?: unknown } | undefined
+        )?.name
+  if (typeof name !== 'string') return conversationContinuationReadUnavailable()
+  return name
+}
 function proveQuestion(raw: unknown, p: Parent, answers: Chain, expectedRevision: number) {
   const q = parseConversationMealQuestion(raw)
   if (q.revision !== expectedRevision) conversationContinuationReadUnavailable()
-  if (q.kind === 'quantity') {
+  if (q.kind === 'food_name') {
+    if (
+      q.food_name !== continuationFoodName(p, q.food_index, answers) ||
+      answers.some(
+        (link) => link.answer.kind === 'quantity' && link.answer.food_index === q.food_index,
+      )
+    )
+      conversationContinuationReadUnavailable()
+  } else if (q.kind === 'quantity') {
     const semantic = p.semantic.result as ReturnType<typeof parseConversationMealInterpretation>
     const f = semantic.foods[q.food_index]
     const c = p.source.context as ReturnType<typeof parseConversationMealStoredSource>['context']
@@ -705,7 +766,7 @@ function proveQuestion(raw: unknown, p: Parent, answers: Chain, expectedRevision
           : f.name.unit === 'media_context' && 'context_text' in c.source_evidence
             ? c.source_evidence.context_text
             : c.source_evidence.transcript
-    if (typeof s !== 'string' || s.slice(f.name.start, f.name.end) !== q.food_name)
+    if (typeof s !== 'string' || continuationFoodName(p, q.food_index, answers) !== q.food_name)
       conversationContinuationReadUnavailable()
   } else {
     const c = p.source.context as ReturnType<typeof parseConversationMealStoredSource>['context']
@@ -907,7 +968,7 @@ function proveReply(
       const s = parts.sourcePacket.sources.find((s) => s.unit === name.unit)?.text
       if (typeof s !== 'string') conversationContinuationReadUnavailable()
       const converted = convertConversationMealQuantity(
-        s.slice(name.start, name.end),
+        continuationFoodName(p, w.food_index, c.answer_chain.slice(0, c.answer_chain.indexOf(l))),
         l.answer.amount,
         l.answer.unit,
       )
@@ -947,7 +1008,8 @@ function proveReply(
         next.food_index !== prep.next_need.food_index ||
         (next.kind === 'meal_type' && prep.materialization.status !== 'materialized') ||
         (prep.materialization.status === 'clarification_required' &&
-          (next.kind !== 'quantity' ||
+          (next.kind !==
+            (prep.materialization.reason === 'missing_quantity' ? 'quantity' : 'food_name') ||
             !isDeepStrictEqual(prep.materialization.food_indexes, [next.food_index])))
       )
         conversationContinuationReadUnavailable()
@@ -1074,7 +1136,10 @@ function decodeConversationMealContinuationRead(
       ((parts.decision.reason === 'missing_quantity' &&
         (q.kind !== 'quantity' ||
           !isDeepStrictEqual(parts.decision.food_indexes, [q.food_index]))) ||
-        (parts.decision.reason === 'meal_type_required' && q.kind !== 'meal_type'))
+        (parts.decision.reason === 'meal_type_required' && q.kind !== 'meal_type') ||
+        (parts.decision.reason === 'unqualified_whole_name' &&
+          (q.kind !== 'food_name' ||
+            !isDeepStrictEqual(parts.decision.food_indexes, [q.food_index]))))
     )
       conversationContinuationReadUnavailable()
   } else if (h.question !== null || h.revision === 0) conversationContinuationReadUnavailable()

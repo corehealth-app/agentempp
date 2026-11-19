@@ -296,6 +296,11 @@ struct FlowNeutralIntakeTranscriptContent: View {
   private func status(_ value: FlowNeutralIntakeResponseSnapshot) -> String {
     switch value.deliveryState {
     case .notRecorded:
+      var reason = value.reason
+      if case .some(.meal(.state(let state))) = value.result { reason = state.reason }
+      if let explanation = FlowConversationJournalV3Presentation.notRecordedReason(
+        reason, english: english)
+      { return explanation }
       return english
         ? "This message did not record a meal or activity."
         : "Esta mensagem não registrou refeição nem atividade."

@@ -6,6 +6,7 @@ struct ConversationMealReplyIntent: Codable, Sendable, CustomStringConvertible, 
   enum Answer: Sendable {
     case quantity(amount: Decimal, unit: String)
     case mealType(ConversationMealCommand.MealType)
+    case foodName(String)
   }
   let parentBinding: ConversationThreadPageSnapshot.Binding
   let parentDecisionHash: String
@@ -35,6 +36,9 @@ struct ConversationMealReplyIntent: Codable, Sendable, CustomStringConvertible, 
         "amount": .number(try ConversationMealEditOperation.validatedNumber(amount)),
         "unit": .string(unit),
       ])
+    case .foodName(let name):
+      guard let index = question.foodIndex else { throw ConversationMealEditInvalid.value }
+      value = .object(["kind": .string("food_name"), "food_index": .number(Double(index)), "name": .string(name)])
     case .mealType(let meal):
       value = .object(["kind": .string("meal_type"), "meal_type": .string(meal.rawValue)])
     }
@@ -89,6 +93,14 @@ struct ConversationMealReplyIntent: Codable, Sendable, CustomStringConvertible, 
           && question.foodIndex == Int(index) && question.allowedUnits.contains(unit))
       answer = try .quantity(
         amount: editDecimal(value.required("amount").amount(max: 9999, positive: true)), unit: unit)
+    } else if try a.member("kind").string() == "food_name" {
+      let value = try a.object(["kind", "food_index", "name"])
+      let index = try value.required("food_index").amount(max: 29)
+      let name = try value.required("name").text(limit: 160)
+      try editCheck(question.kind == "food_name" && index.rounded() == index
+        && question.foodIndex == Int(index)
+        && !name.unicodeScalars.contains { ($0.value < 32 && ![9, 10, 13].contains($0.value)) || $0.value == 127 })
+      answer = .foodName(name)
     } else {
       let value = try a.object(["kind", "meal_type"])
       guard try value.required("kind").string() == "meal_type", question.kind == "meal_type",

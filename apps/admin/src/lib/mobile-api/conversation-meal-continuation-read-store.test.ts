@@ -170,6 +170,23 @@ function sdk(value: unknown) {
 }
 
 describe('one-shot private linked continuation reader', () => {
+  it('exposes an item-specific name question for an unqualified original without changing its source or admitting a meal', async () => {
+    const f = fixture()
+    f.value.parent.decision.reason = 'unqualified_whole_name'
+    const q = f.value.head.question as unknown as Record<string, unknown>
+    q.kind = 'food_name'
+    q.allowed_units = []
+    const result = await sdk(f.value).store.read(f.identity)
+    expect(result.action).toBe('available')
+    if (result.action !== 'available') throw new Error('Missing original clarification')
+    expect(result.head.question).toMatchObject({
+      kind: 'food_name',
+      food_index: 0,
+      food_name: 'arroz',
+    })
+    expect(result.parent.source.context).toEqual(f.value.parent.source.context)
+    expect(result.fulfillment).toBeNull()
+  })
   it('reads exact initial parent/head once, preserves original literals and supplies no callbacks', async () => {
     const f = fixture(),
       s = sdk(f.value),
@@ -1145,6 +1162,49 @@ function referenceWitnessFixture(
 }
 
 describe('actual original-name reference witness binding', () => {
+  it('uses the explicitly corrected name for a subsequent quantity reference while retaining the original source', async () => {
+    const f = referenceWitnessFixture('whey', 1, 'scoop', 30)
+    const v = f.value,
+      r = v.reply
+    if (!r?.preparation || !v.head.question) throw new Error('fixture')
+    const corrected = {
+      reply_id: '10000000-0000-4000-8000-000000000009',
+      reply_input_hash: '9'.repeat(64),
+      question_key: '8'.repeat(64),
+      answer: { kind: 'food_name' as const, food_index: 0, name: 'whey' },
+    }
+    const original = bindConversationCommand(owner, `cmsg1:${parent}`, {
+      command_protocol: 'conversation.command.v1',
+      command_id: parent,
+      kind: 'meal.report',
+      source: { channel: 'text', text: 'item' },
+      meal_type: 'almoco',
+    })
+    const oldHash = f.identity.parentInputHash
+    const raw = JSON.parse(
+      JSON.stringify(v).replaceAll(oldHash, original.inputHash),
+    ) as WireAvailable
+    const reply = raw.reply
+    if (!reply || !raw.head.question) throw new Error('fixture')
+    raw.parent.source.context.source_input = original.command
+    reply.source.context.authority.context.source_input = structuredClone(original.command)
+    raw.parent.decision.reason = 'unqualified_whole_name'
+    raw.parent.decision.food_indexes = [0]
+    raw.head.revision = 1
+    raw.head.question.revision = 1
+    raw.head.answers = [corrected]
+    reply.body.expected_revision = 1
+    reply.source.context.source_input.expected_revision = 1
+    reply.source.context.answer_chain.unshift(corrected)
+    const result = await sdk(raw).store.read({ ...f.identity, parentInputHash: original.inputHash })
+    expect(result.action).toBe('available')
+    if (result.action !== 'available') throw new Error('fixture')
+    expect(result.parent.source.context.source_input.source).toEqual({
+      channel: 'text',
+      text: 'item',
+    })
+    expect(result.reply?.preparation?.preparation.quantity_witnesses[0]?.quantity_g).toBe(30)
+  })
   it.each([
     ['leite', 200, 'mL', 206],
     ['whey', 1, 'scoop', 30],

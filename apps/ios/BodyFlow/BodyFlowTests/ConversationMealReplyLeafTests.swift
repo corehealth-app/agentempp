@@ -5,6 +5,33 @@ import Testing
 
 @Suite("Immutable linked reply intent and closed delivery")
 struct ConversationMealReplyLeafTests {
+  @Test func correctedNameAnswerKeepsItsOriginalItemQuestionAndExactStoredBody() throws {
+    let original = try mealIntent()
+    var rawQuestion = try object(original.question.encodedData)
+    rawQuestion["kind"] = "food_name"
+    rawQuestion["food_index"] = 0
+    rawQuestion["food_name"] = "alimento do buffet"
+    let question = try JSONDecoder().decode(
+      ConversationThreadPageSnapshot.Question.self, from: bytes(rawQuestion))
+    var wire = try object(original.wireBody)
+    var input = wire["input"] as! [String: Any]
+    input["answer"] = ["kind": "food_name", "food_index": 0, "name": "pão francês"]
+    wire["input"] = input
+    let intent = try ConversationMealReplyIntent(
+      parentBinding: original.parentBinding, parentDecisionHash: original.parentDecisionHash,
+      question: question, replyID: original.replyID, wireBody: bytes(wire))
+    let restored = try JSONDecoder().decode(
+      ConversationMealReplyIntent.self, from: JSONEncoder().encode(intent))
+    #expect(restored.wireBody == intent.wireBody && restored.replyID == intent.replyID)
+    #expect(restored.replyInputHash == intent.replyInputHash)
+    input["answer"] = ["kind": "food_name", "food_index": 1, "name": "pão francês"]
+    wire["input"] = input
+    #expect(throws: (any Error).self) {
+      try ConversationMealReplyIntent(
+        parentBinding: original.parentBinding, parentDecisionHash: original.parentDecisionHash,
+        question: question, replyID: original.replyID, wireBody: bytes(wire))
+    }
+  }
   @Test func actualMealTypeSubmitHasTheQualifiedHashAndSurvivesExactStorage() throws {
     let intent = try mealIntent()
     let source = try root()["submit"] as! [String: Any]

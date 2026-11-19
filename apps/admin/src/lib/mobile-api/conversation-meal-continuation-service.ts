@@ -456,12 +456,18 @@ export function createConversationMealContinuationService(
         materialization: material,
       }
       if (material.status === 'clarification_required') {
-        if (material.reason !== 'missing_quantity' || material.food_indexes.length !== 1)
+        if (
+          !['missing_quantity', 'unqualified_whole_name'].includes(material.reason) ||
+          material.food_indexes.length !== 1
+        )
           return result('held', material.reason)
         return await prepare({
           ...base,
           status: 'needs_reply',
-          next_need: { kind: 'quantity', food_index: material.food_indexes[0] },
+          next_need: {
+            kind: material.reason === 'missing_quantity' ? 'quantity' : 'food_name',
+            food_index: material.food_indexes[0],
+          },
         })
       }
       if (material.nutrition_label) return result('held', 'nutrition_label_confirmation_required')

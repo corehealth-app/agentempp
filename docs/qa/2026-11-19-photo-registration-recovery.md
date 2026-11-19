@@ -95,3 +95,16 @@ Connected QA has observed one saved breakfast from the gallery photo, all six
 feedback sections, matching nutrition values after cold reopen, and an exact
 technical replay returning the same receipt. Distribution and final runtime
 closeout remain separate release gates.
+
+## Cross-country incident applicability
+
+A final metadata-only check found that the original incident account has country
+US. The original strict alias was scoped to BR, while search intentionally treats
+country as a tie-breaker. A regression reproduces the missing exact Portuguese
+name at similarity 0.9 for US. An additive catalogue alias `pão francês` copies
+only official verified TACO4:53, refusing conflicts or changed upstream facts.
+The rollback dry run verifies exact BR/US lookup, qualifiers remain distinct,
+repeat creates no duplicate, and all 8,541 pre-task catalogue rows remain exact.
+No user country, old meal, runtime code, app binary or provider configuration is
+changed. The Release archive and BFF remain source 1ca2ef99; this follow-up commit
+contains only the database migration, regressions and this documentation.

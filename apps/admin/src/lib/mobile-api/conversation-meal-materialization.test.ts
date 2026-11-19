@@ -436,6 +436,27 @@ describe('actual command interpretation materialization', () => {
       0, 1,
     ])
   })
+  it('uses the exact Portuguese catalogue alias for a bread photo when residence is US', async () => {
+    const f = visualFixture([{ name: 'pão francês', quantity_g_estimate: 50, confidence: 0.9 }]),
+      state = db()
+    f.capture.context.owner.country = 'US'
+    state.rpc.mockImplementation(async (_name, args) => ({
+      data: args.search_term === 'pao frances' ? [row('pão francês', 8560)] : [],
+      error: null,
+    }))
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs[0]?.calculation_input).toEqual({
+      food_name: 'pão francês',
+      quantity_g: 50,
+    })
+    expect(state.rpc).toHaveBeenCalledWith('search_food_trgm', {
+      search_term: 'pao frances',
+      min_similarity: 0.9,
+      max_results: 5,
+      p_country: 'US',
+    })
+    expect(result.source_groups[0]?.source_positions[0]?.visual_index).toBe(0)
+  })
   it('does not erase an explicit bread variety when qualifying a familiar catalogue alias', async () => {
     const f = visualFixture([
         { name: 'pão francês integral', quantity_g_estimate: 50, confidence: 0.9 },

@@ -55,3 +55,20 @@ After named replies exist, preserve the additive schema on application rollback.
 
 The broader full-product goal remains paused; this change concerns the reported
 photo incident. This source checkpoint is not a claim of complete product validation.
+
+## Connected photo follow-up: plain water
+
+The real gallery photo test recognized the French bread and explained the next
+blocked item correctly: a glass of plain water. The verified catalogue contained
+USDA FDC 174158 (`Water, bottled, generic`) but no Portuguese plain-water alias.
+The follow-up migration copies that exact verified row into the single `água`
+alias. Its zero values are upstream facts, not a fallback for unknown foods.
+The official USDA API was independently checked on 19 November 2026.
+
+The regression first failed with no alias. After migration, exact 0.9 search,
+provenance, no duplicate alias on repeat, preservation of all existing catalogue
+rows, and exclusion of coconut water/unknown drinks pass in a rolled-back local
+transaction. The migration refuses conflicting aliases or altered upstream facts.
+No application code or provider configuration changes in this follow-up.
+Existing photo interpretation and original refusal remain immutable; continue
+through the linked reply rather than resubmitting the photo.

@@ -25,10 +25,15 @@ e depois de uma única invocação física. Não há repetição automática.
 O RPC de fila e comandos usado pelo serviço é
 `journey_social_operator_authenticated(actor, login, action, input)`, concedido
 apenas a `service_role`. Dentro da transação, ele bloqueia a linha do papel
-operacional e a sessão original, antes e depois do trabalho. Uma sessão que
+operacional, a identidade no Auth e a sessão original, antes e depois do trabalho. Uma sessão que
 expira durante uma gravação invalida também o efeito e o recibo. Concorrência
 com outra operação do mesmo operador retorna conflito; a interface não deve
 criar outro identificador ou reenviar silenciosamente.
+
+A migração de revogação social recusa também `auth.users.deleted_at` e o
+bloqueio atual no Auth, mesmo com token/sessão ainda válidos. O lock compartilhado
+da identidade serializa bloqueio/exclusão lógica com uma operação já admitida;
+se a revogação estiver em curso, a admissão recusa por conflito, sem gravar.
 
 `journey_social_operator_profile_authenticated(actor, login, member)` oferece
 uma consulta mínima ao perfil público, protegida pelo mesmo bloqueio e

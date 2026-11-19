@@ -4,8 +4,9 @@ DO $$ BEGIN
  ASSERT to_regprocedure('public.mutate_journey_social_block(uuid,uuid,uuid,bigint,uuid,boolean)') IS NOT NULL,
  'Social blocking command is not implemented';
 END $$;
-INSERT INTO auth.users(id,email) SELECT ('19200000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,
- 'social-r191-'||i||'@example.invalid' FROM generate_series(1,7) i;
+-- Positive ranking fixtures represent the existing confirmed-account policy.
+INSERT INTO auth.users(id,email,email_confirmed_at) SELECT ('19200000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,
+ 'social-r191-'||i||'@example.invalid',clock_timestamp() FROM generate_series(1,7) i;
 INSERT INTO public.users(id,auth_user_id,name,timezone) SELECT ('19200000-0000-4000-9000-'||lpad(i::text,12,'0'))::uuid,
  ('19200000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'Synthetic social '||i,'America/Sao_Paulo' FROM generate_series(1,4) i;
 INSERT INTO public.admin_users(id,email,role) VALUES

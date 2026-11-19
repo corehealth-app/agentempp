@@ -16,6 +16,15 @@ Os wrappers SQL são executáveis somente pelo backend `service_role`, validam o
 
 A projeção exclui quem não consentiu, contas bloqueadas/excluídas, perfis suspensos e bloqueios em ambas as direções. As posições são calculadas sobre o conjunto visível: empates compartilham posição (`1, 1, 3`). A ordenação por identificador público estabiliza os empates sem desempatar a posição.
 
+`20261119005845_journey_social_auth_revocation.sql` acrescenta a verificação do
+bloqueio e da exclusão lógica no Auth, além do estado da conta de domínio.
+Contas sem confirmação também ficam fora da projeção dos colegas. Os gateways
+de paciente e operador serializam a identidade do Auth com o trabalho já
+admitido, preservando a sessão original e sem renovar ou escrever no Auth.
+Banimento expirado permite novamente a admissão normal. Os testes de revogação
+usam fixtures transacionais e duas conexões reais, nas duas ordens da disputa,
+sem gravar XP. Isso não implementa a exclusão completa de conta pelo app.
+
 A resposta dos colegas admite somente `member_id`, `nickname`, `rank`, `weekly_xp` e `is_you`. Não expõe Auth, ID interno, nome de cadastro, calorias, peso, gordura, metas ou proteções clínicas. O leitor inicial continua compatível, limitado a 1–100 participantes e com `has_more`. O novo `read_journey_weekly_ranking_page` oferece cursor ligado ao membro público do leitor, à data civil e a um digest do conjunto visível. Mudança de XP, participação ou bloqueio exige atualizar a lista; não se mantém um snapshot que reapresente quem saiu. O cursor não concede autoridade e não contém IDs internos ou fatos clínicos. A função privada com relógio parametrizado serve aos testes determinísticos e não recebe EXECUTE de nenhum papel da API.
 
 ## Verificação e próximas integrações

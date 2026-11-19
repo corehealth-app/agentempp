@@ -4,9 +4,10 @@ DO $$ BEGIN
  ASSERT to_regprocedure('public.read_journey_social_profile(uuid,uuid)') IS NOT NULL,
   'Journey participation reader is not implemented';
 END $$;
-INSERT INTO auth.users(id,email)
+-- Eligible ranking fixtures are confirmed accounts, as required by mobile Auth.
+INSERT INTO auth.users(id,email,email_confirmed_at)
  SELECT ('19000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,
- 'journey-r190-'||i||'@example.invalid' FROM generate_series(1,7) i;
+ 'journey-r190-'||i||'@example.invalid',clock_timestamp() FROM generate_series(1,7) i;
 INSERT INTO public.users(id,auth_user_id,name,timezone)
  SELECT ('19000000-0000-4000-9000-'||lpad(i::text,12,'0'))::uuid,
  ('19000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,

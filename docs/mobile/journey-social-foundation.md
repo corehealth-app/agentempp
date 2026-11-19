@@ -1,6 +1,25 @@
 # Jornada social — fundação privada do ranking
 
-Estado: dependência de T6 implementada e qualificada localmente; **não ativada no app nem aplicada no staging**. O plano aprovado de 03/11/2026 continua integralmente aberto. Os controles SQL de bloqueio, denúncia, moderação e paginação foram acrescentados em `20261118152959_journey_social_controls.sql` e qualificados localmente. Os contratos HTTP e o gateway de sessão viva foram acrescentados no servidor; os contratos nativos estão descritos em [Jornada social no iOS](journey-social-ios-contracts.md). Interfaces, reconciliação persistente e QA conectado continuam obrigatórios antes da exposição.
+Estado: as sete migrações sociais, até `20261119005845_journey_social_auth_revocation.sql`, foram aplicadas ao staging `xitugspwfxkcluxvrdeg` em 18/11/2026 (R202). **A Jornada social continua sem liberação no app.** O plano aprovado de 03/11/2026 segue ativo, com todos os requisitos restantes obrigatórios. Os contratos HTTP, a interface operacional e a reconciliação persistente passaram pela qualificação local; QA conectado com identidades reais de teste e distribuição continuam necessários. Os contratos nativos estão descritos em [Jornada social no iOS](journey-social-ios-contracts.md).
+
+## Aplicação do esquema no staging
+
+O pacote usou os arquivos SQL do commit `022607b7`, com verificações dentro de
+uma única operação atômica. Um ensaio no PostgreSQL 17.6 real do staging
+conferiu as 27 funções novas, as sete tabelas privadas, os privilégios e as
+917 funções anteriores; depois reverteu todos os objetos e registros de
+histórico novos. A aplicação definitiva passou pelas mesmas verificações.
+Uma consulta independente confirmou os sete registros de migração com hashes
+iguais aos arquivos de origem e a preservação das 917 funções anteriores.
+
+As tabelas novas ficaram vazias, com RLS, sem políticas de acesso direto e sem
+permissões diretas para `anon`, `authenticated` ou `service_role`. As funções
+públicas permanecem restritas ao backend. Também foram exercidas recusas de
+identidade ausente sem criar contas ou registros de teste no staging.
+
+Isso qualifica a aplicação do esquema, não o fluxo completo de uma pessoa no
+app. Não houve build de servidor, troca de endereço, ativação de capacidade ou
+novo TestFlight nesta etapa. O build 1.0(20) e seus servidores foram preservados.
 
 ## Dados e autoridade
 
@@ -37,7 +56,7 @@ Antes de ativar: contratos HTTP fechados com sessão viva e identidade original,
 
 A recuperação de resposta perdida e seu cancelamento auditável estão
 documentados em [Recuperação de operações](journey-social-operation-recovery.md).
-Essa dependência é local e não ativa as telas ou o banco de staging.
+O esquema dessa dependência foi incluído na aplicação R202; isso não ativa as telas.
 
 `mutate_journey_social_block` e `submit_journey_social_report` compartilham o namespace idempotente e a revisão do próprio perfil. Retentar não reaplica um bloqueio retirado. Bloqueios ocultam o colega nos dois sentidos; a lista própria permite desfazê-los mesmo após sair do ranking. Apelidos retirados não são conservados nessa lista. As denúncias admitem somente os motivos `nickname`, `harassment`, `spam` e `other`, sem texto clínico livre. O mesmo motivo ainda pendente por pessoa/alvo é deduplicado. Nenhuma denúncia suspende um perfil automaticamente.
 

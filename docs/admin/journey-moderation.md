@@ -1,7 +1,10 @@
 # Moderação operacional da Jornada
 
 Esta é a interface operacional e a dependência de servidor da tarefa T6,
-qualificadas localmente. A qualificação conectada e a ativação continuam pendentes. Não está incluída no
+qualificadas localmente. As sete migrações do esquema foram aplicadas e
+conferidas no staging `xitugspwfxkcluxvrdeg` (R202), conforme a
+[fundação social](../mobile/journey-social-foundation.md#aplicação-do-esquema-no-staging).
+A qualificação conectada da interface e a ativação continuam pendentes. Não está incluída no
 build 1.0(20). `MOBILE_JOURNEY_SOCIAL_ENABLED` permanece desligado por padrão.
 Nenhuma migração social é hospedada somente por existir neste repositório.
 

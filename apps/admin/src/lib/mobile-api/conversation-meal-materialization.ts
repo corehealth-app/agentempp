@@ -3,6 +3,7 @@
 
 import { isDeepStrictEqual } from 'node:util'
 import {
+  consumedCompositionParts,
   consumedFoodDefault,
   draftFromVisionItems,
   labelCandidateId,
@@ -708,7 +709,22 @@ async function materializeConversationMealCore(
       const raw = structuredClone(result.data),
         rows = z.array(catalogRow).max(5).parse(raw)
       if (!isDeepStrictEqual(raw, rows)) unavailable()
-      const found = rows.some((row) => catalogueWording(row.name_pt) === catalogueTerm)
+      let found = rows.some((row) => catalogueWording(row.name_pt) === catalogueTerm)
+      // A named composition need not exist as one catalogue row. Reuse the
+      // calculator's exact component resolution, preserving the original name,
+      // source positions and total mass. No unknown/partial ingredient passes.
+      if (!found) {
+        const parts = consumedCompositionParts(name, country)
+        if (parts) {
+          found = true
+          for (const part of parts) {
+            if (!(await qualifyWhole(catalogueWording(part)))) {
+              found = false
+              break
+            }
+          }
+        }
+      }
       wholeQualified.set(whole, found)
       return found
     }

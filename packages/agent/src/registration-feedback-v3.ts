@@ -631,7 +631,13 @@ export function renderRegistrationFeedbackV3(raw: RegistrationFeedbackV3): Feedb
                     ? 'unidade'
                     : 'unidades'
                 : q.unit
-          return `${item.food_name} · ${n(q.value)} ${unit}${q.estimated ? (en ? ' (estimated, editable)' : ' (estimado, editável)') : ''}\n${macros(item)}`
+          const composition =
+            item.nutrition_source === 'canonical_composite'
+              ? en
+                ? '\nEstimated composition; ingredient proportions are approximate and editable.'
+                : '\nComposição estimada; proporções dos ingredientes aproximadas e editáveis.'
+              : ''
+          return `${item.food_name} · ${n(q.value)} ${unit}${q.estimated ? (en ? ' (estimated, editable)' : ' (estimado, editável)') : ''}\n${macros(item)}${composition}`
         })
         .join('\n\n'),
     })

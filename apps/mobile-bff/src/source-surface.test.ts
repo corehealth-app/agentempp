@@ -282,6 +282,9 @@ function restorePrivateMediaContractR168(id: string, body: string): string {
 }
 
 function certifyOrdinaryPhotoSourcesR102(): void {
+  // R206 compares all383 identities/425 physical copies: four changed whole
+  // bodies (materializer, shared calculator/export, V2 and V3 presentations)
+  // are sealed below. Global import/runtime scans and tampering tests remain.
   // R204 intentionally extends the exact materializer and closed linked-name
   // contracts. All383 chunk module identities remain;379 complete bodies are
   // byte-identical. Pin the four changed complete bodies; do not exempt imports,
@@ -295,7 +298,15 @@ function certifyOrdinaryPhotoSourcesR102(): void {
       'everyday-food-defaults.ts',
       '6ab28a7063eba8ccd3d5a50e1c23165a62da29517883b68edd1fe3d82abb44fb',
     ],
-    ['meal-pipeline.ts', '73c3df3f60f415a2bd718604f694304746b10bb33094ac76cd08b67f32f723a9'],
+    ['meal-pipeline.ts', '10ca3bcc38128c34769a4b21438ece5d70c74c1b4c1044b1620a4d50d8ae7956'],
+    [
+      'registration-feedback-v2.ts',
+      'efbb5e5dcf7706dd940b83cf736bbed9648032acc8b25a838f2099236da89cde',
+    ],
+    [
+      'registration-feedback-v3.ts',
+      '495f03a0e05c0c49284fcd1e3b494f62b41b444ae4f22d56c1ce3b85d0b31842',
+    ],
   ])
     expect(
       createHash('sha256')
@@ -303,9 +314,10 @@ function certifyOrdinaryPhotoSourcesR102(): void {
         .digest('hex'),
     ).toBe(hash)
   for (const [id, hash] of [
-    ['26432', '39bcf831bdae5453636b97e13dd9ef736585df527db9b0558b65f50bc69c8867'],
+    ['26432', '6fa92a196caa8c5a1a058514be9b25a613535e8cf377d139fb384adfb7e979e2'],
     ['418', 'b6f37d51d0e565142e530832b760faac2dbb8328acc25a2e129a8a6ab0ffdfb9'],
-    ['69702', '9ecc51ff37b728c9b9c5a0fad60663f69af28cf5f0895464ec4ab3606b9cb7da'],
+    ['69702', 'dccd4496cf10a78be45946abca592b1eee78ea2ef6df893ed5082ab58a0d10df'],
+    ['53637', 'b06d9ecef697d719db12f8de0c7a84645999c9ddbe142e463085767c6c6dae98'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
       (file) =>
@@ -333,7 +345,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-materialization.ts',
-      '5338bc9c0c590ef42ef0b449e90c52358f044e617c118722d71f3fe11a1fc4b5',
+      'ff26e6970537b541fe03db8dc5183735407fc55860a5f6b7558fd404ef579db4',
     ],
     [
       'conversation-meal-source.ts',
@@ -561,7 +573,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
       '65556:a5af333ad6fb31be8e67604e1c8db7d05b7403359d573e3b3a49080aae17b9b4',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
-      '69431:22fe4905a8681297dba0a50a7a0a75352d687ff4ea3da18f93310480e3276753',
+      '69431:d23ccd1a4aa218daf79f4cc51f9562056582cf964ac06c0e19fa481dd2a9a770',
       '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
       '78013:384b82901395609752c82c968d6bcd54d37d7680cbf4c165b7c8d44d328810d4',
@@ -999,12 +1011,12 @@ function restoreBoundedMealGrammarR184(text: string, kind: 'source' | 'build'): 
     )
   }
   if (kind === 'build') {
-    // R204 changes only the materializer in this eight-module provider
+    // R204/R206 change only the materializer in this eight-module provider
     // chunk. Seal its complete current bytes, then restore the sealed prior
     // module solely for the historical provider certificate. Actual runtime
-    // graph scans and the R204 source/body certificates still use current code.
+    // graph scans and the R206 source/body certificates still use current code.
     expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '94b37cb11a37365bba87e9b9130bf3fd4b9f5d274ffb7a13f4ab705ed5aad1b7',
+      '30c279202a488313d2ef5d89fc1d3f4871db5acbfb70e0ab99620a7c9a2eca0c',
     )
     const tree = ts.createSourceFile('r204-provider.js', text, ts.ScriptTarget.Latest, true)
     const found: ts.ArrowFunction[] = []
@@ -1021,7 +1033,7 @@ function restoreBoundedMealGrammarR184(text: string, kind: 'source' | 'build'): 
     expect(found).toHaveLength(1)
     const current = found[0]?.getText(tree) ?? ''
     expect(createHash('sha256').update(current).digest('hex')).toBe(
-      '39bcf831bdae5453636b97e13dd9ef736585df527db9b0558b65f50bc69c8867',
+      '6fa92a196caa8c5a1a058514be9b25a613535e8cf377d139fb384adfb7e979e2',
     )
     const prior = (
       JSON.parse(

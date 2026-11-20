@@ -157,7 +157,10 @@ extension RegistrationFeedbackV3Snapshot {
           unit = q.unit
         }
         let estimate = q.estimated ? (en ? " (estimated, editable)" : " (estimado, editável)") : ""
-        return "\(item.foodName) · \(n(q.value)) \(unit)\(estimate)\n\(macros(item.nutrients))"
+        let composition = item.nutritionSource == "canonical_composite"
+            ? (en ? "\nEstimated composition; ingredient proportions are approximate and editable."
+               : "\nComposição estimada; proporções dos ingredientes aproximadas e editáveis.") : ""
+        return "\(item.foodName) · \(n(q.value)) \(unit)\(estimate)\n\(macros(item.nutrients))\(composition)"
       }.joined(separator: "\n\n")
       result.append(Section(key: .items, text: items))
       result.append(

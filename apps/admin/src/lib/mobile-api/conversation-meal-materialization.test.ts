@@ -457,6 +457,157 @@ describe('actual command interpretation materialization', () => {
     })
     expect(result.source_groups[0]?.source_positions[0]?.visual_index).toBe(0)
   })
+  it.each([
+    'BR',
+    'US',
+  ])('resolves the actual prepared-bread photo through all verified ingredients for %s', async (country) => {
+    const names = [
+      'pão francês aberto com ovo frito e cebola',
+      'pão francês aberto com ovo mexido',
+      'leite',
+    ]
+    const f = visualFixture(
+      names.map((name, index) => ({
+        name,
+        quantity_g_estimate: [150, 100, 200][index],
+        confidence: 0.9,
+      })),
+    )
+    f.capture.context.owner.country = country
+    const catalogs = [
+      {
+        ...row('Pão, trigo, francês', 210),
+        kcal_per_100g: 299.81,
+        protein_g: 7.95,
+        carbs_g: 58.65,
+        fat_g: 3.1,
+        fiber_g: 2.31,
+      },
+      {
+        ...row('Ovo, de galinha, inteiro, frito', 635),
+        kcal_per_100g: 240.19,
+        protein_g: 15.62,
+        carbs_g: 1.19,
+        fat_g: 18.59,
+      },
+      {
+        ...row('Cebola, crua', 264),
+        kcal_per_100g: 39.42,
+        protein_g: 1.71,
+        carbs_g: 8.85,
+        fat_g: 0.08,
+        fiber_g: 2.19,
+      },
+      {
+        ...row('Egg, whole, cooked, scrambled', 5414),
+        country_code: 'US',
+        kcal_per_100g: 149,
+        protein_g: 9.99,
+        carbs_g: 1.61,
+        fat_g: 10.98,
+      },
+      {
+        ...row('Milk, whole, 3.25% milkfat, with added vitamin D', 1212),
+        country_code: 'US',
+        kcal_per_100g: 61,
+        protein_g: 3.15,
+        carbs_g: 4.8,
+        fat_g: 3.25,
+      },
+    ]
+    const state = calculationDb(catalogs)
+    const norm = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .toLowerCase()
+        .replace(/,/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    state.rpc.mockImplementation(async (_name, params) => ({
+      data: catalogs.filter((item) => norm(item.name_pt) === norm(String(params.search_term))),
+      error: null,
+    }))
+    const before = structuredClone(f.capture.context)
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs.map((item) => item.calculation_input)).toEqual(
+      names.map((food_name, index) => ({ food_name, quantity_g: [150, 100, 200][index] })),
+    )
+    expect(f.capture.context).toEqual(before)
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((item) => item.calculation_input),
+      country,
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items.map((item) => item.source)).toEqual([
+      'canonical_composite',
+      'canonical_composite',
+      'canonical_fuzzy',
+    ])
+    expect(calc.items[0]).toMatchObject({
+      food_name: names[0],
+      quantity_g: 150,
+      display_unit: 'g',
+      display_qty: 150,
+      kcal: 289.7,
+      protein_g: 12.64,
+    })
+    expect(calc.items[1]).toMatchObject({
+      food_name: names[1],
+      quantity_g: 100,
+      kcal: 224.4,
+      protein_g: 8.98,
+    })
+    expect(calc.items[2]).toMatchObject({
+      food_name: 'leite integral',
+      quantity_g: 200,
+      kcal: 122,
+      protein_g: 6.3,
+    })
+    expect(calc.user_warnings.join(' ')).toMatch(/proporções.*aproximadas/)
+    expect(
+      mapConversationMealCalculationSources(result, calc).map((item) => item.input_indexes),
+    ).toEqual([[0], [1], [2]])
+    expect(calc.totals.kcal).toBeCloseTo(636.1, 1)
+  })
+  it.each([
+    'banana com aveia',
+    'banana e aveia',
+  ])('qualifies compositions by their parts rather than a fixed recipe list: %s', async (name) => {
+    const f = visualFixture([{ name, quantity_g_estimate: 100, confidence: 0.9 }])
+    const state = calculationDb([row('banana'), row('aveia', 92)])
+    const result = prepared(await materialize(f, state))
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((item) => item.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(result.inputs[0]?.calculation_input.food_name).toBe(name)
+    expect(calc.items).toMatchObject([
+      { food_name: name, quantity_g: 100, source: 'canonical_composite', kcal: 100 },
+    ])
+  })
+  it.each([
+    'banana com ingrediente desconhecido',
+    'pão francês integral com ovo frito',
+  ])('does not qualify an unknown or changed component: %s', async (name) => {
+    const f = visualFixture([{ name, quantity_g_estimate: 100, confidence: 0.9 }])
+    expect(await materialize(f, db(['banana', 'aveia', 'pao frances', 'ovo frito']))).toMatchObject(
+      { status: 'clarification_required', reason: 'unqualified_whole_name', food_indexes: [0] },
+    )
+  })
   it('does not erase an explicit bread variety when qualifying a familiar catalogue alias', async () => {
     const f = visualFixture([
         { name: 'pão francês integral', quantity_g_estimate: 50, confidence: 0.9 },

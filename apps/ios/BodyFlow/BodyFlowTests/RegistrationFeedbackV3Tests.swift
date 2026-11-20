@@ -237,6 +237,18 @@ struct RegistrationFeedbackV3Tests {
     #expect(throws: (any Error).self) { try decode(object) }
   }
 
+  @Test("current per-field feedback discloses estimated composition proportions")
+  func composedItemDisclosure() throws {
+    var object = try payload("milk_whey_unknown_day/pt-BR")
+    var registration = try #require(object["registration"] as? [String: Any])
+    var items = try #require(registration["items"] as? [[String: Any]])
+    items[0]["nutrition_source"] = "canonical_composite"
+    registration["items"] = items
+    object["registration"] = registration
+    guard case .v3(let value) = try decode(object) else { Issue.record("Expected v3"); return }
+    #expect(value.sections[1].text.contains("Composição estimada; proporções dos ingredientes aproximadas e editáveis."))
+  }
+
   func fixtures() throws -> [[String: Any]] {
     #if SWIFT_PACKAGE
       let url = try #require(

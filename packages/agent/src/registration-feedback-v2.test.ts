@@ -123,6 +123,19 @@ function itemAt(registration: RegistrationFeedbackV2Input['registration'], index
 }
 
 describe('conversational feedback v2 canonical presentation', () => {
+  it('discloses estimated ingredient proportions without changing saved composition facts', () => {
+    const request = input()
+    const item = itemAt(request.registration, 0)
+    item.nutrition_source = 'canonical_composite'
+    item.food_name = 'pão francês aberto com ovo frito e cebola'
+    const receipt = prepareRegistrationFeedbackV2(request)
+    const before = structuredClone(receipt)
+    expect(renderRegistrationFeedbackV2(receipt)[1]?.text).toContain(
+      'Composição estimada; proporções dos ingredientes aproximadas e editáveis.',
+    )
+    expect(receipt).toEqual(before)
+  })
+
   it('shows the six approved sections, per-item amounts and official day facts in order', () => {
     const feedback = prepareRegistrationFeedbackV2(input())
     expect(feedback.schema).toBe('registration.feedback.v2')

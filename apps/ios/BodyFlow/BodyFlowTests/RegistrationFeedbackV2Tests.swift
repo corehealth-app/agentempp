@@ -216,6 +216,15 @@ struct RegistrationFeedbackV2Tests {
     }
     #endif
 
+    @Test("composed item facts disclose approximate editable proportions")
+    func composedItemDisclosure() throws {
+        var object = try payload("milk_whey/pt-BR/false/recomposicao")
+        try change(&object, ["registration", "items", "0", "nutrition_source"], "canonical_composite")
+        guard case .v2(let value) = try decode(object) else { Issue.record("Expected v2"); return }
+        #expect(value.sections[1].text.contains("Composição estimada; proporções dos ingredientes aproximadas e editáveis."))
+        #expect(value.sections[1].text.contains("100 g"))
+    }
+
     private func fixtures() throws -> [[String: Any]] {
         #if SWIFT_PACKAGE
         let url = try #require(Bundle.module.url(forResource: "RegistrationFeedbackV2Fixtures", withExtension: "json"))

@@ -498,7 +498,9 @@ export function estimateMacros(foodName: string): {
     .replace(/\s+/g, ' ')
     .trim()
   if (
-    /^caf[ée](?: (?:preto|puro|coado|expresso|espresso|descafeinado)){0,2}(?: sem a[çc][uú]car)?$/.test(bareCoffee) &&
+    /^caf[ée](?: (?:preto|puro|coado|expresso|espresso|descafeinado)){0,2}(?: sem a[çc][uú]car)?$/.test(
+      bareCoffee,
+    ) &&
     bareCoffee !== 'café' &&
     bareCoffee !== 'cafe'
   ) {
@@ -664,7 +666,10 @@ export function estimateMacros(foodName: string): {
   ) {
     return { category: 'whey', kcal: 352, protein: 78, carbs: 6, fat: 1.6, fiber: 0 }
   }
-  const pureFat = n.replace(/^(?:fio|colher(?:es)?(?:\s+de\s+(?:sopa|ch[áa]|sobremesa))?)\s+de\s+/, '')
+  const pureFat = n.replace(
+    /^(?:fio|colher(?:es)?(?:\s+de\s+(?:sopa|ch[áa]|sobremesa))?)\s+de\s+/,
+    '',
+  )
   if (/^(?:azeite|[óo]leo|banha)(?:\s|$)/.test(pureFat)) {
     return { category: 'gordura_pura', kcal: 884, protein: 0, carbs: 0, fat: 100, fiber: 0 }
   }
@@ -682,6 +687,46 @@ export function genericPreparedDishMacros(): ReturnType<typeof estimateMacros> {
 
 function normalizeFoodText(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+/** Parse an explicitly named composition without dropping any ingredient or
+ * nutritional qualifier. These are individual catalogue aliases, not recipes:
+ * the current verified catalogue must still resolve EVERY returned component.
+ * "aberto" only describes the presentation of the exact familiar bread name.
+ * The unspecified onion uses an editable raw reference, not an observed recipe.
+ * Nutrition is never supplied by this parser; total mass remains the caller's.
+ */
+export function consumedCompositionParts(name: string, country: string): readonly string[] | null {
+  if (name.length > 160 || /[;!?\r\n]/u.test(name)) return null
+  const whole = normalizeFoodText(name)
+  if (/\b(?:sem|nao|ou|talvez)\b/u.test(whole)) return null
+  const parts = whole.split(/ (?:com|e|\+) /u).map((part) => part.trim())
+  if (
+    parts.length < 2 ||
+    parts.length > 8 ||
+    parts.some((part) => !part || /\b(?:com|e)\b/u.test(part))
+  )
+    return null
+  // Existing cooked/prepared defaults were approved for whole foods only.
+  // Do not silently apply them to recipes; retain their established policy.
+  // A bare sauce is not an identified ingredient and belongs to the existing
+  // prepared-dish recovery path rather than this complete-component resolver.
+  if (parts.some((part) => consumedFoodDefault(part, country) || part === 'molho')) return null
+  const references = parts.map((part) => {
+    if (/^(?:pao frances|paes franceses|paozinho)(?: abertos?)?$/u.test(part))
+      return 'Pão, trigo, francês'
+    if (/^(?:ovo frito|ovos fritos)$/u.test(part)) return 'Ovo, de galinha, inteiro, frito'
+    if (/^(?:ovo mexido|ovos mexidos)$/u.test(part)) return 'Egg, whole, cooked, scrambled'
+    if (part === 'cebola') return 'Cebola, crua'
+    return mobileEverydayFoodDefault(part)?.catalog_name ?? part
+  })
+  // The milk/whey interpreter owns calibrated milk volume + powder portions;
+  // it must never be replaced by this generic proportional-mass estimate.
+  const milk = mobileEverydayFoodDefault('leite')?.catalog_name
+  const whey = mobileEverydayFoodDefault('whey')?.catalog_name
+  if (milk && whey && references.includes(milk) && references.includes(whey)) return null
+  if (new Set(references.map(normalizeFoodText)).size !== references.length) return null
+  return Object.freeze(references)
 }
 
 function productCodeIdentifiers(foodName: string): string[] {
@@ -1064,7 +1109,19 @@ interface PreparationAmbiguity {
   max_kcal_per_100g: number
 }
 
-const REQUEST_LINK_WORDS = new Set(['de', 'do', 'da', 'dos', 'das', 'com', 'e', 'em', 'no', 'na', 'ao'])
+const REQUEST_LINK_WORDS = new Set([
+  'de',
+  'do',
+  'da',
+  'dos',
+  'das',
+  'com',
+  'e',
+  'em',
+  'no',
+  'na',
+  'ao',
+])
 const SINGLE_PREPARATION_WORD = new RegExp(`^(?:${PREPARATION_STATE_WORDS.source})$`)
 function isNameQualifier(token: string): boolean {
   return [...PREPARATION_QUALIFIERS].some((qualifier) => normalizeFoodText(qualifier) === token)
@@ -1087,7 +1144,9 @@ function requestFoodIdentity(
   )
   if (tokens.length === 0) return null
   const headIndex =
-    tokens.length > 1 && [...FOOD_PART_HEADS].some((part) => sameFoodToken(part, tokens[0]!)) ? 1 : 0
+    tokens.length > 1 && [...FOOD_PART_HEADS].some((part) => sameFoodToken(part, tokens[0]!))
+      ? 1
+      : 0
   return {
     head: tokens[headIndex]!,
     distinguishing: tokens.filter((_, index) => index !== headIndex),
@@ -1150,9 +1209,7 @@ function detectPreparationAmbiguity(
   // sem grupo com todas as palavras, ignora só os qualificadores.
   let candidates = sameFoodGroups(identity.distinguishing)
   if (candidates.length === 0) {
-    candidates = sameFoodGroups(
-      identity.distinguishing.filter((word) => !isNameQualifier(word)),
-    )
+    candidates = sameFoodGroups(identity.distinguishing.filter((word) => !isNameQualifier(word)))
   }
 
   let widest: { min: number; max: number } | null = null
@@ -1849,7 +1906,8 @@ export async function calcMealMacros(
   options?: MealCalculationOptions,
 ): Promise<MealCalcResult> {
   const captured = captureMealCalculationOptions(options, userIdHint)
-  const includePreparationAnnotations = captured.preparationAnnotations === 'consumed.preparation.v1'
+  const includePreparationAnnotations =
+    captured.preparationAnnotations === 'consumed.preparation.v1'
   const inputs =
     captured.sourceReader || includePreparationAnnotations ? structuredClone(items) : items
   const matched: MealItemMatched[] = []
@@ -2327,7 +2385,12 @@ export async function calcMealMacros(
     // Se sim, usa esses macros — evita "leite com whey" virar achocolatado
     // toda vez. Após correção via replace=true, o log atualizado vira a memória.
     if (userIdHint && !hasExactCanonicalMatch) {
-      const hist = await lookupUserHistory(supabase, userIdHint, it.food_name, captured.sourceReader)
+      const hist = await lookupUserHistory(
+        supabase,
+        userIdHint,
+        it.food_name,
+        captured.sourceReader,
+      )
       if (hist) {
         const f = it.quantity_g / 100
         const kcal = +(hist.kcal_per_100g * f).toFixed(1)
@@ -2382,10 +2445,16 @@ export async function calcMealMacros(
       ) {
         // Match completo bom — segue pelo caminho não-composite (queda abaixo)
       } else {
-        const parts = it.food_name
-          .split(/ com | e | \+ /i)
-          .map((s) => s.trim())
-          .filter((s) => s.length >= 2)
+        const consumedParts =
+          captured.consumptionPolicy === 'consumed-meal-v1'
+            ? consumedCompositionParts(it.food_name, country)
+            : null
+        const parts =
+          consumedParts ??
+          it.food_name
+            .split(/ com | e | \+ /i)
+            .map((s) => s.trim())
+            .filter((s) => s.length >= 2)
         // Dividir qty igual entre as partes
         const partQty = it.quantity_g / parts.length
         const partMatches: Array<{ name: string; m: Awaited<ReturnType<typeof matchFood>> }> = []
@@ -2396,7 +2465,7 @@ export async function calcMealMacros(
           // preposições de/do/da/com). Ex: "lasanha de abóbora" → tenta "abóbora"
           // que é entry específica do food_db. Exige sim>=0.55 pra evitar falso
           // match (mais conservador que match composto inicial).
-          if (pm.similarity < 0.45 || pm.kcal_per_100g == null) {
+          if (!consumedParts && (pm.similarity < 0.45 || pm.kcal_per_100g == null)) {
             const words = p
               .split(/\s+/)
               .filter((w) => w.length >= 3 && !/^(de|do|da|dos|das|com|e|ou|na|no|à|ao)$/i.test(w))
@@ -2485,7 +2554,15 @@ export async function calcMealMacros(
             totalFat += fat
             totalFib += fib
           }
-          const natComp = naturalUnit(it.food_name, it.quantity_g)
+          if (consumedParts)
+            userWarnings.push(
+              `Estimei "${it.food_name}" pelo peso total, com proporções aproximadas entre os ingredientes. As referências usadas foram ${consumedParts.join(' + ')}; a receita não foi medida e pode ser corrigida.`,
+            )
+          // The total is a composed food's mass, not a count of its eggs or
+          // bread. Keep a single item and never fabricate ingredient units.
+          const natComp = consumedParts
+            ? { display_qty: it.quantity_g, display_unit: 'g' }
+            : naturalUnit(it.food_name, it.quantity_g)
           matched.push({
             food_name: it.food_name,
             matched_taco_name: partMatches.map((pm) => pm.m.name_pt).join(' + '),
@@ -2516,7 +2593,7 @@ export async function calcMealMacros(
         // (Erika 16/05), "muffin de banana com castanhas" (Amanda 16/05).
         // Em vez de zerar TUDO, usa as partes que matcharam (proporcional
         // a partes boas) e avisa o paciente do que faltou.
-        if (someGood) {
+        if (someGood && !consumedParts) {
           const partQtyGood = it.quantity_g / goodMatches.length
           let totalKcal = 0,
             totalProt = 0,

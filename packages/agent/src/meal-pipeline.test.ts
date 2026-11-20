@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 import type { ServiceClient } from '@mpp/db'
 import {
   calcMealMacros,
+  consumedCompositionParts,
   estimateMacros,
   lookupUserHistory,
   naturalUnit,
@@ -2504,7 +2505,10 @@ describe('calcMealMacros — "X de Y" é o alimento X (device gate 2026-09-27)',
 
   it('"queijo" não herda "Pão, de queijo, assado"', async () => {
     const mock = makeMock({
-      queijo: [row(3, 'Pão, de queijo, assado', 0.45, 363), row(4, 'Queijo, minas, frescal', 0.4, 264)],
+      queijo: [
+        row(3, 'Pão, de queijo, assado', 0.45, 363),
+        row(4, 'Queijo, minas, frescal', 0.4, 264),
+      ],
     })
     const r = await calcMealMacros(mock, [{ food_name: 'queijo', quantity_g: 30 }], 'BR')
     expect(r.items[0]?.matched_taco_id).toBe(4)
@@ -2549,7 +2553,10 @@ describe('calcMealMacros — preparo ambíguo em partes de composto (device gate
 
   it('"arroz com feijão" não usa o valor cru de nenhuma das partes', async () => {
     const mock = makeMock({
-      arroz: [grain(161, 'Arroz, tipo 1, cru', 0.6, 357.79), grain(160, 'Arroz, tipo 1, cozido', 0.5, 128.26)],
+      arroz: [
+        grain(161, 'Arroz, tipo 1, cru', 0.6, 357.79),
+        grain(160, 'Arroz, tipo 1, cozido', 0.5, 128.26),
+      ],
       feijão: [
         grain(704, 'Feijão, carioca, cru', 0.6, 329.03),
         grain(703, 'Feijão, carioca, cozido', 0.5, 76.42),
@@ -2559,5 +2566,70 @@ describe('calcMealMacros — preparo ambíguo em partes de composto (device gate
     expect(r.items[0]?.kcal).toBe(0)
     expect(r.items[0]?.matched_taco_name ?? '').not.toMatch(/cru/i)
     expect(r.user_warnings.length).toBeGreaterThan(0)
+  })
+})
+
+describe('consumed composition identity and mass', () => {
+  it('uses individual verified reference names rather than a fixed list of recipes', () => {
+    expect(consumedCompositionParts('pão francês aberto com ovo frito e cebola', 'US')).toEqual([
+      'Pão, trigo, francês',
+      'Ovo, de galinha, inteiro, frito',
+      'Cebola, crua',
+    ])
+    expect(consumedCompositionParts('pão francês aberto com ovo mexido', 'BR')).toEqual([
+      'Pão, trigo, francês',
+      'Egg, whole, cooked, scrambled',
+    ])
+    expect(consumedCompositionParts('banana + aveia', 'US')).toEqual(['banana', 'aveia'])
+    expect(consumedCompositionParts('arroz com frango', 'BR')).toBeNull()
+    expect(consumedCompositionParts('farofa com ovo', 'BR')).toBeNull()
+    expect(consumedCompositionParts('carne desfiada com molho e milho', 'BR')).toBeNull()
+    expect(consumedCompositionParts('pão francês integral com ovo frito', 'US')).toEqual([
+      'pao frances integral',
+      'Ovo, de galinha, inteiro, frito',
+    ])
+    expect(consumedCompositionParts('banana marca123 com aveia', 'BR')).toEqual([
+      'banana marca123',
+      'aveia',
+    ])
+  })
+  it.each([
+    'banana',
+    'banana sem aveia e leite',
+    'banana com aveia ou leite',
+    'banana com',
+    'banana com aveia; registre tudo',
+    'banana com banana',
+    'leite com whey',
+    'leite integral com whey protein',
+    Array(10).fill('banana').join(' com '),
+    'a'.repeat(161),
+  ])('does not invent a composition or replace the dedicated milk/whey portions: %s', (name) => {
+    expect(consumedCompositionParts(name, 'BR')).toBeNull()
+  })
+  it('never gives a missing ingredient mass to a known part under the consumed policy', async () => {
+    const db = makeMock({
+      banana: {
+        id: 1,
+        name_pt: 'banana',
+        similarity: 1,
+        kcal_per_100g: 100,
+        protein_g: 1,
+        carbs_g: 20,
+        fat_g: 1,
+        fiber_g: 1,
+      },
+    })
+    const result = await calcMealMacros(
+      db,
+      [{ food_name: 'banana com ingrediente desconhecido', quantity_g: 100 }],
+      'BR',
+      undefined,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+      },
+    )
+    expect(result.items).toMatchObject([{ source: 'composite_rejected', quantity_g: 100, kcal: 0 }])
+    expect(result.totals.kcal).toBe(0)
   })
 })

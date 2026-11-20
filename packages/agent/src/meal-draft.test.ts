@@ -9,6 +9,7 @@ import {
   portionReferenceGrams,
   sanitizeExtractedItems,
   splitMealText,
+  visionFoodIdentity,
 } from './meal-draft.js'
 import { naturalUnit } from './meal-pipeline.js'
 
@@ -182,6 +183,27 @@ describe('extractor output is untrusted', () => {
 })
 
 describe('photo candidates', () => {
+  it('separates a visual portion from identity without scaling the already estimated total', () => {
+    expect(visionFoodIdentity('½ pão francês')).toEqual({ name: 'pão francês', count: 0.5 })
+    const input = [{ name: '½ pão francês', quantity_g_estimate: 25, confidence: 0.95 }]
+    const before = structuredClone(input)
+    expect(draftFromVisionItems(input, 0.6)[0]).toMatchObject({
+      name: 'pão francês',
+      quantity_g: 25,
+      count: 0.5,
+      quantity_basis: 'visual_estimate',
+      needs_review: true,
+    })
+    expect(input).toEqual(before)
+    for (const name of ['0 x pão', '½pão', '1/0 pão', 'pão 50% integral', '½ 2 x pão']) {
+      const identity = visionFoodIdentity(name)
+      expect(identity.name).toBe(name === '½ 2 x pão' ? '2 x pão' : name)
+    }
+    expect(visionFoodIdentity('½ pão francês integral sem ovo').name).toBe(
+      'pão francês integral sem ovo',
+    )
+  })
+
   it('maps the Vision items without a second guess', () => {
     const candidates = draftFromVisionItems(
       [

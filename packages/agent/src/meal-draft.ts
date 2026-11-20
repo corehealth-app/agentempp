@@ -389,6 +389,28 @@ export interface VisionMealItemLike {
   confidence?: unknown
 }
 
+/** A leading portion describes the same visual total mass, not a new
+ * ingredient or a multiplier. Preserve all preparation/brand words after it.
+ * Original visual evidence remains with its caller; no nutrition is inferred.
+ */
+export function visionFoodIdentity(rawName: string): { name: string; count: number | null } {
+  const repeated = /^\s*([1-9]\d?)\s*x\s+(.+)$/iu.exec(rawName)
+  if (repeated) return { name: repeated[2] ?? '', count: Number(repeated[1]) }
+  const fraction = /^\s*(½|¼|¾|1\/2|1\/4|3\/4)\s+(.+)$/u.exec(rawName)
+  if (fraction)
+    return {
+      name: fraction[2] ?? '',
+      count:
+        (
+          { '½': 0.5, '¼': 0.25, '¾': 0.75, '1/2': 0.5, '1/4': 0.25, '3/4': 0.75 } as Record<
+            string,
+            number
+          >
+        )[fraction[1] ?? ''] ?? null,
+    }
+  return { name: rawName, count: null }
+}
+
 /**
  * Foto: o Vision já identificou; aqui só se mapeia. Estimativa visual nunca
  * vira dado exato, quantidade ilegível (0) fica `missing`, e confiança abaixo
@@ -405,8 +427,8 @@ export function draftFromVisionItems(
     if (typeof value !== 'object' || value === null) continue
     const item = value as VisionMealItemLike
     const rawName = typeof item.name === 'string' ? item.name : ''
-    const repeated = /^\s*(\d{1,2})\s*x\s+(.+)$/i.exec(rawName)
-    const name = cleanName(repeated ? (repeated[2] ?? '') : rawName)
+    const identity = visionFoodIdentity(rawName)
+    const name = cleanName(identity.name)
     if (!name) continue
     const grams = validGrams(typeof item.quantity_g_estimate === 'number' ? item.quantity_g_estimate : null)
     const confidence =
@@ -419,8 +441,8 @@ export function draftFromVisionItems(
       name,
       quantity_g: grams,
       quantity_basis: grams != null ? 'visual_estimate' : 'missing',
-      count: repeated ? Number(repeated[1]) : null,
-      unit_label: repeated ? 'unidade' : null,
+      count: identity.count,
+      unit_label: identity.count !== null ? 'unidade' : null,
       confidence,
       needs_review: true,
       review_reason:

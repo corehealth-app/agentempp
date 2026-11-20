@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
+import { visionFoodIdentity } from '@mpp/agent'
 import {
   type ConversationMealInterpretationSource,
   freezeInterpretation,
@@ -431,7 +432,7 @@ export function validateConversationMealInterpretationModel(
           typeof item !== 'object' ||
           Array.isArray(item) ||
           typeof item.name !== 'string' ||
-          !nominal(item.name)
+          !nominal(visionFoodIdentity(item.name).name.trim())
         )
           mark('visual_food_name')
         else if (food.name) {

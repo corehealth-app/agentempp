@@ -15,6 +15,7 @@ import {
   mobileMilkWheyPortions,
   mobileMilkWheyTotalPortions,
   resolveDraftItem,
+  visionFoodIdentity,
 } from '@mpp/agent'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
@@ -798,7 +799,7 @@ async function materializeConversationMealCore(
           return clarify('low_confidence', [food.index])
         const mapped = draftFromVisionItems([raw], threshold),
           visual = mapped[0]
-        const literal = v.name.replace(/^\s*\d{1,2}\s*x\s+/iu, '').trim()
+        const literal = visionFoodIdentity(v.name).name.trim()
         if (mapped.length !== 1 || !visual || normalized(literal) !== normalized(visual.name))
           return clarify('ambiguous_source_group', [food.index])
         if (originalName !== null && normalized(originalName) !== normalized(literal))

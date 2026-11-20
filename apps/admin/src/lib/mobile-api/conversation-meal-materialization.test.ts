@@ -458,6 +458,31 @@ describe('actual command interpretation materialization', () => {
     expect(result.source_groups[0]?.source_positions[0]?.visual_index).toBe(0)
   })
   it.each([
+    '½',
+    '1/2',
+    '¼',
+    '3/4',
+    '2 x',
+  ])('keeps the Vision total mass when a portion prefixes the food name: %s', async (prefix) => {
+    const f = visualFixture([
+      { name: `${prefix} pão francês`, quantity_g_estimate: 25, confidence: 0.95 },
+    ])
+    const state = db(['pão francês'])
+    state.rpc.mockImplementation(async (_name, args) => ({
+      data: args.search_term === 'pao trigo frances' ? [row('Pão, trigo, francês', 210)] : [],
+      error: null,
+    }))
+    const before = structuredClone(f.capture.context)
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs[0]?.calculation_input).toEqual({
+      food_name: 'pão francês',
+      quantity_g: 25,
+    })
+    expect(result.inputs[0]?.candidate.quantity_basis).toBe('visual_estimate')
+    expect(result.source_groups[0]?.source_positions[0]?.visual_index).toBe(0)
+    expect(f.capture.context).toEqual(before)
+  })
+  it.each([
     'BR',
     'US',
   ])('qualifies separated photo ingredients using the same strict references for %s', async (country) => {

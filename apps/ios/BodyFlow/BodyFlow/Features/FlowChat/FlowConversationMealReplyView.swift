@@ -40,10 +40,10 @@ import SwiftUI
           Text(english ? "Original answer preserved" : "Resposta original preservada")
             .font(BodyFlowTypography.cardTitle)
           if question.kind == "food_name" {
-            Text(verbatim: model.amountText)
+            Text(verbatim: FoodDisplayLocalization.name(model.amountText, english: english))
               .accessibilityIdentifier("conversation.reply.locked-food-name")
           } else if question.kind == "quantity" {
-            Text(verbatim: "\(model.amountText) \(model.quantityUnit)")
+            Text(verbatim: "\(model.amountText) \(unitLabel(model.quantityUnit))")
               .accessibilityIdentifier("conversation.reply.locked-quantity")
           } else if let meal = model.mealType {
             Text(verbatim: mealLabel(meal)).accessibilityIdentifier("conversation.reply.locked-meal")

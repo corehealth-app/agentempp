@@ -41,10 +41,12 @@ struct FlowConversationThreadEventPresentation {
       var answer: String
       switch reply.body.answer {
       case .foodName(_, let name):
-        answer = (english ? "Food name correction: " : "Correção do alimento: ") + name
+        answer = (english ? "Food name correction: " : "Correção do alimento: ")
+          + FoodDisplayLocalization.name(name, english: english)
       case .quantity(_, let amount, let unit):
         let raw = String(amount)
-        answer = (raw.hasSuffix(".0") ? String(raw.dropLast(2)) : raw) + " " + unit
+        answer = (raw.hasSuffix(".0") ? String(raw.dropLast(2)) : raw) + " "
+          + NutritionQuantityPresentation.unit(unit, english: english)
       case .mealType(let type):
         switch type {
         case .cafe: answer = english ? "Breakfast" : "Café da manhã"
@@ -128,11 +130,13 @@ struct FlowConversationThreadEventPresentation {
   static func question(_ question: ConversationThreadPageSnapshot.Question, english: Bool) -> String
   {
     if question.kind == "food_name", let food = question.foodName {
-      return english ? "What is the correct name for \(food)?" : "Qual é o nome correto de \(food)?"
+      return english ? "What is the correct name for \(food)?"
+        : "Qual é o nome correto de \(FoodDisplayLocalization.name(food, english: false))?"
     }
     if let food = question.foodName {
       return english
-        ? "What quantity of \(food) did you consume?" : "Qual quantidade de \(food) você consumiu?"
+        ? "What quantity of \(food) did you consume?"
+        : "Qual quantidade de \(FoodDisplayLocalization.name(food, english: false)) você consumiu?"
     }
     return english ? "Which meal was this?" : "Qual foi a refeição?"
   }

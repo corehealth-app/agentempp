@@ -3,29 +3,35 @@ import SwiftUI
 /// Read-only text from the confirmed receipt, under the parent model's session ownership.
 struct RegistrationFeedbackView: View {
     let feedback: RegistrationFeedbackSnapshot
+    @Environment(\.locale) private var locale
+
+    private func displayed(_ original: String) -> String {
+        FoodDisplayLocalization.message(original,
+            english: BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
             switch feedback {
             case let .v1(value):
                 ForEach(value.lines, id: \.key) { line in
-                    Text(verbatim: line.text)
+                    Text(verbatim: displayed(line.text))
                         .accessibilityIdentifier("registration.feedback.line.\(line.key.rawValue)")
                 }
                 if let comment = value.foodComment {
-                    Text(verbatim: comment).accessibilityIdentifier("registration.feedback.food-comment")
+                    Text(verbatim: displayed(comment)).accessibilityIdentifier("registration.feedback.food-comment")
                 }
                 if let incentive = value.incentive {
-                    Text(verbatim: incentive).accessibilityIdentifier("registration.feedback.incentive")
+                    Text(verbatim: displayed(incentive)).accessibilityIdentifier("registration.feedback.incentive")
                 }
             case let .v2(value):
                 ForEach(value.sections, id: \.key) { section in
-                    Text(verbatim: section.text)
+                    Text(verbatim: displayed(section.text))
                         .accessibilityIdentifier("registration.feedback.section.\(section.key.rawValue)")
                 }
             case let .v3(value):
                 ForEach(value.sections, id: \.key) { section in
-                    Text(verbatim: section.text)
+                    Text(verbatim: displayed(section.text))
                         .accessibilityIdentifier("registration.feedback.section.\(section.key.rawValue)")
                 }
             }

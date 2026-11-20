@@ -137,7 +137,11 @@ import Testing
         height: 900)
       defer { host.detach() }
       let nodes = host.nodes()
-      let save = try #require(nodes.first { $0.identifier == "training.execution.editor.save" })
+      // The toolbar also exposes a non-button layout wrapper with this identifier.
+      // Inspect the actionable button's disabled trait, not that wrapper.
+      let save = try #require(nodes.first {
+        $0.identifier == "training.execution.editor.save" && $0.isButton
+      })
       #expect(!save.isEnabled)
       #expect(nodes.contains { $0.identifier == "training.execution.editor.readonly" })
     }

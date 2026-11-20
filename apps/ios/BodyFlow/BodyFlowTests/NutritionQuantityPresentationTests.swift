@@ -5,6 +5,15 @@ import Testing
 
 @Suite("Actual SQL unit pieces preserve sealed units through the native presentation")
 struct NutritionQuantityPresentationTests {
+  @Test func householdUnitUsesPortugueseWithoutChangingTheWireCode() throws {
+    let raw: [String: Any] = ["food_name": "pão francês", "quantity_g": 50,
+      "display_qty": 1, "display_unit": "unit"]
+    let item = try JSONDecoder().decode(NutritionWindowPlannedItem.self,
+      from: JSONSerialization.data(withJSONObject: raw))
+    #expect(NutritionQuantityPresentation.planned(item, locale: Locale(identifier: "pt_BR"),
+      english: false).text == "1 unidade")
+    #expect(item.displayUnit == "unit")
+  }
   @Test(arguments: ["milk", "whey"])
   func originalSavedReopenedAndUndoneUseTheProvedCurrentIdentity(_ food: String) throws {
     let fixture = try NutritionActualUnitFixture()

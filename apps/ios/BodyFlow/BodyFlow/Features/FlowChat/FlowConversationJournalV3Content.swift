@@ -31,7 +31,9 @@ struct FlowConversationJournalV3Presentation {
     case .media(let caption):
       source = caption ?? (english ? "Original report attachment" : "Anexo do relato original")
     case .quantity(_, let amount, let unit):
-      source = "\(amount.formatted(.number.precision(.fractionLength(0...6)))) \(unit)"
+      source =
+        "\(amount.formatted(.number.precision(.fractionLength(0...6)))) "
+        + NutritionQuantityPresentation.unit(unit, english: english)
     case .mealType(let type): source = Self.meal(type, english: english)
     case nil: source = nil
     }
@@ -67,17 +69,25 @@ struct FlowConversationJournalV3Presentation {
     }
     if let question = entry.question {
       switch question {
-      case .observed(_, let text): facts.append(text)
+      case .observed(_, let text):
+        facts.append(FoodDisplayLocalization.message(text, english: english))
       case .meal(let kind, _, let foodName, let units, _):
         if kind == "meal_type" {
           facts.append(english ? "Which meal was it?" : "Qual foi a refeição?")
         } else {
-          let name = foodName ?? (english ? "that food" : "esse alimento")
+          let name =
+            foodName.map { FoodDisplayLocalization.name($0, english: english) }
+            ?? (english ? "that food" : "esse alimento")
           facts.append(
             english
               ? "What quantity of \(name) did you consume?"
               : "Qual quantidade de \(name) você consumiu?")
-          if !units.isEmpty { facts.append(units.joined(separator: " · ")) }
+          if !units.isEmpty {
+            facts.append(
+              units.map {
+                NutritionQuantityPresentation.unit($0, english: english)
+              }.joined(separator: " · "))
+          }
         }
       }
       facts.append(

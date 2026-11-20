@@ -150,7 +150,7 @@ struct NutritionWindowContentView: View {
             ForEach(Array(meal.items.enumerated()), id: \.offset) { _, item in
               let quantity = NutritionQuantityPresentation.planned(
                 item, locale: locale, english: !portuguese)
-              Text("\(item.foodName) · \(quantity.text)")
+              Text("\(FoodDisplayLocalization.name(item.foodName, english: !portuguese)) · \(quantity.text)")
             }
             if meal.totalKcal != nil || meal.totalProteinG != nil {
               Text(

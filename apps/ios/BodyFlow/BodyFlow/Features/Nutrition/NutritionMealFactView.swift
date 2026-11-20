@@ -8,7 +8,7 @@ struct NutritionMealFactView: View {
   var body: some View {
     let quantity = NutritionQuantityPresentation.consumed(meal, locale: locale, english: english)
     VStack(alignment: .leading, spacing: 3) {
-      Text(meal.foodName).font(.body)
+      Text(FoodDisplayLocalization.name(meal.foodName, english: english)).font(.body)
       Text(
         "\(quantity.text) · \(amount(meal.kcal)) kcal · \(english ? "Protein" : "Proteína") \(amount(meal.proteinG)) g"
       )

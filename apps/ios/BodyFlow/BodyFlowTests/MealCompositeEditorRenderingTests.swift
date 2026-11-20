@@ -8,6 +8,27 @@ import XCTest
 
 @MainActor
 final class MealCompositeEditorRenderingTests: XCTestCase {
+    func testPortugueseCatalogueNameInActualNutritionRow() throws {
+        let fixture = try NutritionActualUnitFixture()
+        var raw = try fixture.raw(food: "legacy", stage: "original")
+        raw["food_name"] = "Oil olive salad or cooking"
+        let meal = try JSONDecoder().decode(NutritionWindowMeal.self,
+            from: JSONSerialization.data(withJSONObject: raw))
+        let view = NutritionMealFactView(meal: meal, english: false)
+            .environment(\.locale, Locale(identifier: "pt_BR"))
+        let host = try CompositeEditorHost(view, size: .large)
+        defer { host.detach() }
+        let image = host.image()
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "portuguese-catalogue-nutrition-row"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let text = normalized(try recognizedText(in: image, language: .portugueseBrazil))
+        XCTAssertTrue(text.contains("azeite de oliva"), text)
+        XCTAssertFalse(text.contains("salad or cooking"), text)
+        XCTAssertEqual(meal.foodName, "Oil olive salad or cooking", "Display must not rewrite the stored fact.")
+    }
+
     func testSameProposalEditorOffersIngredientActionsInBothLanguages() throws {
         let response = try JSONDecoder().decode(RegistrationProposalResponse.self,
             from: MealCompositeRecoveryCharacterizationTests.responseJSON)

@@ -25,10 +25,10 @@ struct NutritionQuantityPresentation {
   private static func number(_ value: Decimal?, locale: Locale) -> String {
     value.map { $0.formatted(.number.locale(locale).precision(.fractionLength(0...2))) } ?? "—"
   }
-  private static func unit(_ raw: String, english: Bool) -> String {
+  static func unit(_ raw: String, english: Bool) -> String {
     switch raw {
     case "scoop": english ? "scoop" : "medida"
-    case "unit": english ? "unit" : "un."
+    case "unit": english ? "unit" : "unidade"
     default: raw
     }
   }

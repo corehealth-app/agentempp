@@ -17,7 +17,8 @@ struct ConversationFeedbackPresentationView: View {
             switch feedback.presentation.content {
             case let .sections(_, sections), let .v3Sections(_, sections), let .placeholder(sections):
                 ForEach(sections, id: \.key) { section in
-                    Text(verbatim: section.text)
+                    Text(verbatim: FoodDisplayLocalization.message(section.text,
+                        english: BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates))
                         .accessibilityIdentifier("conversation.feedback.section.\(section.key.rawValue)")
                 }
             case let .legacy(body):

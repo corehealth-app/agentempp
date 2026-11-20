@@ -38,7 +38,8 @@ struct FlowConversationMealGroupView: View {
         ForEach(current.items, id: \.id) { item in
           HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-              Text(verbatim: item.foodName).font(BodyFlowTypography.headline)
+              Text(verbatim: FoodDisplayLocalization.name(item.foodName, english: english))
+                .font(BodyFlowTypography.headline)
               if showsFacts || showsCurrentQuantity {
                 Text(quantity(item)).accessibilityIdentifier("conversation.meal.current-quantity")
               }
@@ -61,7 +62,8 @@ struct FlowConversationMealGroupView: View {
                 Image(systemName: "pencil")
               }
               .buttonStyle(.bordered).disabled(editing.isWorking)
-              .accessibilityLabel(english ? "Edit \(item.foodName)" : "Editar \(item.foodName)")
+              .accessibilityLabel(english ? "Edit \(item.foodName)"
+                : "Editar \(FoodDisplayLocalization.name(item.foodName, english: false))")
               .accessibilityIdentifier("conversation.meal.edit.\(item.id.uuidString.lowercased())")
             }
           }

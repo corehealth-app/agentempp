@@ -34,7 +34,7 @@ struct FlowConversationMealEditorContent: View {
   private var language: SupportedAppLanguage { BodyFlowPresentationLanguage.resolve(locale) }
   private var english: Bool { language == .englishUnitedStates }
   private var quantityUnitLabel: String {
-    model.quantityUnit == "scoop" && !english ? "medida" : model.quantityUnit
+    NutritionQuantityPresentation.unit(model.quantityUnit, english: english)
   }
   var body: some View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -47,14 +47,15 @@ struct FlowConversationMealEditorContent: View {
           )
           .font(BodyFlowTypography.cardTitle)
           if !model.foodName.isEmpty {
-            Text(verbatim: model.foodName).accessibilityIdentifier("conversation.edit.locked-name")
+            Text(verbatim: FoodDisplayLocalization.name(model.foodName, english: english))
+              .accessibilityIdentifier("conversation.edit.locked-name")
             Text(verbatim: "\(model.quantityText(language: language)) \(quantityUnitLabel)")
               .accessibilityIdentifier("conversation.edit.locked-quantity")
           }
           if model.pendingItems.count > 1 {
             ForEach(model.pendingItems.dropFirst()) { item in
               Text(
-                verbatim: "\(item.foodName) · \(NSDecimalNumber(decimal: item.grams).stringValue) g"
+                verbatim: "\(FoodDisplayLocalization.name(item.foodName, english: english)) · \(NSDecimalNumber(decimal: item.grams).stringValue) g"
               )
             }
           }
@@ -76,7 +77,14 @@ struct FlowConversationMealEditorContent: View {
           Text(english ? "Food" : "Alimento").font(BodyFlowTypography.headline)
           TextField(
             english ? "Food name" : "Nome do alimento",
-            text: Binding(get: { model.foodName }, set: { model.foodName = $0 })
+            text: Binding(
+              get: { FoodDisplayLocalization.name(model.foodName, english: english) },
+              set: { value in
+                // A formatted display echo is not a user-authored rename.
+                if value != FoodDisplayLocalization.name(model.foodName, english: english) {
+                  model.foodName = value
+                }
+              })
           )
           .textFieldStyle(.roundedBorder).accessibilityIdentifier("conversation.edit.name")
           Text(english ? "Quantity" : "Quantidade").font(BodyFlowTypography.headline)

@@ -10,3 +10,9 @@ Whole-item catalogue matches retain precedence. Existing standalone cooked/prepa
 Regression coverage includes both actual visual descriptions with US and BR context, source-position/mass preservation, generic banana/oats compositions, unknown components, integral/brand qualifiers, milk/whey and prior prepared-food behavior. Test masses are synthetic and are not measurements of Roberto's photo. Native tests cover both feedback versions and linked conversation presentation. The complete build graph retains 383 unique modules and 425 physical copies; four changed complete bodies are recertified without removing global scans or tampering controls.
 
 Release qualification must additionally exercise an actual composed-food photo through the deployed media worker and iOS client, persistence/reopen, correction, and duplicate retry. Passing local tests alone does not certify the distributed build. Customer source media and customer meals must remain untouched.
+
+## Connected qualification refinement
+
+The first R206 native photo attempt processed correctly but its caption negated the drink; semantic interpretation returned ambiguous and no consumption was written. This does not qualify a successful photo registration. A second connected text case separated bread, fried egg and onion: strict materialization rejected the standalone bread presentation. The reviewed individual ingredient references are therefore shared between whole-item qualification/calculation and composition resolution. Whole exact references and earlier personal corrections retain precedence; new aliases require a verified exact catalogue row. Unknown brands/preparations are not stripped. Two BR/US regression tests first failed at qualification and pass through calculation after the fix.
+
+Release remains pending successful connected photo registration and native persistence verification.

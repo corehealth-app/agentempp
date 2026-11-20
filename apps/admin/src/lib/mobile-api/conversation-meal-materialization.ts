@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util'
 import {
   consumedCompositionParts,
   consumedFoodDefault,
+  consumedIngredientReference,
   draftFromVisionItems,
   labelCandidateId,
   type MealCalcResult,
@@ -713,6 +714,11 @@ async function materializeConversationMealCore(
       // A named composition need not exist as one catalogue row. Reuse the
       // calculator's exact component resolution, preserving the original name,
       // source positions and total mass. No unknown/partial ingredient passes.
+      if (!found) {
+        const reference = consumedIngredientReference(name)
+        if (reference && catalogueWording(reference) !== whole)
+          found = await qualifyWhole(catalogueWording(reference))
+      }
       if (!found) {
         const parts = consumedCompositionParts(name, country)
         if (parts) {

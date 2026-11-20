@@ -689,6 +689,20 @@ function normalizeFoodText(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
 }
 
+/** Reviewed whole-ingredient aliases only. Explicit qualifiers remain intact.
+ * This same reference is used when vision returns an ingredient on its own
+ * or inside a composition. Nutrients still come from the verified catalogue.
+ */
+export function consumedIngredientReference(name: string): string | null {
+  const whole = normalizeFoodText(name)
+  if (/^(?:pao frances|paes franceses|paozinho)(?: abertos?)?$/u.test(whole))
+    return 'Pão, trigo, francês'
+  if (/^(?:ovo frito|ovos fritos)$/u.test(whole)) return 'Ovo, de galinha, inteiro, frito'
+  if (/^(?:ovo mexido|ovos mexidos)$/u.test(whole)) return 'Egg, whole, cooked, scrambled'
+  if (whole === 'cebola') return 'Cebola, crua'
+  return null
+}
+
 /** Parse an explicitly named composition without dropping any ingredient or
  * nutritional qualifier. These are individual catalogue aliases, not recipes:
  * the current verified catalogue must still resolve EVERY returned component.
@@ -712,14 +726,10 @@ export function consumedCompositionParts(name: string, country: string): readonl
   // A bare sauce is not an identified ingredient and belongs to the existing
   // prepared-dish recovery path rather than this complete-component resolver.
   if (parts.some((part) => consumedFoodDefault(part, country) || part === 'molho')) return null
-  const references = parts.map((part) => {
-    if (/^(?:pao frances|paes franceses|paozinho)(?: abertos?)?$/u.test(part))
-      return 'Pão, trigo, francês'
-    if (/^(?:ovo frito|ovos fritos)$/u.test(part)) return 'Ovo, de galinha, inteiro, frito'
-    if (/^(?:ovo mexido|ovos mexidos)$/u.test(part)) return 'Egg, whole, cooked, scrambled'
-    if (part === 'cebola') return 'Cebola, crua'
-    return mobileEverydayFoodDefault(part)?.catalog_name ?? part
-  })
+  const references = parts.map(
+    (part) =>
+      consumedIngredientReference(part) ?? mobileEverydayFoodDefault(part)?.catalog_name ?? part,
+  )
   // The milk/whey interpreter owns calibrated milk volume + powder portions;
   // it must never be replaced by this generic proportional-mass estimate.
   const milk = mobileEverydayFoodDefault('leite')?.catalog_name
@@ -2343,11 +2353,29 @@ export async function calcMealMacros(
     // histórico. Isso impede que um override antigo contaminado (por exemplo,
     // arroz de 70 kcal) seja reciclado indefinidamente. Matches apenas fuzzy
     // ainda podem se beneficiar do histórico pessoal compatível.
-    const prefetchedMatch = await matchFood(supabase, it.food_name, country)
+    let prefetchedMatch = await matchFood(supabase, it.food_name, country)
+    let referenceName = it.food_name
+    if (
+      captured.consumptionPolicy === 'consumed-meal-v1' &&
+      normalizeFoodText(prefetchedMatch.name_pt ?? '') !== normalizeFoodText(it.food_name)
+    ) {
+      const reference = consumedIngredientReference(it.food_name)
+      if (reference) {
+        const verified = await matchFood(supabase, reference, country)
+        if (
+          verified.id != null &&
+          verified.kcal_per_100g != null &&
+          normalizeFoodText(verified.name_pt ?? '') === normalizeFoodText(reference)
+        ) {
+          prefetchedMatch = verified
+          referenceName = reference
+        }
+      }
+    }
     const hasExactCanonicalMatch =
       prefetchedMatch.id != null &&
       prefetchedMatch.kcal_per_100g != null &&
-      normalizeFoodText(prefetchedMatch.name_pt ?? '') === normalizeFoodText(it.food_name)
+      normalizeFoodText(prefetchedMatch.name_pt ?? '') === normalizeFoodText(referenceName)
 
     // ── PREPARO AMBÍGUO (device gate 2026-09-27; decisão Eduardo 2026-09-28) ─
     // Sem preparo no pedido e com o mesmo alimento em preparos de energia muito
@@ -2663,11 +2691,11 @@ export async function calcMealMacros(
     // Anchor check: o ingrediente principal da query precisa aparecer no
     // nome do match. Bloqueia bug "arroz refogado" → "espinafre refogado".
     // Se a âncora não aparece, força fallback pra estimativa por categoria.
-    const anchor = extractAnchor(it.food_name)
+    const anchor = extractAnchor(referenceName)
     const matchedNameLower = normalizeFoodText(m.name_pt ?? '')
     const anchorMatches =
       (anchor == null || matchedNameLower.includes(anchor)) &&
-      (m.name_pt == null || candidateNamesRequestedFood(it.food_name, m.name_pt))
+      (m.name_pt == null || candidateNamesRequestedFood(referenceName, m.name_pt))
     const fruitSweetMismatch = isSweetDerivedFruitMismatch(it.food_name, m.name_pt, m.category)
     const nutritionModifierMismatch =
       m.name_pt != null && hasNutritionModifierConflict(it.food_name, m.name_pt)

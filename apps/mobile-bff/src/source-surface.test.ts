@@ -282,6 +282,8 @@ function restorePrivateMediaContractR168(id: string, body: string): string {
 }
 
 function certifyOrdinaryPhotoSourcesR102(): void {
+  // R206 connected refinement changes only26432/69702;381 of383
+  // complete module bodies stay identical to candidate1.
   // R206 compares all383 identities/425 physical copies: four changed whole
   // bodies (materializer, shared calculator/export, V2 and V3 presentations)
   // are sealed below. Global import/runtime scans and tampering tests remain.
@@ -298,7 +300,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
       'everyday-food-defaults.ts',
       '6ab28a7063eba8ccd3d5a50e1c23165a62da29517883b68edd1fe3d82abb44fb',
     ],
-    ['meal-pipeline.ts', '10ca3bcc38128c34769a4b21438ece5d70c74c1b4c1044b1620a4d50d8ae7956'],
+    ['meal-pipeline.ts', 'c27eb7a184aba07052e80c4c767f6b33784070e8274d821c08e9c331740c7f30'],
     [
       'registration-feedback-v2.ts',
       'efbb5e5dcf7706dd940b83cf736bbed9648032acc8b25a838f2099236da89cde',
@@ -314,9 +316,9 @@ function certifyOrdinaryPhotoSourcesR102(): void {
         .digest('hex'),
     ).toBe(hash)
   for (const [id, hash] of [
-    ['26432', '6fa92a196caa8c5a1a058514be9b25a613535e8cf377d139fb384adfb7e979e2'],
+    ['26432', '0fe1996bbf0b1296126b99e31076e0121e0d409ef8e7b5ea713c02bd5b531053'],
     ['418', 'b6f37d51d0e565142e530832b760faac2dbb8328acc25a2e129a8a6ab0ffdfb9'],
-    ['69702', 'dccd4496cf10a78be45946abca592b1eee78ea2ef6df893ed5082ab58a0d10df'],
+    ['69702', 'f4ea91e0084c0ec4f0ee5915b04a4416c609f5cd1ce468ef6fa2e9b0fac2b810'],
     ['53637', 'b06d9ecef697d719db12f8de0c7a84645999c9ddbe142e463085767c6c6dae98'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
@@ -345,7 +347,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-materialization.ts',
-      'ff26e6970537b541fe03db8dc5183735407fc55860a5f6b7558fd404ef579db4',
+      '1128089c95c65e0b0abffc2ff9ec6014b54532b2264d716286969d629a0582cf',
     ],
     [
       'conversation-meal-source.ts',
@@ -1016,7 +1018,7 @@ function restoreBoundedMealGrammarR184(text: string, kind: 'source' | 'build'): 
     // module solely for the historical provider certificate. Actual runtime
     // graph scans and the R206 source/body certificates still use current code.
     expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '30c279202a488313d2ef5d89fc1d3f4871db5acbfb70e0ab99620a7c9a2eca0c',
+      '772dc06f54f30343e93b02109fbb2ea5eca48c46d059c8f1de3ab73c99e1a589',
     )
     const tree = ts.createSourceFile('r204-provider.js', text, ts.ScriptTarget.Latest, true)
     const found: ts.ArrowFunction[] = []
@@ -1033,7 +1035,7 @@ function restoreBoundedMealGrammarR184(text: string, kind: 'source' | 'build'): 
     expect(found).toHaveLength(1)
     const current = found[0]?.getText(tree) ?? ''
     expect(createHash('sha256').update(current).digest('hex')).toBe(
-      '6fa92a196caa8c5a1a058514be9b25a613535e8cf377d139fb384adfb7e979e2',
+      '0fe1996bbf0b1296126b99e31076e0121e0d409ef8e7b5ea713c02bd5b531053',
     )
     const prior = (
       JSON.parse(

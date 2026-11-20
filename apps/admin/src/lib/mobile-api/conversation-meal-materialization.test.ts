@@ -460,6 +460,49 @@ describe('actual command interpretation materialization', () => {
   it.each([
     'BR',
     'US',
+  ])('qualifies separated photo ingredients using the same strict references for %s', async (country) => {
+    const names = ['pão francês aberto', 'ovo frito', 'ovo mexido', 'cebola']
+    const catalogs = [
+      row('Pão, trigo, francês', 210),
+      row('Ovo, de galinha, inteiro, frito', 635),
+      { ...row('Egg, whole, cooked, scrambled', 5414), country_code: 'US' },
+      row('Cebola, crua', 264),
+    ]
+    const f = visualFixture(
+      names.map((name) => ({ name, quantity_g_estimate: 50, confidence: 0.9 })),
+    )
+    f.capture.context.owner.country = country
+    const state = calculationDb(catalogs)
+    const norm = (v: string) =>
+      v.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/,/g, '').trim()
+    state.rpc.mockImplementation(async (_name, params) => ({
+      data: catalogs.filter((item) => norm(item.name_pt) === norm(String(params.search_term))),
+      error: null,
+    }))
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs.map((item) => item.calculation_input)).toEqual(
+      names.map((food_name) => ({ food_name, quantity_g: 50 })),
+    )
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((item) => item.calculation_input),
+      country,
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items.map((item) => item.matched_taco_id)).toEqual([210, 635, 5414, 264])
+    expect(calc.items.map((item) => item.food_name)).toEqual(names)
+    expect(calc.items.map((item) => item.kcal)).toEqual([50, 50, 50, 50])
+    expect(calc.items.every((item) => item.source === 'canonical_fuzzy')).toBe(true)
+    expect(calc.totals.kcal).toBe(200)
+  })
+  it.each([
+    'BR',
+    'US',
   ])('resolves the actual prepared-bread photo through all verified ingredients for %s', async (country) => {
     const names = [
       'pão francês aberto com ovo frito e cebola',

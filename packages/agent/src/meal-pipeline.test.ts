@@ -14,6 +14,7 @@ import type { ServiceClient } from '@mpp/db'
 import {
   calcMealMacros,
   consumedCompositionParts,
+  consumedIngredientReference,
   estimateMacros,
   lookupUserHistory,
   naturalUnit,
@@ -2570,6 +2571,21 @@ describe('calcMealMacros — preparo ambíguo em partes de composto (device gate
 })
 
 describe('consumed composition identity and mass', () => {
+  it('only aliases complete reviewed individual ingredient names', () => {
+    expect(consumedIngredientReference('pão francês aberto')).toBe('Pão, trigo, francês')
+    expect(consumedIngredientReference('ovo frito')).toBe('Ovo, de galinha, inteiro, frito')
+    expect(consumedIngredientReference('ovo mexido')).toBe('Egg, whole, cooked, scrambled')
+    for (const name of [
+      'ovo frito sem óleo',
+      'pão francês integral',
+      'ovo marca123',
+      'ovo frito com molho',
+      'ovo cru',
+      'não comi ovo frito',
+    ])
+      expect(consumedIngredientReference(name)).toBeNull()
+  })
+
   it('uses individual verified reference names rather than a fixed list of recipes', () => {
     expect(consumedCompositionParts('pão francês aberto com ovo frito e cebola', 'US')).toEqual([
       'Pão, trigo, francês',

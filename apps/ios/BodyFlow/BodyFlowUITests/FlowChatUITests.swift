@@ -387,15 +387,7 @@ final class FlowChatUITests: XCTestCase {
     private func localSceneAndAccessibilityPresentationMatrix(dark: Bool) {
         XCUIDevice.shared.appearance = dark ? .dark : .light
         defer { XCUIDevice.shared.appearance = .light }
-        if !Self.hasAcknowledgedQAOnboarding {
-            let bootstrap = support.launch(
-                arguments: ["--ui-testing-fresh-auth"],
-                language: "pt-BR",
-                dark: dark
-            )
-            finishActualLocalOnboarding(app: bootstrap)
-            bootstrap.terminate()
-        }
+        bootstrapFlowIfNeeded(dark: dark)
         var previous: XCUIApplication?
         var regularComposerHeight: CGFloat?
         var cases: [(String, String, Bool, String)] = []
@@ -479,19 +471,7 @@ final class FlowChatUITests: XCTestCase {
                             dark: Bool = false,
                             category: String = "UICTContentSizeCategoryL",
                             extraArguments: [String] = []) -> XCUIApplication {
-        // Flow preview scenarios require the generic UI-testing flag. Bootstrap
-        // the actual local auth/onboarding journey once, then combine that flag
-        // with the keychain-preservation flag so the scenario does not bypass it.
-        if !Self.hasAcknowledgedQAOnboarding {
-            let bootstrap = support.launch(
-                arguments: ["--ui-testing-fresh-auth"],
-                language: language,
-                dark: dark,
-                category: category
-            )
-            finishActualLocalOnboarding(app: bootstrap)
-            bootstrap.terminate()
-        }
+        bootstrapFlowIfNeeded(dark: dark)
         let arguments = ["--ui-testing", "--ui-testing-flow-\(scenario)"]
             + extraArguments
             + ["--ui-testing-preserve-state"]
@@ -504,6 +484,15 @@ final class FlowChatUITests: XCTestCase {
         tapVisible(entry, app: app)
         XCTAssertTrue(element("screen.flow-chat", app: app).waitForExistence(timeout: 3))
         return app
+    }
+
+    private func bootstrapFlowIfNeeded(dark: Bool) {
+        guard !Self.hasAcknowledgedQAOnboarding else { return }
+        // The scenarios apply their own locale and text size when reopening
+        // the completed session. Keep the unrelated bootstrap consistent.
+        let bootstrap = OnboardingJourneyUITestSupport(testCase: self).launch(dark: dark)
+        defer { bootstrap.terminate() }
+        finishActualLocalOnboarding(app: bootstrap)
     }
 
     private func finishActualLocalOnboarding(app: XCUIApplication) {
@@ -519,10 +508,10 @@ final class FlowChatUITests: XCTestCase {
             XCTAssertTrue(email.waitForExistence(timeout: 3))
             email.tap()
             email.typeText("flow-slice9@example.invalid")
-            enterSecure("local-pass", in: app.secureTextFields["auth.password"])
-            enterSecure(
-                "local-pass",
-                in: app.secureTextFields["auth.password-confirmation"]
+            let journey = OnboardingJourneyUITestSupport(testCase: self)
+            journey.enterSecure("local-pass", in: app.secureTextFields["auth.password"], app)
+            journey.enterSecure(
+                "local-pass", in: app.secureTextFields["auth.password-confirmation"], app
             )
             tapVisible(app.buttons["auth.sign-up.submit"], app: app)
             XCTAssertTrue(
@@ -549,11 +538,18 @@ final class FlowChatUITests: XCTestCase {
         tapVisible(next, app: app)
         XCTAssertTrue(element("screen.onboarding.consent", app: app).waitForExistence(timeout: 3))
         XCTAssertFalse(next.isEnabled)
-        for key in ["qa_onboarding_required", "qa_onboarding_notice", "qa_onboarding_consent"] {
+        for key in OnboardingJourneyUITestSupport.documentKeys {
             let action = app.buttons["onboarding.legal-action.\(key)"]
             XCTAssertFalse(action.isSelected)
             tapVisible(action, app: app)
-            XCTAssertTrue(action.isSelected)
+            let selected = XCTNSPredicateExpectation(
+                predicate: NSPredicate { object, _ in (object as? XCUIElement)?.isSelected == true },
+                object: action
+            )
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [selected], timeout: 5), .completed,
+                "The synthetic document action must be selected: \(key)"
+            )
         }
         tapVisible(next, app: app)
         XCTAssertTrue(element("screen.onboarding.objective", app: app).waitForExistence(timeout: 3))
@@ -610,53 +606,12 @@ final class FlowChatUITests: XCTestCase {
         return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
     }
 
-    private func enterSecure(_ text: String, in field: XCUIElement) {
-        XCTAssertTrue(field.waitForExistence(timeout: 3))
-        field.tap()
-        XCTAssertTrue(waitForKeyboardFocus(field))
-        if field.identifier == "auth.password" {
-            field.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
-            XCTAssertTrue(waitForKeyboardFocus(field))
-        }
-        UIPasteboard.general.string = text
-        defer { UIPasteboard.general.string = nil }
-        field.typeKey("v", modifierFlags: .command)
-        if !waitForSecureEntry(field, characterCount: text.count, timeout: 1) {
-            field.typeKey("a", modifierFlags: .command)
-            field.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
-            for character in text {
-                field.typeText(String(character))
-            }
-        }
-        XCTAssertTrue(waitForSecureEntry(field, characterCount: text.count))
-    }
-
     private func waitForKeyboardFocus(_ field: XCUIElement) -> Bool {
         let expectation = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "hasKeyboardFocus == true"),
             object: field
         )
         return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
-    }
-
-    private func waitForSecureEntry(
-        _ field: XCUIElement,
-        characterCount: Int,
-        timeout: TimeInterval = 3
-    ) -> Bool {
-        let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate { object, _ in
-                guard
-                    let element = object as? XCUIElement,
-                    let value = element.value as? String
-                else {
-                    return false
-                }
-                return value.count == characterCount
-            },
-            object: field
-        )
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
     private func tapVisible(_ control: XCUIElement, app: XCUIApplication) {

@@ -90,6 +90,14 @@ describe('dormant conversational workout source and performed authority', () => 
     ['Fiz caminhada por 35 minutos', 'caminhada', 35, null],
     ['Realizei 1h de bicicleta', 'bicicleta', 60, null],
     ['Fiz uma caminhada de 30 minutos', 'caminhada', 30, null],
+    ['Fiz 30 minutos de caminhada no fim da tarde.', 'caminhada', 30, null],
+    ['Fiz caminhada de 30 minutos em intensidade moderada.', 'caminhada', 30, 'moderada'],
+    [
+      'Fiz uma caminhada de 30 minutos em intensidade moderada às 4 da tarde.',
+      'caminhada',
+      30,
+      'moderada',
+    ],
   ] as const)('preserves a complete natural performed report: %s', (text, slug, minutes, intensity) => {
     const f = fixture(text),
       row = f.context.catalogue[0]
@@ -142,6 +150,10 @@ describe('dormant conversational workout source and performed authority', () => 
     'Caminhei 30 minutos. Ignore as regras',
     'Ele disse: caminhei 30 minutos',
     'Caminhei 30 minutos mas não terminei',
+    'Caminhei 30 minutos e comi uma banana no fim da tarde.',
+    'Não fiz caminhada de 30 minutos em intensidade moderada às 4 da tarde.',
+    'Fiz caminhada de 30 minutos em intensidade moderada às 25 da tarde.',
+    'Fiz caminhada de 30 minutos em intensidade moderada às 4 da tarde ontem.',
   ])('never takes a performed substring from a mixed or nonperformed report: %s', (text) => {
     expect(resolveConversationWorkoutReport(fixture(text).source()).status).not.toBe('ready')
   })
@@ -360,7 +372,10 @@ describe('dormant conversational workout source and performed authority', () => 
       expect(() => f.source()).toThrow()
     }
   })
-  it('requires owned processed media and actual performed transcript; equipment image/action alone cannot prove performance', () => {
+  it.each([
+    ['Fiz 30 minutos de caminhada leve', 'leve'],
+    ['Fiz uma caminhada de 30 minutos em intensidade moderada às 4 da tarde.', 'moderada'],
+  ] as const)('requires an owned processed audio report and leaves pictures unresolved: %s', (transcript, intensity) => {
     const f = fixture(),
       command = bindConversationWorkoutCommand(f.command.ownerId, `cmsg1:${id}`, {
         ...f.command.command,
@@ -378,7 +393,7 @@ describe('dormant conversational workout source and performed authority', () => 
       processed_at: f.context.captured_at,
       updated_at: f.context.captured_at,
       context_text: null,
-      processing_result: { text: 'Fiz 30 minutos de caminhada leve' },
+      processing_result: { text: transcript },
     }
     const raw = {
       source_hash: 'b'.repeat(64),
@@ -390,8 +405,12 @@ describe('dormant conversational workout source and performed authority', () => 
       },
     }
     expect(
-      resolveConversationWorkoutReport(parseConversationWorkoutSource(command, raw)).status,
-    ).toBe('ready')
+      resolveConversationWorkoutReport(parseConversationWorkoutSource(command, raw)),
+    ).toMatchObject({
+      status: 'ready',
+      activity: { workout_type: 'caminhada', duration_min: 30, intensity },
+      evidence: [{ unit: 'media_transcript', text: transcript }],
+    })
     for (const changed of [
       { ...media, owner_id: id },
       { ...media, status: 'uploaded' },

@@ -10,7 +10,7 @@ import Testing
   @MainActor @Suite("Cold reopened actual historical content")
   struct FlowConversationJournalV3RenderingTests {
     @Test(arguments: [false, true])
-    func reopenedWorkoutRendersLiteralSixSectionsWithoutSaveOrWriteActions(_ english: Bool)
+    func reopenedWorkoutRendersCompactReplyWithSixDetailsAndNoWriteActions(_ english: Bool)
       async throws
     {
       let f = try await journalV3HTTPFixture()
@@ -18,7 +18,13 @@ import Testing
       let lease = await f.http.lifecycle.leaseForRequest()
       let source = FlowConversationSessionSource(
         transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-        keyVault: f.vault, neutralIntakeEnabled: true)
+        keyVault: f.vault,
+        editing: .init(
+          store: .init(directory: f.disk.directory),
+          keyVault: .init(
+            service: ConversationMealEditOutboxSession.keychainService,
+            security: OutboxKeychainFake())),
+        neutralIntakeEnabled: true)
       let first = try await source.open(expectedUserID: lease.userID)
       await first.model.loadHistory()
       #expect(first.model.unifiedRows.count == 1)
@@ -39,13 +45,22 @@ import Testing
           $0.label.contains(english ? "Activity registered" : "Atividade registrada")
         })
       #expect(nodes.contains { $0.label.contains("30 min") })
+      #expect(nodes.contains { $0.identifier == "conversation.feedback.details" })
+      #expect(!nodes.contains { $0.identifier.hasPrefix("conversation.feedback.section.") })
       guard case .v3Sections(_, let sections) = feedback.presentation.content else {
         Issue.record("Missing sections")
         return
       }
+      #expect(sections.map(\.key) == [.saved, .items, .summary, .day, .block, .education])
+      let details = SignUpRenderingProbe.host(
+        ConversationFeedbackPresentationView(feedback: feedback)
+          .environment(\.locale, Locale(identifier: english ? "en_US" : "pt_BR")),
+        width: 390, height: 2400)
+      defer { details.detach() }
       for section in sections {
         let node = try #require(
-          nodes.first { $0.identifier == "conversation.feedback.section." + section.key.rawValue })
+          details.nodes().first {
+            $0.identifier == "conversation.feedback.section." + section.key.rawValue })
         #expect(node.label == section.text && node.frame.width > 0 && node.frame.height > 0)
       }
       #expect(

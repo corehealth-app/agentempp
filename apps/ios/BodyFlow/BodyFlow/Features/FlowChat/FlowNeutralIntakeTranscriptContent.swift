@@ -7,6 +7,7 @@ struct FlowNeutralIntakeComposerContent: View {
   var captureAction: @MainActor (FlowConversationCapturePresentation.Choice) -> Void = { _ in }
   @Environment(\.locale) private var locale
   @FocusState private var focused: Bool
+  @State private var attachmentPreview: (UUID, FlowChatMediaPreview)?
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
     @Bindable var model = model
@@ -46,6 +47,18 @@ struct FlowNeutralIntakeComposerContent: View {
       }
       if let attachment = model.attachment {
         HStack {
+          if let preview = attachmentPreview, preview.0 == attachment.id,
+            let image = preview.1.thumbnail
+          {
+            Image(decorative: image, scale: 1).resizable().scaledToFill()
+              .frame(width: 48, height: 38)
+              .clipShape(RoundedRectangle(cornerRadius: 6))
+              .accessibilityHidden(true)
+          }
+          if attachment.staged.kind == .audioNote && !model.isWorking {
+            FlowChatAudioDraftButton(url: attachment.staged.fileURL, english: english)
+              .id(attachment.id)
+          }
           Label(
             attachment.staged.kind == .audioNote
               ? (english ? "Audio attached" : "Áudio anexado")
@@ -54,7 +67,14 @@ struct FlowNeutralIntakeComposerContent: View {
           Spacer()
           Button(english ? "Remove" : "Remover") { Task { await model.removeAttachment() } }
             .disabled(model.isWorking || model.isComposerLocked)
-        }.accessibilityIdentifier("conversation.neutral.attachment")
+        }
+        .task(id: attachment.id) {
+          let preview = await FlowChatMediaPreview.load(attachment.staged)
+          guard !Task.isCancelled, model.attachment?.id == attachment.id else { return }
+          attachmentPreview = (attachment.id, preview)
+        }
+        .onDisappear { attachmentPreview = nil }
+        .accessibilityIdentifier("conversation.neutral.attachment")
       }
       if let phase = model.mediaPhase {
         ProgressView(
@@ -64,7 +84,7 @@ struct FlowNeutralIntakeComposerContent: View {
         )
         .accessibilityIdentifier("conversation.neutral.media-progress")
       }
-      HStack(alignment: .bottom) {
+      HStack(alignment: .bottom, spacing: BodyFlowSpacing.xs) {
         if let capture, model.captureContext != nil {
           Menu {
             if capture.camera.isAvailable() {
@@ -79,6 +99,7 @@ struct FlowNeutralIntakeComposerContent: View {
             Button(english ? "Choose audio" : "Selecionar áudio", systemImage: "waveform") {
               choose(.audioFile)
             }
+            mealContextPicker
           } label: {
             Image(systemName: "plus").frame(width: 44, height: 44)
           }
@@ -90,23 +111,34 @@ struct FlowNeutralIntakeComposerContent: View {
           Text(verbatim: model.composer).frame(maxWidth: .infinity, alignment: .leading)
         } else {
           TextField(
-            english
-              ? "Tell Flow what you ate or which activity you performed…"
-              : "Conte ao Flow o que comeu ou qual atividade realizou…", text: $model.composer,
+            english ? "Message to Flow" : "Mensagem ao Flow", text: $model.composer,
             axis: .vertical
           )
-          .lineLimit(1...6).focused($focused)
+          .lineLimit(1...5).focused($focused)
+          .padding(BodyFlowSpacing.sm)
+          .frame(minHeight: 44)
+          .background(BodyFlowColor.background, in: RoundedRectangle(cornerRadius: 16))
           .accessibilityLabel(english ? "Message to Flow" : "Mensagem ao Flow")
           .accessibilityIdentifier(
             "conversation.neutral.composer")
+        }
+        if capture != nil, model.captureContext != nil {
+          Button { choose(.recording) } label: {
+            Image(systemName: "mic").frame(width: 44, height: 44)
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(BodyFlowColor.accent)
+          .disabled(model.isWorking || model.isComposerLocked)
+          .accessibilityLabel(english ? "Record audio" : "Gravar áudio")
+          .accessibilityIdentifier("conversation.neutral.record-audio")
         }
         Button {
           focused = false
           Task { await model.submit() }
         } label: {
-          Image(systemName: "paperplane.fill").frame(width: 44, height: 44)
+          Image(systemName: "paperplane.fill")
         }
-        .buttonStyle(BodyFlowButtonStyle(role: .primary)).disabled(!model.canSubmit)
+        .buttonStyle(BodyFlowButtonStyle(role: .primary, isCompact: true)).disabled(!model.canSubmit)
         .accessibilityLabel(
           model.isComposerLocked
             ? (english ? "Retry original message" : "Retomar mensagem original")
@@ -114,16 +146,12 @@ struct FlowNeutralIntakeComposerContent: View {
         )
         .accessibilityIdentifier("conversation.neutral.send")
       }
-      Picker(
-        english ? "Meal context (optional)" : "Refeição como contexto (opcional)",
-        selection: $model.mealTypeHint
-      ) {
-        Text(english ? "No meal hint" : "Sem indicação de refeição").tag(
-          nil as ConversationMealCommand.MealType?)
-        ForEach(ConversationMealCommand.MealType.allCases, id: \.self) { value in
-          Text(mealName(value)).tag(Optional(value))
-        }
-      }.pickerStyle(.menu).disabled(model.isWorking || model.isComposerLocked)
+      if capture == nil || model.captureContext == nil {
+        mealContextPicker.pickerStyle(.menu)
+      } else if let hint = model.mealTypeHint {
+        Text(mealName(hint)).font(BodyFlowTypography.caption)
+          .foregroundStyle(BodyFlowColor.accent)
+      }
       if capture == nil {
         Text(
           english
@@ -135,6 +163,16 @@ struct FlowNeutralIntakeComposerContent: View {
     }.padding(BodyFlowSpacing.md)
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("conversation.neutral.composer-content")
+  }
+  private var mealContextPicker: some View {
+    @Bindable var model = model
+    return Picker(english ? "Meal" : "Refeição", selection: $model.mealTypeHint) {
+      Text(english ? "No meal hint" : "Sem indicação de refeição")
+        .tag(nil as ConversationMealCommand.MealType?)
+      ForEach(ConversationMealCommand.MealType.allCases, id: \.self) {
+        Text(mealName($0)).tag(Optional($0))
+      }
+    }.disabled(model.isWorking || model.isComposerLocked)
   }
   private func choose(_ choice: FlowConversationCapturePresentation.Choice) {
     focused = false
@@ -172,7 +210,8 @@ struct FlowNeutralIntakeTranscriptContent: View {
         }
       ) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-          FlowNeutralIntakeSavedContent(row: row, english: english)
+          FlowNeutralIntakeSavedContent(
+            row: row, english: english, compact: true, media: model.mediaPreview(for: row.id))
           if case .meal = row.acknowledgement, let conversation {
             FlowConversationMealControlsContent(model: conversation, commandID: row.childID)
           }
@@ -211,7 +250,9 @@ struct FlowNeutralIntakeTranscriptContent: View {
       }
       ForEach(model.pendingRows, id: \.input.intakeID) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-          if !historicalOriginalIntakeIDs.contains(row.input.intakeID) { source(row.input) }
+          if !historicalOriginalIntakeIDs.contains(row.input.intakeID) {
+            source(row.input, sent: false)
+          }
           Text(status(row)).accessibilityIdentifier("conversation.neutral.state")
           if let response = model.state(intakeID: row.input.intakeID) {
             if let question = response.question { questionContent(question.text) }
@@ -227,7 +268,7 @@ struct FlowNeutralIntakeTranscriptContent: View {
               Task { await model.discardUnsent(intakeID: row.input.intakeID) }
             }
           } else {
-            Button(english ? "Check original status" : "Consultar status original") {
+            Button(reviewButtonLabel(row)) {
               Task { await model.reconcile(intakeID: row.input.intakeID) }
             }
             if model.canContinue(intakeID: row.input.intakeID) {
@@ -268,10 +309,17 @@ struct FlowNeutralIntakeTranscriptContent: View {
       }
     }.accessibilityIdentifier("conversation.neutral.transcript")
   }
-  @ViewBuilder private func source(_ input: FlowNeutralIntakeInput) -> some View {
-    switch input.source {
-    case .text(let text): Text(verbatim: text).font(BodyFlowTypography.body)
-    case .media: Text(english ? "Original attachment" : "Anexo original")
+  private func source(_ input: FlowNeutralIntakeInput, sent: Bool = true) -> some View {
+    FlowChatBubble(outgoing: true) {
+      switch input.source {
+      case .text(let text): Text(verbatim: text)
+      case .media(_, let caption):
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+          FlowChatAttachmentView(
+            preview: model.mediaPreview(for: input.intakeID), english: english, sent: sent)
+          if let caption { Text(verbatim: caption) }
+        }
+      }
     }
   }
   private func questionContent(_ text: String) -> some View {
@@ -279,19 +327,29 @@ struct FlowNeutralIntakeTranscriptContent: View {
       Text(verbatim: text).font(BodyFlowTypography.headline)
       Text(
         english
-          ? "Linked answers are not available here yet. A new complete report is independent from this original."
-          : "Respostas vinculadas ainda não estão disponíveis aqui. Um novo relato completo é independente deste original."
+          ? "Send a new report with this information."
+          : "Envie um novo relato com essa informação."
       )
       .font(BodyFlowTypography.caption)
     }
   }
   private func status(_ row: ConversationNeutralIntakeOutboxEntry) -> String {
     if let value = model.state(intakeID: row.input.intakeID) { return status(value) }
+    if row.hold == .notRecorded { return clarificationStatus }
     return row.state == .queued
       ? (english ? "Stored and not dispatched." : "Guardado e ainda não enviado.")
       : (english
         ? "Delivery is uncertain. Check its original status."
         : "A entrega está incerta. Consulte o status original.")
+  }
+  private var clarificationStatus: String {
+    english
+      ? "Flow needs clarification. No registration was confirmed."
+      : "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado."
+  }
+  private func reviewButtonLabel(_ row: ConversationNeutralIntakeOutboxEntry) -> String {
+    if row.hold == .notRecorded { return english ? "See what is missing" : "Ver o que faltou" }
+    return english ? "Check original status" : "Consultar status original"
   }
   private func status(_ value: FlowNeutralIntakeResponseSnapshot) -> String {
     switch value.deliveryState {
@@ -305,9 +363,7 @@ struct FlowNeutralIntakeTranscriptContent: View {
         ? "This message did not record a meal or activity."
         : "Esta mensagem não registrou refeição nem atividade."
     case .clarificationRequired:
-      return english
-        ? "Flow needs clarification. No registration was confirmed."
-        : "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado."
+      return clarificationStatus
     case .needsReply:
       return english
         ? "Flow needs an answer. No registration was confirmed."
@@ -363,9 +419,39 @@ struct FlowNeutralIntakeTranscriptContent: View {
 struct FlowNeutralIntakeSavedContent: View {
   let row: FlowNeutralIntakeSavedRow
   let english: Bool
+  var compact = false
+  var media: FlowChatMediaPreview? = nil
   var body: some View {
+    if compact {
+      VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+        FlowChatBubble(outgoing: true) {
+          switch row.input.source {
+          case .text(let text): Text(verbatim: text)
+          case .media(_, let caption):
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+              FlowChatAttachmentView(preview: media, english: english)
+              if let caption { Text(verbatim: caption) }
+            }
+          }
+        }
+        FlowChatBubble {
+          if let feedback = row.feedback {
+            ConversationFeedbackPresentationView(feedback: feedback, compact: true)
+          } else {
+            savedFacts
+          }
+        }
+      }
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("conversation.neutral.saved.\(row.id.uuidString.lowercased())")
+    } else {
+      savedFacts
+    }
+  }
+
+  private var savedFacts: some View {
     VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-      if case .text(let text) = row.input.source { Text(verbatim: text) }
+      if !compact, case .text(let text) = row.input.source { Text(verbatim: text) }
       switch row.acknowledgement {
       case .meal(let saved):
         Label(

@@ -48,6 +48,10 @@ final class FlowNeutralIntakeModel {
   private var prepared: Prepared?
   private var preparedCapture: PreparedCapture?
   private var selectedAttachment: FlowConversationAttachment?
+  private var recentMedia: (
+    intakeID: UUID, identity: ConversationCommandContext.Identity, preview: FlowChatMediaPreview
+  )?
+  @ObservationIgnored private var mediaPreviewGeneration: UInt64 = 0
   private let mediaService: ConversationMealMediaService?
   private let mediaStaging: MediaStagingStore?
   private let originalFileWorker: any ConversationOriginalFileWorking
@@ -174,6 +178,16 @@ final class FlowNeutralIntakeModel {
     closed ? nil : parentIdentity
   }
   var attachment: FlowConversationAttachment? { isVisible ? selectedAttachment : nil }
+  func mediaPreview(for intakeID: UUID?) -> FlowChatMediaPreview? {
+    guard isVisible, let intakeID, let recentMedia, intakeID == recentMedia.intakeID,
+      recentMedia.identity == context?.identity
+    else { return nil }
+    return recentMedia.preview
+  }
+  func clearMediaPreview() {
+    mediaPreviewGeneration &+= 1
+    recentMedia = nil
+  }
   func attach(_ staged: StagedMedia, expectedContext: ConversationCommandContext.Identity) throws {
     guard !isWorking, !isComposerLocked, captureContext == expectedContext,
       [.conversationPhoto, .audioNote].contains(staged.kind)
@@ -357,6 +371,17 @@ final class FlowNeutralIntakeModel {
           staging.remove(capture.attachment.staged.fileURL)
           throw ConversationOutboxError.invalidServerObservation
         }
+        if self.recentMedia?.intakeID != capture.attachment.commandID {
+          let previewGeneration = self.mediaPreviewGeneration
+          let preview = await FlowChatMediaPreview.load(capture.attachment.staged)
+          try Task.checkCancellation()
+          guard self.isVisible, self.context?.identity == current.identity else {
+            throw ConversationOutboxError.invalidServerObservation
+          }
+          if self.mediaPreviewGeneration == previewGeneration {
+            self.recentMedia = (capture.attachment.commandID, current.identity, preview)
+          }
+        }
         self.mediaPhase = .uploading
         let asset = try await media.uploadIntake(
           capture.attachment.staged,
@@ -514,6 +539,7 @@ final class FlowNeutralIntakeModel {
   private func clearCapture(preservingHeldOriginal: Bool = false) {
     if let selectedAttachment { mediaStaging?.remove(selectedAttachment.staged.fileURL) }
     selectedAttachment = nil
+    clearMediaPreview()
     preparedCapture = nil
     mediaPhase = nil
     if !preservingHeldOriginal { heldOriginal = nil }

@@ -79,6 +79,8 @@ interface PerformedClause {
   intensityLabel: string | null
 }
 const intensitySuffix = /(?: em ritmo| com intensidade)? (leve|moderad[oa]|alt[oa])$/u
+const sameDayTimeSuffix =
+  / (?:no (?:inicio|meio|fim) d[ao] (?:manha|tarde|noite|dia)|as (?:[1-9]|1[0-2]) da (?:manha|tarde|noite))$/u
 function intensityForLabel(label: string | null): Intensity | null {
   if (label === null) return null
   if (label === 'leve') return 'leve'
@@ -134,6 +136,16 @@ function performedClause(original: string): PerformedClause | null {
     intensityLabel: resolvedLabel,
   }
 }
+
+function spokenPerformedClause(original: string): PerformedClause | null {
+  // Same-day context belongs in the evidence. The writer still dates the log
+  // using admission and requires the entire remaining clause to match.
+  const simplified = original
+    .replace(/[.!]$/u, '')
+    .replace(sameDayTimeSuffix, '')
+    .replace(/ em intensidade (leve|moderad[oa]|alt[oa])$/u, ' com intensidade $1')
+  return performedClause(simplified)
+}
 /** Every owned source unit must independently describe the same completed
  * activity. This is not permission to dispatch from an unsealed generic intake. */
 export function resolveConversationWorkoutReport(original: CapturedConversationWorkoutSource) {
@@ -150,13 +162,18 @@ export function resolveConversationWorkoutReport(original: CapturedConversationW
         status: 'not_reported' as const,
         reason: 'non_performed_or_conflicting_source' as const,
       })
-    const clause = performedClause(text)
-    if (!clause) return question(source, 'activity')
-    const name = clause.name,
-      rows = source.context.catalogue.filter(
+    const catalogueRows = (name: string) =>
+      source.context.catalogue.filter(
         (row) =>
           normalize(row.slug.replace(/_/gu, ' ')) === name || normalize(row.display_name) === name,
       )
+    let clause = performedClause(text)
+    if (!clause || catalogueRows(clause.name).length === 0) {
+      clause = spokenPerformedClause(text) ?? clause
+    }
+    if (!clause) return question(source, 'activity')
+    const name = clause.name,
+      rows = catalogueRows(name)
     // A real catalogue label may contain an intensity word. Preserve ambiguity
     // instead of silently choosing a different slug/rate.
     if (

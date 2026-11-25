@@ -684,7 +684,7 @@ actor NeutralMealBridgeUnitServer {
       await f.model.close()
     }
     @Test(arguments: [false, true])
-    func actualNeutralTranscriptShowsSixSectionsAndTheGenuineMealPencil(_ english: Bool)
+    func actualNeutralTranscriptOffersTheFullReceiptAndShowsTheGenuineMealPencil(_ english: Bool)
       async throws
     {
       let f = try await openNeutralMealBridge()
@@ -697,8 +697,15 @@ actor NeutralMealBridgeUnitServer {
           \.locale, Locale(identifier: english ? "en_US" : "pt_BR")), width: 390, height: 2400)
       defer { host.detach() }
       let nodes = host.nodes()
-      for key in ["saved", "items", "summary", "day", "block", "education"] {
-        #expect(nodes.contains { $0.identifier == "conversation.feedback.section." + key })
+      #expect(nodes.contains { $0.label.contains(english ? "View details" : "Ver detalhes") })
+      #expect(nodes.contains { $0.identifier == "conversation.feedback.compact-summary" })
+      #expect(!nodes.contains { $0.identifier.hasPrefix("conversation.feedback.section.") })
+      let full = try #require(neutral.savedRows.first?.feedback)
+      switch full.presentation.content {
+      case .sections(_, let sections), .v3Sections(_, let sections):
+        #expect(sections.map(\.key) == [.saved, .items, .summary, .day, .block, .education])
+      default:
+        Issue.record("The complete receipt must still be available")
       }
       #expect(
         nodes.contains {

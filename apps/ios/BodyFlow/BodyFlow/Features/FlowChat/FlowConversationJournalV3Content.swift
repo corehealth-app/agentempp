@@ -149,18 +149,39 @@ struct FlowConversationJournalV3Presentation {
     let entry: ConversationJournalV3PageSnapshot.Entry
     let feedback: ConversationFeedbackPresentationSnapshot.Bound?
     let english: Bool
+    var media: FlowChatMediaPreview? = nil
+
     var body: some View {
       let text = FlowConversationJournalV3Presentation(entry: entry, english: english)
-      VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-        if let source = text.source {
-          Text(verbatim: source).accessibilityIdentifier("conversation.journal3.source")
+      VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+        if case .media(let caption) = entry.input {
+          FlowChatBubble(outgoing: true) {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+              FlowChatAttachmentView(preview: media, english: english, sent: entry.status == .registered)
+              if let caption { Text(verbatim: caption) }
+            }
+          }
+          .accessibilityIdentifier("conversation.journal3.source")
+        } else if let source = text.source {
+          FlowChatBubble(outgoing: true) {
+            Text(verbatim: source)
+              .accessibilityIdentifier("conversation.journal3.source")
+          }
         }
-        Text(verbatim: text.title).font(BodyFlowTypography.headline)
-          .accessibilityIdentifier("conversation.journal3.status")
-        ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in Text(verbatim: line) }
-        if let feedback { ConversationFeedbackPresentationView(feedback: feedback) }
+        FlowChatBubble {
+          if let feedback {
+            ConversationFeedbackPresentationView(feedback: feedback, compact: true)
+          } else {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+              Text(verbatim: text.title).font(BodyFlowTypography.headline)
+                .accessibilityIdentifier("conversation.journal3.status")
+              ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in
+                Text(verbatim: line)
+              }
+            }
+          }
+        }
       }
-      .font(BodyFlowTypography.body).padding(BodyFlowSpacing.md)
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("conversation.journal3.\(entry.eventID)")
     }

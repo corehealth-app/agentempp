@@ -77,6 +77,7 @@ struct FlowConversationView: View {
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await model.refreshConversation() } }
+      if phase == .background { model.neutralIntake?.clearMediaPreview() }
     }
     .alert(
       english ? "Discard unsent report?" : "Descartar relato não enviado?",
@@ -132,12 +133,10 @@ struct FlowConversationView: View {
   private var transcriptScrollView: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.xxs) {
-          Text(verbatim: "Flow AI").font(BodyFlowTypography.headline).accessibilityAddTraits(
-            .isHeader)
-          Text(english ? "Your day in conversation" : "Seu dia em conversa")
-            .foregroundStyle(BodyFlowColor.secondaryText)
-        }
+        Text(english ? "Performe AI assistant" : "Assistente de IA do Performe")
+          .font(BodyFlowTypography.caption)
+          .foregroundStyle(BodyFlowColor.secondaryText)
+          .frame(maxWidth: .infinity)
         if model.isRefreshing {
           ProgressView(english ? "Updating…" : "Atualizando…").accessibilityIdentifier(
             "conversation.refreshing")
@@ -276,7 +275,8 @@ struct FlowConversationView: View {
         ForEach(Array(model.unifiedRows.reversed()), id: \.eventID) { entry in
           VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             FlowConversationJournalV3Content(
-              entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english)
+              entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english,
+              media: model.neutralIntake?.mediaPreview(for: entry.intakeID))
             if let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID) {
               FlowConversationMealControlsContent(model: model, commandID: commandID)
             }

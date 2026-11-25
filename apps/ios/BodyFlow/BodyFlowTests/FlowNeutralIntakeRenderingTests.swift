@@ -415,6 +415,56 @@ import Testing
       #expect(!host.nodes().contains { $0.label.contains("Atividade registrada") })
       await model.close()
     }
+    @Test func reopenedClarificationShowsItsProvenStatusWithoutResending() async throws {
+      let f = try await neutralVisibleFixture(variant: "clarification_unit")
+      defer { f.disk.remove() }
+      let before = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+        keyVault: f.vault, neutralIntakeEnabled: true)
+      let original = try #require(before.neutralIntake)
+      original.composer = "Relato que precisa de esclarecimento"
+      await original.submit()
+      let pending = try #require(original.pendingRows.first)
+      #expect(pending.hold == .notRecorded)
+      await before.close()
+
+      let reopened = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+        keyVault: f.vault, neutralIntakeEnabled: true)
+      let restored = try #require(reopened.neutralIntake)
+      #expect(restored.state(intakeID: pending.input.intakeID) == nil)
+      let host = SignUpRenderingProbe.host(
+        FlowNeutralIntakeTranscriptContent(model: restored).environment(
+          \.locale, Locale(identifier: "pt_BR")), width: 390, height: 900)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      #expect(nodes.contains { $0.label == "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado." })
+      #expect(!nodes.contains { $0.label.contains("A entrega está incerta") })
+      #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
+      await reopened.close()
+    }
+    @Test func partialPhotoPreviewUsesSavedNutritionAndAsksAboutOnlyTheExcludedItem() throws {
+      let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+        "Fixtures/ConversationFeedbackPresentationV2Fixtures.json")
+      let root = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
+      let fixtures = try #require(root["fixtures"] as? [[String: Any]])
+      let fixture = try #require(fixtures.first { $0["case"] as? String == "pg-original-known_meal-pt" })
+      var wrapper = try #require(fixture["expected"] as? [String: Any])
+      var sections = try #require(wrapper["sections"] as? [[String: String]])
+      let saved = try #require(sections.firstIndex { $0["key"] == "saved" })
+      let summary = try #require(sections.firstIndex { $0["key"] == "summary" })
+      sections[saved]["text"] = "Refeição registrada parcialmente."
+      sections[summary]["text", default: ""] +=
+        "\nFicou para revisar: queijo ralado. Se confirmar, registre só o que ficou de fora."
+      wrapper["sections"] = sections
+      let presentation = try ConversationFeedbackPresentationSelection.decoder(selection: .v2)
+        .decode(ConversationFeedbackPresentationSnapshot.self, from: neutralData(wrapper))
+      let preview = FlowFeedbackPreview(presentation, english: false)
+      #expect(preview.title == "Refeição registrada parcialmente.")
+      #expect(preview.summary == "Aprox. 126,1 kcal · 6,3 g de proteína")
+      #expect(preview.pending == "Ficou de fora: queijo ralado. Você confirma o alimento e a quantidade para registrar só essa parte?")
+    }
   }
   @MainActor @Observable private final class NeutralCaptureSheetPresentationProbe {
     var isPresented = true

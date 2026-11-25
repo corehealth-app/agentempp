@@ -710,7 +710,7 @@ export function consumedIngredientReference(name: string): string | null {
 /** A verified representative for a generic finished beverage. Preserve the
  * reported name and disclose an estimate since the recipe or brand is unknown. */
 export function consumedMealEstimateReference(name: string): string | null {
-  return /^bebidas? (?:achocolatadas?|(?:(?:quentes?|frias?) )?com (?:chocolate|achocolatado) em po)$/u.test(
+  return /^(?:bebidas? achocolatadas?|(?:bebidas?(?: (?:quentes?|frias?))?|cafe com leite) com (?:chocolate|achocolatado) em po)$/u.test(
     normalizeFoodText(name),
   )
     ? 'Leite, de vaca, achocolatado'

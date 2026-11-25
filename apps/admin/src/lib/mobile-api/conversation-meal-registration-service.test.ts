@@ -200,6 +200,7 @@ describe('actual source-to-factual meal registration composition', () => {
   it.each([
     'bebida achocolatada',
     'bebida quente com chocolate em pó',
+    'café com leite com chocolate em pó',
   ])('registers a four-item photo-only report with %s and requests meal feedback', async (beverage) => {
     const d = dependencies()
     const original = writerCommand()

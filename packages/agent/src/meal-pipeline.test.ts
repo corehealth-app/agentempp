@@ -2572,8 +2572,10 @@ describe('calcMealMacros — preparo ambíguo em partes de composto (device gate
 })
 
 describe('finished chocolate beverage estimate', () => {
-  it('preserves the generic finished beverage when the photo describes its preparation', () => {
-    const name = 'bebida quente com chocolate em pó'
+  it.each([
+    'bebida quente com chocolate em pó',
+    'café com leite com chocolate em pó',
+  ])('preserves the finished beverage when the photo describes %s', (name) => {
     expect(consumedMealEstimateReference(name)).toBe('Leite, de vaca, achocolatado')
     expect(naturalUnit(name, 200)).toEqual({ display_qty: 200, display_unit: 'ml' })
   })
@@ -2583,6 +2585,8 @@ describe('finished chocolate beverage estimate', () => {
     'bebida quente com chocolate em pó sem leite',
     'bebida fria com chocolate em pó e whey',
     'bebida quente com chocolate em pó sem açúcar',
+    'café com leite vegetal e chocolate em pó',
+    'café com leite com chocolate em pó sem açúcar',
   ])('does not overwrite explicit ingredients or powder: %s', (name) => {
     expect(consumedMealEstimateReference(name)).toBeNull()
   })

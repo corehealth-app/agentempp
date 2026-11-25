@@ -6,6 +6,35 @@ import Testing
 
 @Suite("Neutral media negotiation stays on the original authenticated intake")
 struct ConversationMediaIntakeTransportTests {
+  @Test(arguments: ["1", nil, "2", "1, 1"] as [String?])
+  func conversationReplyRequiresAnExactEchoAndCarriesNoFactualAcknowledgement(_ echo: String?) async throws {
+    let f = try ConversationHTTPFixture()
+    let lease = await f.lifecycle.leaseForRequest()
+    let ticket = try mediaIntakeTicket(mediaIntakeUnit("audio_workout"), generation: lease.generation)
+    let input = try mediaIntakeUnit("audio_workout")
+    let answer = "Posso ajudar a conferir o que você registrou hoje."
+    let body: [String: Any] = [
+      "schema": "conversation.intake-result.v1", "status": "not_recorded",
+      "intake": input["binding"]!, "source_hash": String(repeating: "a", count: 64),
+      "decision_hash": String(repeating: "b", count: 64), "reason": "question",
+      "turn_reply": ["schema": "conversation.turn-reply.v1", "text": answer],
+    ]
+    var stubbed = try mediaIntakeHTTP(body)
+    stubbed.headers["X-Conversation-Turns"] = echo
+    let response = stubbed
+    await f.stub.respond { _, _ in response }
+    let api = try await MobileConversationIntakeRepository.scoped(transport: f.transport, lease: lease)
+    if echo == "1" {
+      let decoded = try await api.read(ticket)
+      #expect(decoded.turnReply == answer)
+      #expect(decoded.factualAcknowledgement(for: ticket) == nil)
+    } else {
+      await #expect(throws: MobileAPITransportError.decodingFailure) { try await api.read(ticket) }
+    }
+    let requests = await f.stub.requests
+    #expect(requests.count == 1 && requests[0].value(forHTTPHeaderField: "X-Conversation-Turns") == "1")
+  }
+
   @Test func onlyTheOriginalMediaPostAndReadSelectProvenance() throws {
     let ticket = try mediaIntakeTicket(mediaIntakeUnit("meal_photo"))
     for header in [
@@ -123,8 +152,9 @@ struct ConversationMediaIntakeTransportTests {
     let saved = try mediaIntakeHTTP(unit["response"]!)
     await f.stub.respond { request, _ in
       if request.url?.path.hasSuffix("/session") == true { return opening }
-      if request.httpMethod == "POST" { throw URLError(.networkConnectionLost) }
-      return saved
+      // Both the POST confirmation and its automatic read are lost before
+      // the app is restarted.
+      throw URLError(.networkConnectionLost)
     }
     let controller = try await ConversationNeutralIntakeController.open(
       transport: f.transport, lifecycle: f.lifecycle, store: disk.store, keyVault: vault,
@@ -156,6 +186,10 @@ struct ConversationMediaIntakeTransportTests {
       try disk.store.loadIntakes(owner: owner, key: disk.key).first?.input.wireBody
         == sample.input.wireBody)
     await controller.close()
+    await f.stub.respond { request, _ in
+      if request.url?.path.hasSuffix("/session") == true { return opening }
+      return saved
+    }
     let restored = try await ConversationNeutralIntakeController.open(
       transport: f.transport, lifecycle: f.lifecycle, store: disk.store, keyVault: vault,
       expectedLease: lease)
@@ -170,8 +204,8 @@ struct ConversationMediaIntakeTransportTests {
       $0.url?.path.hasSuffix(sample.input.intakeID.uuidString.lowercased()) == true
     }
     #expect(
-      reads.count == 1
-        && reads[0].value(forHTTPHeaderField: "X-Conversation-Media-Provenance") == "1")
+      reads.count == 2
+        && reads.allSatisfy { $0.value(forHTTPHeaderField: "X-Conversation-Media-Provenance") == "1" })
     #expect(requests.first { $0.httpMethod == "POST" }?.httpBody == sample.input.wireBody)
     await restored.close()
   }

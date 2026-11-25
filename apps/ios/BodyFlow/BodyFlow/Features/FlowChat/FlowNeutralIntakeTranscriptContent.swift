@@ -203,7 +203,13 @@ struct FlowNeutralIntakeTranscriptContent: View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
           if !historicalTerminalIntakeIDs.contains(row.id) {
             source(row.input)
-            Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")
+            if let reply = model.turnReply(intakeID: row.id) {
+              FlowChatBubble {
+                Text(verbatim: reply).accessibilityIdentifier("conversation.turn.reply")
+              }
+            } else if row.response.turnReply == nil {
+              Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")
+            }
           }
           if model.mealQuestionChild(intakeID: row.id) != nil, let conversation,
             !conversation.isMealQuestionClosed(intakeID: row.id)
@@ -351,6 +357,9 @@ struct FlowNeutralIntakeTranscriptContent: View {
     return english ? "Check original status" : "Consultar status original"
   }
   private func status(_ value: FlowNeutralIntakeResponseSnapshot) -> String {
+    if value.reason == "conversation_reply_pending" {
+      return english ? "Flow is preparing a reply." : "O Flow está preparando uma resposta."
+    }
     switch value.deliveryState {
     case .notRecorded:
       var reason = value.reason
@@ -464,21 +473,17 @@ struct FlowNeutralIntakeSavedContent: View {
         ).font(BodyFlowTypography.headline)
         Text(verbatim: saved.activity.workoutType)
         Text("\(saved.activity.durationMin) min")
-        // Energy commentary comes only from the current-policy sections below.
-        // A factual ACK never grants permission to reconstruct masked guidance.
-        if saved.activity.estimatedKcal == nil {
+        // This is a factual estimate on the receipt, independent of guidance
+        // and the food budget. A missing estimate has no numerical value.
+        if compact, let energy = saved.activity.estimatedKcal {
+          Text(english ? "Estimated expenditure: \(energy) kcal" : "Gasto estimado: \(energy) kcal")
+        } else if saved.activity.estimatedKcal == nil {
           Text(english ? "Estimated expenditure unavailable" : "Gasto estimado indisponível")
         }
         Text(verbatim: saved.registration.localDate)
       }
       if let feedback = row.feedback {
         ConversationFeedbackPresentationView(feedback: feedback)
-      } else {
-        Text(
-          english
-            ? "The current commentary is unavailable; the factual registration remains saved."
-            : "O comentário atual está indisponível; o registro factual continua salvo."
-        ).foregroundStyle(BodyFlowColor.secondaryText)
       }
     }.padding(BodyFlowSpacing.md)
       .frame(maxWidth: .infinity, alignment: .leading)

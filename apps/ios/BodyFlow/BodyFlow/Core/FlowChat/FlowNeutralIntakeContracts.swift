@@ -369,6 +369,28 @@ enum FlowNeutralIntakeFactualAcknowledgement: Sendable {
   case meal(SavedConversationMealCommandResultSnapshot)
   case workout(SavedConversationWorkoutCommandResultSnapshot)
 }
+
+enum ConversationTurnReplySelection {
+  static let header = "X-Conversation-Turns"
+  private static let key = CodingUserInfoKey(rawValue: "conversation.turn-reply.v1")!
+
+  static func configure(_ decoder: JSONDecoder, requested: Bool, echo: String?) {
+    if requested && echo == "1" { decoder.userInfo[key] = true }
+  }
+
+  static func selected(from decoder: any Decoder) -> Bool {
+    decoder.userInfo[key] as? Bool == true
+  }
+
+  static func text(_ raw: ConversationMealEditJSON) throws -> String {
+    let value = try raw.object(["schema", "text"])
+    try neutralRequire(value.required("schema").string() == "conversation.turn-reply.v1")
+    let text = try value.required("text").string()
+    try neutralRequire(neutralText(text, limit: 2000))
+    return text
+  }
+}
+
 struct FlowNeutralIntakeResponseSnapshot: Decodable, Sendable {
   enum Status: String, Sendable {
     case selected, pending, held, absent
@@ -410,13 +432,14 @@ struct FlowNeutralIntakeResponseSnapshot: Decodable, Sendable {
   let question: Question?
   let sourceHash: String?
   let decisionHash: String?
+  let turnReply: String?
   init(from decoder: any Decoder) throws {
     let raw = try ConversationMealEditJSON(from: decoder)
     let root = try neutralObject(
       raw, required: ["schema", "status"],
       optional: [
         "intake", "lookup", "selection", "result", "reason", "question", "source_hash",
-        "decision_hash",
+        "decision_hash", "turn_reply",
       ])
     let schema = try root.required("schema").string()
     let mediaRequired = schema == "conversation.intake-result.v2"
@@ -426,6 +449,12 @@ struct FlowNeutralIntakeResponseSnapshot: Decodable, Sendable {
       throw FlowNeutralIntakeInvalid.value
     }
     self.status = status
+    if let rawReply = root["turn_reply"] {
+      try neutralRequire(status == .notRecorded && ConversationTurnReplySelection.selected(from: decoder))
+      turnReply = try ConversationTurnReplySelection.text(rawReply)
+    } else {
+      turnReply = nil
+    }
     try neutralRequire(!mediaRequired || status == .selected)
     switch status {
     case .selected:
@@ -497,10 +526,10 @@ struct FlowNeutralIntakeResponseSnapshot: Decodable, Sendable {
       sourceHash = nil
       decisionHash = nil
     case .notRecorded, .clarificationRequired:
+      let keys: Set<String> = ["schema", "status", "intake", "source_hash", "decision_hash", "reason"]
       _ = try raw.object(
-        status == .notRecorded
-          ? ["schema", "status", "intake", "source_hash", "decision_hash", "reason"]
-          : ["schema", "status", "intake", "source_hash", "decision_hash", "reason", "question"])
+        status == .clarificationRequired ? keys.union(["question"]) :
+          turnReply != nil ? keys.union(["turn_reply"]) : keys)
       intake = try FlowNeutralIntakeBinding(root.required("intake"))
       lookup = nil
       sourceHash = try root.required("source_hash").hash()

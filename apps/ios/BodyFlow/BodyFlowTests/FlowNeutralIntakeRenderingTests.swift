@@ -392,11 +392,11 @@ import Testing
       let nodes = host.nodes()
       #expect(nodes.contains { $0.label.contains("Atividade registrada") })
       #expect(nodes.contains { $0.label.contains("30 min") })
-      #expect(!nodes.contains { $0.label.contains("154 kcal") || $0.label.contains("0 kcal") })
+      #expect(!nodes.contains { $0.label.contains("0 kcal") || $0.label.contains("comentário atual está indisponível") })
       if variant == "workout_unknown_unit" {
         #expect(nodes.contains { $0.label.contains("Gasto estimado indisponível") })
       } else {
-        #expect(nodes.contains { $0.label.contains("O comentário atual está indisponível") })
+        #expect(nodes.contains { $0.label.contains("154 kcal") })
       }
       await model.close()
     }
@@ -533,6 +533,48 @@ import Testing
       #expect(preview.title == "Refeição registrada parcialmente.")
       #expect(preview.summary == "Aprox. 126,1 kcal · 6,3 g de proteína")
       #expect(preview.pending == "Era queijo ralado? Quanto você comeu?")
+    }
+
+    @Test func compactWorkoutShowsOfficialDayAndEligibleBlockWithoutRepeatingItsSummary() throws {
+      let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+        "Fixtures/ConversationFeedbackPresentationV2Fixtures.json")
+      let root = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
+      let fixtures = try #require(root["fixtures"] as? [[String: Any]])
+      let workout = try #require(fixtures.first { $0["case"] as? String == "pg-original-known_workout-pt" })
+      var wrapper = try #require(workout["expected"] as? [String: Any])
+      var sections = try #require(wrapper["sections"] as? [[String: String]])
+      let day = try #require(sections.firstIndex { $0["key"] == "day" })
+      let block = try #require(sections.firstIndex { $0["key"] == "block" })
+      let comment = try #require(sections.firstIndex { $0["key"] == "education" })
+      sections[day]["text"] = """
+        No momento deste registro (2026-11-05):
+        Dia: 2026-11-05
+        Consumido: 900 / 1.800 kcal (50%).
+        Proteína: 52 g. Meta indisponível.
+        Restam para comida: 900 kcal.
+        Exercício registrado: 154 kcal. Esse gasto não aumenta a comida disponível.
+        """
+      sections[block]["text"] = """
+        Progresso consolidado no momento do registro:
+        Bloco 7.700: 770 / 7.700 kcal (10%).
+        Saldo total já consolidado: 770 kcal · Blocos concluídos: 0.
+        """
+      sections[comment]["text"] = """
+        Comentário educativo no momento do registro:
+        A caminhada ajuda a manter a rotina ativa. Seu valor vai além do gasto estimado.
+        Se quiser, podemos conversar sobre como ajustar a duração da próxima caminhada.
+        """
+      wrapper["sections"] = sections
+      let presentation = try ConversationFeedbackPresentationSelection.decoder(selection: .v2)
+        .decode(ConversationFeedbackPresentationSnapshot.self, from: neutralData(wrapper))
+      let preview = FlowFeedbackPreview(presentation, english: false)
+      #expect(preview.summary?.contains("30 min") == true)
+      #expect(preview.day == "Consumido: 900 / 1.800 kcal (50%).\nProteína: 52 g\nRestam para comida: 900 kcal.")
+      #expect(preview.block == "Bloco 7.700: 770 / 7.700 kcal (10%).")
+      #expect(preview.education?.contains("A caminhada ajuda") == true)
+      #expect(preview.details.contains { $0.hasPrefix("Intensidade:") })
+      #expect(preview.details.contains { $0.hasPrefix("Saldo total já consolidado:") })
+      #expect(!preview.details.contains { $0.contains("30 min") || $0.contains("A caminhada ajuda") })
     }
   }
   @MainActor @Observable private final class NeutralCaptureSheetPresentationProbe {

@@ -31,6 +31,11 @@ import {
   type NegotiatedPublicConversationMealThreadEvent,
 } from './conversation-meal-thread-page-service'
 import type { ConversationMealThreadDescriptor } from './conversation-meal-thread-page-store'
+import {
+  type ConversationTurnReply,
+  projectConversationTurnReply,
+  readConversationTurnReplies,
+} from './conversation-turn-replies'
 import { createConversationWorkoutCommandService } from './conversation-workout-command-service'
 import { workoutSnapshot, workoutUUID } from './conversation-workout-contracts'
 import {
@@ -48,6 +53,7 @@ export interface ConversationJournalV3Request {
   readonly epoch: string
   readonly limit: number
   readonly cursor: string | null
+  readonly turnReplies?: boolean
 }
 type MealEvent = NegotiatedPublicConversationMealThreadEvent
 type MealQuestion = NonNullable<ConversationMealThreadDescriptor['continuation']>['question']
@@ -111,6 +117,7 @@ export interface PublicConversationJournalV3Entry {
       | MealRecord
       | EditRecord
     feedback: ConversationFeedbackPresentationV2 | ConversationMealFeedbackPresentation | null
+    turn_reply?: ConversationTurnReply
   }>
 }
 export interface PublicConversationJournalV3Page {
@@ -129,6 +136,7 @@ const requestSchema = z
     epoch: workoutUUID,
     limit: z.number().int().min(1).max(25),
     cursor: z.string().min(1).max(1024).nullable(),
+    turnReplies: z.boolean().optional(),
   })
   .strict()
 const readonlyRPCs = new Set([
@@ -527,6 +535,27 @@ export function createConversationJournalV3Service(
         await Promise.all(
           Array.from({ length: Math.min(4, workoutCommands.length) }, () => hydrateWorkouts()),
         )
+        const turnBindings = request.turnReplies
+          ? actualPage.intakes
+              .filter(
+                (item) =>
+                  item.binding.epoch === request.epoch &&
+                  item.selection?.decision.kind === 'not_reported',
+              )
+              .map((item) => item.binding)
+          : []
+        const turnReplies = turnBindings.length
+          ? new Map(
+              await checked(async () => {
+                try {
+                  return [...(await readConversationTurnReplies(sdk, owner, turnBindings))]
+                } catch {
+                  console.warn('[mobile-flow] conversation_turn_history_unavailable')
+                  return []
+                }
+              }),
+            )
+          : undefined
         for (const item of actualPage.items) {
           let entry: PublicConversationJournalV3Entry
           if (item.kind === 'intake') {
@@ -540,14 +569,16 @@ export function createConversationJournalV3Service(
                 reason: i.claimed ? 'routing_reconciliation_required' : 'intake_pending',
                 feedback: null,
               }
-            else if (d.kind === 'not_reported' || d.kind === 'clarification_required')
+            else if (d.kind === 'not_reported' || d.kind === 'clarification_required') {
+              const answer = turnReplies?.get(i.bound.intakeId)
               outcome = {
                 status: d.kind === 'not_reported' ? 'not_recorded' : 'clarification_required',
                 reason: d.reason,
                 ...('question' in d ? { observed_question: d.question } : {}),
+                ...(answer ? { turn_reply: projectConversationTurnReply(answer, before) } : {}),
                 feedback: null,
               }
-            else if (child?.kind === 'workout.report')
+            } else if (child?.kind === 'workout.report')
               outcome = requireValue(workoutOutcomes.get(child.command_id))
             else if (child?.kind === 'meal.report') {
               const e = requireValue(mealEvents.get(`command/${child.command_id}`)),

@@ -63,13 +63,13 @@ struct FlowTranscriptPositioningTests {
     var policy = FlowTranscriptPositioning()
     #expect(policy.observe(snapshot(owner)) == nil)
     #expect(policy.observe(snapshot(owner, history: ["new", "old"], loading: true)) == nil)
-    #expect(policy.observe(snapshot(owner, history: ["new", "old"])) == "new")
+    #expect(policy.observe(snapshot(owner, history: ["new", "old"])) == FlowTranscriptPositioning.latestAnchor)
     #expect(policy.observe(snapshot(owner, history: ["new", "old"])) == nil)
   }
   @Test func olderPaginationAndNewRemoteHistoryDoNotMoveTheReader() {
     let owner = Owner()
     var policy = FlowTranscriptPositioning()
-    #expect(policy.observe(snapshot(owner, history: ["new"])) == "new")
+    #expect(policy.observe(snapshot(owner, history: ["new"])) == FlowTranscriptPositioning.latestAnchor)
     #expect(policy.observe(snapshot(owner, history: ["new", "older", "oldest"])) == nil)
     #expect(policy.observe(snapshot(owner, history: ["remote", "new", "older"])) == nil)
   }
@@ -115,13 +115,13 @@ struct FlowTranscriptPositioningTests {
     let b = Owner()
     var policy = FlowTranscriptPositioning()
     _ = policy.observe(snapshot(a, history: ["a"], local: [first]))
-    #expect(policy.observe(snapshot(b, history: ["b"], local: [first])) == "b")
+    #expect(policy.observe(snapshot(b, history: ["b"], local: [first])) == FlowTranscriptPositioning.latestAnchor)
     #expect(policy.observe(snapshot(b, history: ["b"], local: [first])) == nil)
   }
   @Test func existingLocalResultCanBeShownWhenHistoryIsUnavailable() {
     let owner = Owner()
     var policy = FlowTranscriptPositioning()
-    #expect(policy.observe(snapshot(owner, local: [first])) == intake(first))
+    #expect(policy.observe(snapshot(owner, local: [first])) == FlowTranscriptPositioning.latestAnchor)
     #expect(policy.observe(snapshot(owner, local: [first])) == nil)
   }
   @Test func alreadyMigratedNewResultDoesNotScheduleASecondJump() {

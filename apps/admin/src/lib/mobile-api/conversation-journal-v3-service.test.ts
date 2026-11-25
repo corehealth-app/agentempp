@@ -644,6 +644,98 @@ describe('real readonly journal v3 composition', () => {
     })
     expect(JSON.stringify(value)).not.toContain(`command/${t.thread_id}`)
   })
+  it('returns the stored answer on its original journal row only to opted-in readers', async () => {
+    const h = setup()
+    const intakeId = 'c1450000-0000-4000-8000-000000000017'
+    const text = 'Como foi meu dia?'
+    const neutral = bindConversationIntake(h.who.userId, `cintake1:${intakeId}`, {
+      intake_protocol: 'conversation.intake.v1',
+      intake_id: intakeId,
+      source: { channel: 'text', text },
+    })
+    const intake = {
+      owner_id: h.who.userId,
+      intake_id: intakeId,
+      input_hash: neutral.inputHash,
+      epoch: h.epoch,
+      admitted_at: '2026-11-04T11:59:59.000001Z',
+    }
+    const decision = {
+      schema: 'conversation.intake-routing.v1',
+      kind: 'not_reported',
+      reason: 'question',
+    }
+    const sourceHash = 'a'.repeat(64)
+    Object.assign(h.raw, {
+      intakes: [
+        {
+          action: 'available',
+          intake,
+          source_input: neutral.input,
+          source_hash: sourceHash,
+          claimed: true,
+          selection: {
+            schema: 'conversation.intake-selection.v1',
+            intake,
+            source_hash: sourceHash,
+            decision_hash: workoutDigest(decision),
+            decision,
+            command: null,
+            selected_at: '2026-11-04T12:00:00.000002Z',
+          },
+        },
+      ],
+      items: [
+        {
+          kind: 'intake',
+          event_id: `intake/${intakeId}`,
+          at: intake.admitted_at,
+          intake_id: intakeId,
+        },
+      ],
+    })
+    const messageId = `mobile_flow/${h.who.userId}/intake/${h.epoch}/${intakeId}/assistant`
+    const answer = 'Posso ajudar a conferir os seus registros do dia.'
+    const query = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      in: vi.fn(async () => ({
+        data: [
+          { provider_message_id: messageId, content: answer },
+          { provider_message_id: 'unrelated-user', content: 'Unrelated' },
+        ],
+        error: null,
+      })),
+    }
+    const from = vi.fn(() => query)
+    const service = createConversationJournalV3Service(
+      { rpc: h.rpc, from } as unknown as ServiceClient,
+      {
+        auth: h.currentAuth,
+        clinical: { capture: async () => journalClinical(h.raw.observed_at) },
+      },
+    )
+    const base = { epoch: h.epoch, limit: 1, cursor: null }
+    const legacy = await service.read(h.who, base)
+    expect(legacy.items[0]?.outcome).not.toHaveProperty('turn_reply')
+    expect(from).not.toHaveBeenCalled()
+    const current = await service.read(h.who, { ...base, turnReplies: true })
+    expect(current.items).toHaveLength(1)
+    expect(current.items[0]).toMatchObject({
+      event_id: `intake/${intakeId}`,
+      input: { channel: 'text', text },
+      outcome: {
+        status: 'not_recorded',
+        turn_reply: { schema: 'conversation.turn-reply.v1', text: answer },
+      },
+    })
+    expect(query.eq).toHaveBeenCalledWith('user_id', h.who.userId)
+    expect(query.in).toHaveBeenCalledWith('provider_message_id', [messageId])
+    expect(current.items[0]?.outcome).not.toHaveProperty('record')
+    expect(h.rpc.mock.calls.every(([name]) => name === 'read_conversation_journal_page_v4')).toBe(
+      true,
+    )
+  })
   it.each([
     'auth',
     'mapping',

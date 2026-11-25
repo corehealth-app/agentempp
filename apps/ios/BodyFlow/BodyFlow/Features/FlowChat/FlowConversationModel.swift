@@ -533,6 +533,7 @@ final class FlowConversationModel {
         return unifiedRows.contains { entry in
           entry.kind == .intake && entry.intakeID == row.id && entry.status == .notRecorded
             && entry.commandID == row.response.selection?.child.commandID
+            && (row.response.turnReply == nil || entry.turnReply != nil)
             && row.response.deliveryState == .notRecorded
         }
       }.map(\.id))

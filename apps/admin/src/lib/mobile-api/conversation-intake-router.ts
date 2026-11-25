@@ -198,7 +198,7 @@ function originalSource(raw: CapturedConversationIntakeSource) {
     )
   }
 }
-function discourse(source: CapturedConversationIntakeSource) {
+export function conversationIntakeDiscourse(source: CapturedConversationIntakeSource) {
   const input = source.intake.input,
     media = source.context.media,
     sources: { unit: string; text?: string; visual?: unknown }[] = []
@@ -381,7 +381,7 @@ export function createOpenRouterConversationIntakeRouter(
               },
             })
         }
-        const payload = discourse(source)
+        const payload = conversationIntakeDiscourse(source)
         phase = 'provider'
         const response = await complete({
           model: MEAL_TEXT_EXTRACTION_MODEL,

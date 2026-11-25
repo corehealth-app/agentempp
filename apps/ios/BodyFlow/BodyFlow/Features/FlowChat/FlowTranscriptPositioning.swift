@@ -138,11 +138,9 @@ struct FlowTranscriptPositioning {
     }
 
     guard !initiallyPositioned, !observation.historyLoading else { return nil }
-    let initial =
-      observation.historyIDs.first
-      ?? observation.localResultIDs.last.map(Self.localAnchor)
-    if initial != nil { initiallyPositioned = true }
-    return initial
+    guard !observation.historyIDs.isEmpty || !observation.localResultIDs.isEmpty else { return nil }
+    initiallyPositioned = true
+    return Self.latestAnchor
   }
 
   mutating func userScrolled() {

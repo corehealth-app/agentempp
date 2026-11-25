@@ -146,7 +146,8 @@ struct MobileConversationHistoryRepository: Sendable {
       MobileAPIRequest<ConversationJournalV3PageSnapshot>(
         method: .get,
         path: "/api/mobile/v1/conversation/journal", queryItems: query,
-        conversation: .unifiedJournal(epoch: context.epoch, ownerID: context.ownerID)))
+        conversation: .unifiedJournal(epoch: context.epoch, ownerID: context.ownerID),
+        conversationTurns: true))
     try await validate(context)
     guard response.statusCode == 200, response.data.items.count <= limit,
       response.data.matches(

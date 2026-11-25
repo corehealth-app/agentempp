@@ -1,30 +1,8 @@
 import SwiftUI
 
-@MainActor struct FlowConversationMealReplyView: View {
-  let model: FlowConversationMealReplyModel
-  @Environment(\.dismiss) private var dismiss
-  @Environment(\.locale) private var locale
-  private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
-  var body: some View {
-    NavigationStack {
-      ScrollView { FlowConversationMealReplyContent(model: model).padding(BodyFlowSpacing.md) }
-        .background(BodyFlowColor.color(.backgroundPrimary))
-        .navigationTitle(english ? "Answer Flow" : "Responder ao Flow")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) {
-            Button(english ? "Close" : "Fechar") {
-              model.dismiss()
-              dismiss()
-            }
-          }
-        }
-    }
-  }
-}
-
 @MainActor struct FlowConversationMealReplyContent: View {
   let model: FlowConversationMealReplyModel
+  var inline = false
   @Environment(\.locale) private var locale
   @State private var confirmDiscard = false
   @State private var showsUnitChoices = false
@@ -56,10 +34,12 @@ import SwiftUI
             text: Binding(get: { model.amountText }, set: { model.amountText = $0 }))
             .textFieldStyle(.roundedBorder).disabled(model.isWorking)
             .accessibilityIdentifier("conversation.reply.food-name")
-          Text(english
-            ? "The other foods and quantities will be preserved."
-            : "Os outros alimentos e quantidades serão mantidos.")
-            .font(BodyFlowTypography.caption)
+          if !inline {
+            Text(english
+              ? "The other foods and quantities will be preserved."
+              : "Os outros alimentos e quantidades serão mantidos.")
+              .font(BodyFlowTypography.caption)
+          }
         } else if question.kind == "quantity" {
           TextField(
             english ? "Quantity" : "Quantidade",
@@ -84,7 +64,7 @@ import SwiftUI
               }
               Button(english ? "Cancel" : "Cancelar", role: .cancel) {}
             }
-          if question.quantityReference != nil {
+          if question.quantityReference != nil && !inline {
             Text(
               english
                 ? "Flow will use the original food's portion reference."
@@ -148,12 +128,14 @@ import SwiftUI
             english ? "Discard unsent answer" : "Descartar resposta não enviada", role: .destructive
           ) { confirmDiscard = true }.accessibilityIdentifier("conversation.reply.discard")
         }
-        Text(
-          english
-            ? "Your original report stays preserved. This answer is linked to its question."
-            : "Seu relato original permanece preservado. Esta resposta está vinculada à pergunta."
-        )
-        .foregroundStyle(BodyFlowColor.secondaryText)
+        if !inline {
+          Text(
+            english
+              ? "Your original report stays preserved. This answer is linked to its question."
+              : "Seu relato original permanece preservado. Esta resposta está vinculada à pergunta."
+          )
+          .foregroundStyle(BodyFlowColor.secondaryText)
+        }
       }
     }
     .accessibilityElement(children: .contain).accessibilityIdentifier("conversation.reply.form")

@@ -10,6 +10,10 @@ import { createConversationMealJournalService } from './conversation-meal-journa
 import { conversationJournalUUID } from './conversation-meal-journal-store'
 import { createConversationMealReadonlyRuntime } from './conversation-meal-readonly-runtime'
 import { createConversationMealThreadPageService } from './conversation-meal-thread-page-service'
+import {
+  CONVERSATION_TURNS_HEADER,
+  conversationTurnRepliesRequested,
+} from './conversation-turn-replies'
 import { MobileApiError, mobileSuccess } from './http'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 import { createMobileRoute, type MobileRouteContext, type MobileRouteRuntime } from './route'
@@ -78,6 +82,7 @@ export function createConversationMealJournalRoutes(
         context.request.headers.get('X-Conversation-Epoch'),
       ),
       { version, ...input } = query(context.request),
+      turns = version === '3' && conversationTurnRepliesRequested(context.request.headers),
       selected =
         version === '2'
           ? negotiateConversationFeedbackPresentation(context.request.headers)
@@ -97,7 +102,11 @@ export function createConversationMealJournalRoutes(
         : null
     const value =
       version === '3'
-        ? await version3Service(context.supabase).read(context.auth, { epoch, ...input })
+        ? await version3Service(context.supabase).read(context.auth, {
+            epoch,
+            ...input,
+            ...(turns ? { turnReplies: true } : {}),
+          })
         : await (version === '2' ? version2Service : service)(context.supabase).read(
             context.auth,
             { epoch, ...input },
@@ -118,12 +127,11 @@ export function createConversationMealJournalRoutes(
           'The original authenticated patient has changed',
         )
     }
-    return mobileSuccess(
-      value,
-      context.requestId,
-      200,
-      conversationFeedbackPresentationMobileHeaders(selected),
-    )
+    return mobileSuccess(value, context.requestId, 200, {
+      ...conversationFeedbackPresentationMobileHeaders(selected),
+      ...(version === '3' ? { Vary: `Authorization, ${CONVERSATION_TURNS_HEADER}` } : {}),
+      ...(turns ? { [CONVERSATION_TURNS_HEADER]: '1' } : {}),
+    })
   }
   const legacy = createMobileRoute(handler, runtime),
     readOnly = createMobileRoute(handler, readonlyRuntime)

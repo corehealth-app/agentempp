@@ -139,7 +139,8 @@ struct MobileAPITransport: Sendable {
                 lease: lease,
                 closedEnvelope: request.conversation != nil || request.trainingExecution != nil || request.journeySocial != nil,
                 feedbackPresentation: request.feedbackPresentation,
-                intakeMediaProvenance: request.conversation?.intakeMediaProvenance
+                intakeMediaProvenance: request.conversation?.intakeMediaProvenance,
+                conversationTurns: request.conversationTurns
             )
         }
 
@@ -159,7 +160,8 @@ struct MobileAPITransport: Sendable {
                 response: firstResult.response,
                 closedEnvelope: request.conversation != nil || request.trainingExecution != nil || request.journeySocial != nil,
                 feedbackPresentation: request.feedbackPresentation,
-                intakeMediaProvenance: request.conversation?.intakeMediaProvenance
+                intakeMediaProvenance: request.conversation?.intakeMediaProvenance,
+                conversationTurns: request.conversationTurns
             )
         }
 
@@ -178,7 +180,8 @@ struct MobileAPITransport: Sendable {
             lease: refreshedLease,
             closedEnvelope: request.conversation != nil || request.trainingExecution != nil || request.journeySocial != nil,
             feedbackPresentation: request.feedbackPresentation,
-                intakeMediaProvenance: request.conversation?.intakeMediaProvenance
+            intakeMediaProvenance: request.conversation?.intakeMediaProvenance,
+            conversationTurns: request.conversationTurns
         )
     }
 
@@ -210,7 +213,8 @@ struct MobileAPITransport: Sendable {
         lease: SessionLease,
         closedEnvelope: Bool,
         feedbackPresentation: ConversationFeedbackPresentationSelection?,
-        intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection?
+        intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection?,
+        conversationTurns: Bool
     ) async throws -> MobileAPIHTTPResponse<Response> {
         do {
             try await sessionLifecycle.validate(lease)
@@ -225,7 +229,8 @@ struct MobileAPITransport: Sendable {
             response: result.response,
             closedEnvelope: closedEnvelope,
             feedbackPresentation: feedbackPresentation,
-            intakeMediaProvenance: intakeMediaProvenance
+            intakeMediaProvenance: intakeMediaProvenance,
+            conversationTurns: conversationTurns
         )
     }
 
@@ -269,6 +274,9 @@ struct MobileAPITransport: Sendable {
         request.journeySocial?.apply(to: &urlRequest)
         if let selection = request.feedbackPresentation {
             urlRequest.setValue(selection.rawValue, forHTTPHeaderField: ConversationFeedbackPresentationSelection.header)
+        }
+        if request.conversationTurns {
+            urlRequest.setValue("1", forHTTPHeaderField: ConversationTurnReplySelection.header)
         }
         if let owner = request.conversationMediaOwnerID { urlRequest.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner") }
         let preparedRequest = urlRequest
@@ -409,7 +417,8 @@ struct MobileAPITransport: Sendable {
         response: HTTPURLResponse,
         closedEnvelope: Bool,
         feedbackPresentation: ConversationFeedbackPresentationSelection?,
-        intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection?
+        intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection?,
+        conversationTurns: Bool
     ) throws -> MobileAPIHTTPResponse<Response> {
         let decoder = ConversationFeedbackPresentationSelection.decoder(selection: .negotiated(
             request: feedbackPresentation,
@@ -417,6 +426,9 @@ struct MobileAPITransport: Sendable {
         ConversationIntakeMediaProvenanceSelection.configure(decoder, selection: .negotiated(
             request: intakeMediaProvenance,
             echo: response.value(forHTTPHeaderField: ConversationIntakeMediaProvenanceSelection.header)))
+        ConversationTurnReplySelection.configure(
+            decoder, requested: conversationTurns,
+            echo: response.value(forHTTPHeaderField: ConversationTurnReplySelection.header))
         if (200...299).contains(response.statusCode) {
             do {
                 if closedEnvelope {

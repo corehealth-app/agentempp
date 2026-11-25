@@ -21,6 +21,11 @@ import {
 } from './conversation-intake-store'
 import type { createConversationMealCommandService } from './conversation-meal-command-service'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
+import {
+  type ConversationTurnReply,
+  type createConversationTurnReplies,
+  projectConversationTurnReply,
+} from './conversation-turn-replies'
 import type { createConversationWorkoutCommandService } from './conversation-workout-command-service'
 import { workoutHash, workoutSnapshot, workoutUUID } from './conversation-workout-contracts'
 import { projectCurrentClinicalPublicPolicy } from './current-clinical-read-model'
@@ -46,6 +51,7 @@ export interface ConversationIntakeDriverPorts {
   readonly mediaEnabled?: () => boolean
   readonly store: Store
   readonly recovery: ReturnType<typeof createConversationIntakeRecoveryStore>
+  readonly turnReplies?: ReturnType<typeof createConversationTurnReplies>
   readonly scope: {
     /** Real current Auth/admin/mapping/epoch observation; never historical data. */
     observeCurrentScope(identity: ConversationIntakeLookup): Promise<CurrentClinicalSnapshot>
@@ -183,12 +189,15 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
     original: ConversationIntakeLookup,
     negotiation: ConversationFeedbackPresentationNegotiation,
     mediaNegotiation: ConversationIntakeMediaNegotiation,
+    turnRepliesEnabled: boolean,
+    submitted?: BoundConversationIntake,
   ) {
     const id = lookup(original)
     let closed: MobileApiError | null = null,
       previous: bigint | null = null,
       latest: CurrentClinicalSnapshot | null = null,
-      mediaScope = false
+      mediaScope = false,
+      originalUsesMedia = submitted?.input.source.channel === 'media'
     function activateMedia(): boolean {
       if (mediaNegotiation !== '1' || mediaEnabled() !== true) return false
       mediaScope = true
@@ -258,6 +267,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       const c = bindConversationIntake(id.ownerId, `cintake1:${id.intakeId}`, value.source_input)
       if (c.intakeId !== id.intakeId || c.inputHash !== id.inputHash)
         throw failure('conversation_intake_changed')
+      originalUsesMedia = c.input.source.channel === 'media'
       if (value.source_hash !== null) workoutHash.parse(value.source_hash)
       if ((value.claimed && value.source_hash === null) || (value.selection && !value.claimed))
         throw failure('conversation_intake_changed')
@@ -269,7 +279,11 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
         throw failure('conversation_intake_changed')
       return { ...value, command: c, selection: selected }
     }
-    async function selected(selection: ConversationIntakeSelection, method: 'submit' | 'read') {
+    async function selected(
+      selection: ConversationIntakeSelection,
+      method: 'submit' | 'read',
+      captured?: CapturedConversationIntakeSource,
+    ) {
       sameBinding(selection.intake, id)
       // Internal media lineage is not negotiation for the old public envelope.
       // Fence every persisted-selection path, including GET, cold replay and
@@ -280,6 +294,43 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
         c = selection.command
       if (d.kind === 'not_reported' || d.kind === 'clarification_required') {
         if (c !== null) throw failure('conversation_intake_changed')
+        const turns = turnRepliesEnabled ? ports.turnReplies : undefined
+        let turnReply: ConversationTurnReply | null = null
+        if (turns && d.kind === 'not_reported') {
+          if (originalUsesMedia && !activateMedia()) return mediaHold(selection.intake)
+          turnReply = await call(() => turns.read(selection.intake))
+          if (!turnReply && method === 'submit' && submitted) {
+            let source = captured
+            if (!source) {
+              const replay = await call(() => store.capture(submitted, id.epoch))
+              if ('context' in replay)
+                source = parseConversationIntakeSource(submitted, selection.intake, {
+                  source_hash: replay.source_hash,
+                  context: replay.context,
+                })
+              else return pending(replay.action, selection.intake, 'held')
+            }
+            if (source.sourceHash !== selection.source_hash)
+              throw failure('conversation_intake_changed')
+            try {
+              const original = source
+              turnReply = await call(() =>
+                turns.answer(original, async () => {
+                  await current()
+                }),
+              )
+            } catch (error) {
+              // The existing chat lease may still own the original request.
+              // Only an authoritative read can now report a completed answer.
+              if (closed) throw closed
+              if (!(error instanceof MobileApiError) || error.status !== 409) throw error
+              turnReply = await call(() => turns.read(selection.intake))
+            }
+          }
+          if (!turnReply) return pending('conversation_reply_pending', selection.intake)
+          if (!latest) throw failure('conversation_intake_scope_changed')
+          turnReply = projectConversationTurnReply(turnReply, latest)
+        }
         return workoutSnapshot({
           schema: 'conversation.intake-result.v1' as const,
           status:
@@ -290,6 +341,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
           source_hash: selection.source_hash,
           decision_hash: selection.decision_hash,
           reason: d.reason,
+          ...(turnReply ? { turn_reply: turnReply } : {}),
           ...('question' in d ? { question: d.question } : {}),
         })
       }
@@ -416,14 +468,16 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       raw: ConversationIntakeLookup,
       negotiation: ConversationFeedbackPresentationNegotiation = 'legacy',
       mediaNegotiation: ConversationIntakeMediaNegotiation = 'legacy',
+      turnRepliesEnabled = false,
     ) {
-      return operation(raw, negotiation, mediaNegotiation).readOnly()
+      return operation(raw, negotiation, mediaNegotiation, turnRepliesEnabled).readOnly()
     },
     async submit(
       original: BoundConversationIntake,
       epoch: string,
       negotiation: ConversationFeedbackPresentationNegotiation = 'legacy',
       mediaNegotiation: ConversationIntakeMediaNegotiation = 'legacy',
+      turnRepliesEnabled = false,
     ) {
       const command = pinConversationIntake(original),
         op = operation(
@@ -435,6 +489,8 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
           },
           negotiation,
           mediaNegotiation,
+          turnRepliesEnabled,
+          command,
         )
       try {
         const prior = op.ownedRead(await op.call(() => store.read(op.id)))
@@ -482,7 +538,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
           !isDeepStrictEqual(selection.decision, decision)
         )
           throw failure('conversation_intake_changed')
-        return await op.selected(selection, 'submit')
+        return await op.selected(selection, 'submit', source)
       } catch (error) {
         const mandatory = op.mandatory(error)
         if (mandatory) throw mandatory

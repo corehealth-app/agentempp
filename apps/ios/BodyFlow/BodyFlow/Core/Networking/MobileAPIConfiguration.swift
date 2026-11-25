@@ -86,6 +86,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
     let unauthorizedReplay: MobileAPIUnauthorizedReplay
     let conversationMediaOwnerID: UUID?
     let feedbackPresentation: ConversationFeedbackPresentationSelection?
+    let conversationTurns: Bool
     let trainingExecution: MobileTrainingExecutionRequestHeaders?
     let journeySocial: MobileJourneySocialRequestHeaders?
 
@@ -100,6 +101,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         unauthorizedReplay: MobileAPIUnauthorizedReplay = .standard,
         conversationMediaOwnerID: UUID? = nil,
         feedbackPresentation: ConversationFeedbackPresentationSelection? = nil,
+        conversationTurns: Bool = false,
         trainingExecution: MobileTrainingExecutionRequestHeaders? = nil,
         journeySocial: MobileJourneySocialRequestHeaders? = nil
     ) throws {
@@ -131,6 +133,9 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         if feedbackPresentation != nil, conversation?.supportsFeedbackPresentation != true {
             throw MobileAPIRequestError.invalidConversationHeaders
         }
+        if conversationTurns, conversation?.supportsTurnReplies != true {
+            throw MobileAPIRequestError.invalidConversationHeaders
+        }
         let isMutation = method == .post || method == .patch || method == .delete
         guard isMutation || idempotencyKey == nil else {
             throw MobileAPIRequestError.unexpectedIdempotencyKey
@@ -145,6 +150,7 @@ struct MobileAPIRequest<Response: Decodable & Sendable>: Sendable {
         self.unauthorizedReplay = unauthorizedReplay
         self.conversationMediaOwnerID = conversationMediaOwnerID
         self.feedbackPresentation = feedbackPresentation
+        self.conversationTurns = conversationTurns
         self.trainingExecution = trainingExecution
         self.journeySocial = journeySocial
         if isMutation {

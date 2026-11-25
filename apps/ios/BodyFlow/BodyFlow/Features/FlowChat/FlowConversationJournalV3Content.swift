@@ -11,7 +11,7 @@ struct FlowConversationJournalV3Presentation {
     case .pending: title = english ? "Awaiting confirmation" : "Aguardando confirmação"
     case .notRecorded: title = english ? "Report not recorded" : "Relato não registrado"
     case .needsReply, .clarificationRequired:
-      title = english ? "Historical question" : "Pergunta histórica"
+      title = english ? "Flow needs one detail" : "Falta uma informação"
     case .registered:
       switch entry.record {
       case .workout: title = english ? "Activity registered" : "Atividade registrada"
@@ -48,8 +48,7 @@ struct FlowConversationJournalV3Presentation {
       facts.append(
         "\(workout.workoutType) · \(workout.durationMin) min"
           + (workout.intensity.map { " · " + $0 } ?? ""))
-      facts.append(
-        (english ? "Historical registration: " : "Registro histórico: ") + workout.localDate)
+      facts.append(workout.localDate)
       facts.append(
         workout.estimatedKcal.map {
           (english ? "Estimated expenditure: " : "Gasto estimado: ") + "\($0) kcal."
@@ -81,18 +80,6 @@ struct FlowConversationJournalV3Presentation {
           }
         }
       }
-      facts.append(
-        english
-          ? "Observed question, for reference only." : "Pergunta observada, apenas para consulta.")
-    }
-    if entry.kind == .reply {
-      facts.append(english ? "Historical linked reply." : "Resposta vinculada histórica.")
-    }
-    if entry.kind == .replyResult {
-      facts.append(
-        english
-          ? "Historical reply observation. This event alone is not a registration."
-          : "Observação histórica da resposta. Este evento isolado não é um registro.")
     }
     lines = facts
   }
@@ -159,15 +146,21 @@ struct FlowConversationJournalV3Presentation {
               .accessibilityIdentifier("conversation.journal3.source")
           }
         }
-        FlowChatBubble {
-          if let feedback {
-            ConversationFeedbackPresentationView(feedback: feedback, compact: true)
-          } else {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-              Text(verbatim: text.title).font(BodyFlowTypography.headline)
-                .accessibilityIdentifier("conversation.journal3.status")
-              ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in
-                Text(verbatim: line)
+        if entry.kind != .reply || !text.lines.isEmpty {
+          FlowChatBubble {
+            if let reply = entry.turnReply {
+              Text(verbatim: reply).accessibilityIdentifier("conversation.turn.reply")
+            } else if let feedback {
+              ConversationFeedbackPresentationView(feedback: feedback, compact: true)
+            } else {
+              VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+                if entry.question == nil {
+                  Text(verbatim: text.title).font(BodyFlowTypography.headline)
+                    .accessibilityIdentifier("conversation.journal3.status")
+                }
+                ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in
+                  Text(verbatim: line)
+                }
               }
             }
           }

@@ -106,7 +106,7 @@ import Testing
           $0.label.contains(english ? "Which meal was it?" : "Qual foi a refeição?")
         })
       #expect(
-        questionNodes.contains {
+        !questionNodes.contains {
           $0.label.contains(
             english
               ? "Observed question, for reference only."

@@ -84,6 +84,25 @@ function request(method = 'POST', body: unknown = bound.input, extra: Record<str
   })
 }
 describe('genuine neutral intake authenticated HTTP routes', () => {
+  it('requires the enabled server capability and exact request before selecting turn replies', async () => {
+    try {
+      vi.stubEnv('MOBILE_CONVERSATION_TURN_REPLIES_ENABLED', 'false')
+      const legacy = fixture()
+      const make = () => request('POST', bound.input, { 'X-Conversation-Turns': '1' })
+      const refused = await legacy.routes.POST(make())
+      expect(refused.headers.get('X-Conversation-Turns')).toBeNull()
+      expect(legacy.submit).toHaveBeenCalledWith(bound, 'legacy')
+
+      vi.stubEnv('MOBILE_CONVERSATION_TURN_REPLIES_ENABLED', 'true')
+      const candidate = fixture()
+      const selected = await candidate.routes.POST(make())
+      expect(selected.headers.get('X-Conversation-Turns')).toBe('1')
+      expect(selected.headers.get('Vary')).toBe('Authorization, X-Conversation-Turns')
+      expect(candidate.submit).toHaveBeenCalledWith(bound, 'legacy', 'legacy', true)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
   it.each([
     'POST',
     'GET',

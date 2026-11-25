@@ -171,6 +171,12 @@ enum MobileConversationRequestHeaders: Sendable {
     case .intakeQuestionOrigins, .mealParentQuestion, .session, .mealGroup, .mealLinkedOrigin, .mealEdit, .mealEditReconciliation, .intakeSession, .unifiedJournal: false
     }
   }
+  var supportsTurnReplies: Bool {
+    switch self {
+    case .intakeSubmit, .intakeReconciliation, .unifiedJournal: true
+    default: false
+    }
+  }
   /// Only the new family requires its own exact successful protocol echo.
   /// Error envelopes retain their existing Auth/transport handling.
   func validateResponseProtocol(_ response: HTTPURLResponse) throws {

@@ -329,7 +329,7 @@ export function scopedFlowProviderMessageId(userId: string, idempotencyKey: stri
  * row — can ever name it. A legacy turn's earlier reply, if any, is still read
  * from its original "<key>:assistant".
  */
-function scopedReplyProviderMessageId(userId: string, idempotencyKey: string): string {
+export function scopedReplyProviderMessageId(userId: string, idempotencyKey: string): string {
   return `${scopedFlowProviderMessageId(userId, idempotencyKey)}/assistant`
 }
 

@@ -64,6 +64,7 @@ final class FlowNeutralIntakeModel {
   private var entries: [ConversationNeutralIntakeOutboxEntry] = []
   private var records: [FlowNeutralIntakeSavedRow] = []
   private var terminalRecords: [FlowNeutralIntakeTerminalRow] = []
+  private var visibleTurnReplies: Set<UUID> = []
   private var states: [UUID: FlowNeutralIntakeResponseSnapshot] = [:]
   private var continuationIDs: Set<UUID> = []
   private var delivered: Set<UUID> = []
@@ -256,6 +257,12 @@ final class FlowNeutralIntakeModel {
   var pendingRows: [ConversationNeutralIntakeOutboxEntry] { isVisible ? entries : [] }
   var savedRows: [FlowNeutralIntakeSavedRow] { isVisible ? records : [] }
   var terminalRows: [FlowNeutralIntakeTerminalRow] { isVisible ? terminalRecords : [] }
+  func turnReply(intakeID: UUID) -> String? {
+    guard isVisible, let context, parentIsCurrent(context.identity),
+      visibleTurnReplies.contains(intakeID)
+    else { return nil }
+    return terminalRecords.first { $0.id == intakeID }?.response.turnReply
+  }
   /// Genuine terminal selection only; journal display fields cannot recover this hash.
   func mealQuestionChild(intakeID: UUID) -> FlowNeutralIntakeChild? {
     guard isVisible, let row = terminalRecords.first(where: { $0.id == intakeID }),
@@ -296,6 +303,7 @@ final class FlowNeutralIntakeModel {
   func suspendVisibility() {
     context = nil
     continuationIDs.removeAll()
+    visibleTurnReplies.removeAll()
     invalidateFeedback()
   }
   /// A new factual effect changes current day commentary, not original ACKs.
@@ -641,6 +649,7 @@ final class FlowNeutralIntakeModel {
         clearCapture()
         records.removeAll()
         terminalRecords.removeAll()
+        visibleTurnReplies.removeAll()
         entries.removeAll()
         states.removeAll()
         prepared = nil
@@ -692,7 +701,10 @@ final class FlowNeutralIntakeModel {
       else { return }
       terminalRecords.removeAll { $0.id == input.intakeID }
       terminalRecords.append(.init(input: input, response: response, identity: current.identity))
-      if terminalRecords.count > 50 { terminalRecords.removeFirst(terminalRecords.count - 50) }
+      if response.turnReply != nil { visibleTurnReplies.insert(input.intakeID) }
+      if terminalRecords.count > 50 {
+        visibleTurnReplies.remove(terminalRecords.removeFirst().id)
+      }
       entries.removeAll { $0.input.intakeID == input.intakeID }
       queuedIDs.remove(input.intakeID)
       states.removeValue(forKey: input.intakeID)

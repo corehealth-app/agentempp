@@ -408,6 +408,46 @@ function savedMeal(f: ReturnType<typeof setup>) {
 }
 
 describe('durable neutral intake orchestration over genuine typed service boundaries', () => {
+  it('stores and reads a opted-in conversation answer without selecting a registration writer', async () => {
+    const h = setup('Como foi meu dia?')
+    h.route.mockResolvedValue({
+      schema: 'conversation.intake-routing.v1',
+      kind: 'not_reported',
+      reason: 'question',
+    })
+    const response = {
+      schema: 'conversation.turn-reply.v1',
+      text: 'Vamos conferir o que você registrou hoje.',
+    } as const
+    let recorded: typeof response | null = null
+    const replyPort = {
+      read: vi.fn(async () => recorded),
+      answer: vi.fn(async (source, checkScope) => {
+        expect(source.intake).toEqual(h.command)
+        await checkScope()
+        recorded = response
+        return response
+      }),
+    } satisfies NonNullable<ConversationIntakeDriverPorts['turnReplies']>
+    const driver = createConversationIntakeDriver({ ...h.ports, turnReplies: replyPort })
+    expect(await driver.submit(h.command, h.epoch, 'legacy', 'legacy', true)).toMatchObject({
+      status: 'not_recorded',
+      turn_reply: response,
+    })
+    expect(await driver.read(h.lookup, 'legacy', 'legacy', true)).toMatchObject({
+      status: 'not_recorded',
+      turn_reply: response,
+    })
+    expect(await driver.submit(h.command, h.epoch, 'legacy', 'legacy', true)).toMatchObject({
+      status: 'not_recorded',
+      turn_reply: response,
+    })
+    expect(await driver.read(h.lookup)).not.toHaveProperty('turn_reply')
+    expect(h.route).toHaveBeenCalledOnce()
+    expect(replyPort.answer).toHaveBeenCalledOnce()
+    expect(h.domains.meal.submit).not.toHaveBeenCalled()
+    expect(h.domains.workout.submit).not.toHaveBeenCalled()
+  })
   it('seals one original pair before forwarding and never calls selected an ACK', async () => {
     const f = setup(),
       result = await f.driver.submit(f.command, f.epoch, '2')

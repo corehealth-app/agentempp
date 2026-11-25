@@ -31,11 +31,23 @@ struct FlowConversationView: View {
           FlowComposerViewport(
             viewportHeight: geometry.size.height, keyboardClearance: keyboardClearance
           ) {
-            FlowConversationComposerContent(
-              model: model, capture: capture, captureAction: openCapture
-            ) { id, prepared in
-              discardIsPrepared = prepared
-              discardID = id
+            if let reply = model.mealReplies?.presentation {
+              VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                Button(english ? "Back to conversation" : "Voltar à conversa") {
+                  reply.model.dismiss()
+                }
+                .accessibilityIdentifier("conversation.reply.close")
+                FlowConversationMealReplyContent(model: reply.model, inline: true)
+              }
+              .padding(BodyFlowSpacing.md)
+              .id(reply.id)
+            } else {
+              FlowConversationComposerContent(
+                model: model, capture: capture, captureAction: openCapture
+              ) { id, prepared in
+                discardIsPrepared = prepared
+                discardID = id
+              }
             }
           }
         }
@@ -59,13 +71,6 @@ struct FlowConversationView: View {
         set: { if $0 == nil { model.mealEditor?.dismiss() } }
       )
     ) { presentation in FlowConversationMealEditorView(model: presentation.model) }
-    .sheet(
-      item: Binding(
-        get: { model.mealReplies?.presentation },
-        set: { if $0 == nil { model.mealReplies?.dismiss() } })
-    ) { presentation in
-      FlowConversationMealReplyView(model: presentation.model)
-    }
     .task {
       await model.refreshConversation()
       isOpeningConversation = false
@@ -315,7 +320,9 @@ struct FlowConversationView: View {
               identifier: "conversation.earlier-loading")
           }
         }
-        ForEach(Array(model.unifiedRows.reversed()), id: \.eventID) { entry in
+        ForEach(Array(model.unifiedRows.reversed().filter {
+          $0.kind != .replyResult || $0.status != .pending || $0.question != nil
+        }), id: \.eventID) { entry in
           VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             FlowConversationJournalV3Content(
               entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english,
@@ -468,7 +475,7 @@ struct FlowConversationView: View {
       owner: ObjectIdentifier(model),
       historyIDs: model.unifiedRows.map(\.eventID) + model.journalRows.map(\.eventID)
         + model.threadRows.map(\.eventID),
-      historyLoading: model.isLoadingUnifiedHistory || model.isLoadingHistory,
+      historyLoading: isOpeningConversation || model.isLoadingUnifiedHistory || model.isLoadingHistory,
       localResultIDs: results, historicalAnchors: history,
       activeSendID: model.neutralIntake?.respondingIntakeID)
   }

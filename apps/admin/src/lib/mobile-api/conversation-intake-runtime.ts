@@ -32,6 +32,7 @@ import {
 } from './conversation-intake-store'
 import { conversationMealCommandsEnabled } from './conversation-meal-command-routes'
 import { createConversationMealCommandService } from './conversation-meal-command-service'
+import { createSupabaseConversationTurnReplies } from './conversation-turn-replies'
 import { conversationWorkoutCommandsEnabled } from './conversation-workout-command-routes'
 import { createConversationWorkoutCommandService } from './conversation-workout-command-service'
 import { workoutHash, workoutSnapshot, workoutUUID } from './conversation-workout-contracts'
@@ -50,6 +51,7 @@ export interface ConversationIntakeRuntimePorts extends ConversationCurrentScope
   readonly mediaEnabled?: () => boolean
   /** Atomic catalog dispatcher capability, selected by server policy only. */
   readonly privateMediaCatalogEnabled?: () => boolean
+  readonly turnRepliesEnabled?: boolean
 }
 function unavailable() {
   return new MobileApiError(503, 'conversation_intake_unavailable', 'Intake is unavailable')
@@ -298,6 +300,14 @@ export function createConversationIntakeRuntime(
       recovery,
       scope: { observeCurrentScope: observe },
       createRouter: makeRouter,
+      ...(ports.turnRepliesEnabled
+        ? {
+            turnReplies: createSupabaseConversationTurnReplies(db, auth, {
+              capture: (request) =>
+                dependencies.clinical.capture({ ...request, expectedEpoch: id.epoch }),
+            }),
+          }
+        : {}),
       mediaEnabled: () => {
         available()
         try {
@@ -354,6 +364,7 @@ export function createConversationIntakeRuntime(
       original: BoundConversationIntake,
       selected: ConversationFeedbackPresentationNegotiation = 'legacy',
       selectedMedia: ConversationIntakeMediaNegotiation = 'legacy',
+      selectedTurns = false,
     ) {
       available()
       let command: BoundConversationIntake
@@ -374,14 +385,21 @@ export function createConversationIntakeRuntime(
         id.epoch,
         negotiation(selected),
         mediaNegotiation(selectedMedia),
+        selectedTurns && ports.turnRepliesEnabled === true,
       )
     },
     async read(
       selected: ConversationFeedbackPresentationNegotiation = 'legacy',
       selectedMedia: ConversationIntakeMediaNegotiation = 'legacy',
+      selectedTurns = false,
     ) {
       available()
-      return driver.read(id, negotiation(selected), mediaNegotiation(selectedMedia))
+      return driver.read(
+        id,
+        negotiation(selected),
+        mediaNegotiation(selectedMedia),
+        selectedTurns && ports.turnRepliesEnabled === true,
+      )
     },
   })
 }

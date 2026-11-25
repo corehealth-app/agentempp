@@ -57,7 +57,7 @@ struct MobileConversationIntakeRepository: Sendable {
         method: .post, path: "/api/mobile/v1/conversation/intakes", body: ticket.input.wireBody,
         idempotencyKey: IdempotencyKey(validating: ticket.input.idempotencyKey),
         timeout: MobileAPITransport.longestRequestTimeout, conversation: .intakeSubmit(ticket),
-        unauthorizedReplay: .never, feedbackPresentation: feedbackPresentation))
+        unauthorizedReplay: .never, feedbackPresentation: feedbackPresentation, conversationTurns: true))
     return try checked(r, ticket: ticket)
   }
   func read(_ ticket: FlowNeutralIntakeTicket) async throws -> FlowNeutralIntakeResponseSnapshot {
@@ -66,7 +66,8 @@ struct MobileConversationIntakeRepository: Sendable {
         method: .get,
         path: "/api/mobile/v1/conversation/intakes/"
           + ticket.input.intakeID.uuidString.lowercased(),
-        conversation: .intakeReconciliation(ticket), feedbackPresentation: feedbackPresentation))
+        conversation: .intakeReconciliation(ticket), feedbackPresentation: feedbackPresentation,
+        conversationTurns: true))
     return try checked(r, ticket: ticket)
   }
   private func checked(

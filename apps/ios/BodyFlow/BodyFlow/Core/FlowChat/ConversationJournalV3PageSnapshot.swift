@@ -82,6 +82,7 @@ struct ConversationJournalV3PageSnapshot: Decodable, Sendable {
     let question: Question?
     let record: Record?
     let feedback: ConversationFeedbackPresentationSnapshot?
+    let turnReply: String?
     /// Optional current-policy commentary is never a factual event pin.
     let immutablePin: Data
     let outcomePin: Data
@@ -116,7 +117,8 @@ struct ConversationJournalV3PageSnapshot: Decodable, Sendable {
     let observedAt = observedAt
     let values = try o.required("items").array()
     try editCheck(values.count <= 25)
-    items = try values.map { try Self.entry($0, epoch: epoch, observedAt: observedAt) }
+    let turns = ConversationTurnReplySelection.selected(from: decoder)
+    items = try values.map { try Self.entry($0, epoch: epoch, observedAt: observedAt, turns: turns) }
     try editCheck(Set(items.map(\.eventID)).count == items.count)
     for (newer, older) in zip(items, items.dropFirst()) {
       try editCheck(Self.precedes(newer, older))
@@ -175,7 +177,9 @@ struct ConversationJournalV3PageSnapshot: Decodable, Sendable {
       of: "^(?:(?:intake|workout|command)/" + u + "|(?:reply|reply-result|fulfillment|edit)/" + u
         + "/" + u + ")$", options: .regularExpression) != nil
   }
-  private static func entry(_ raw: ConversationMealEditJSON, epoch: UUID, observedAt: String) throws
+  private static func entry(
+    _ raw: ConversationMealEditJSON, epoch: UUID, observedAt: String, turns: Bool
+  ) throws
     -> Entry
   {
     let o = try raw.object(["event_id", "at", "thread_id", "kind", "lineage", "input", "outcome"])
@@ -251,12 +255,18 @@ struct ConversationJournalV3PageSnapshot: Decodable, Sendable {
       try editCheck(input == nil)
     }
     let outcome = try o.required("outcome").object(
-      required: ["status", "feedback"], optional: ["reason", "observed_question", "record"])
+      required: ["status", "feedback"],
+      optional: turns ? ["reason", "observed_question", "record", "turn_reply"]
+        : ["reason", "observed_question", "record"])
     guard let status = Status(rawValue: try outcome.required("status").string()) else {
       throw ConversationMealEditInvalid.value
     }
     let reason = try outcome["reason"].map { try $0.text(limit: 240) }
     let question = try outcome["observed_question"]?.optional { try parseQuestion($0) }
+    let answer = try outcome["turn_reply"].map { raw -> String in
+      try editCheck(kind == .intake && status == .notRecorded && command == nil && question == nil)
+      return try ConversationTurnReplySelection.text(raw)
+    }
     let record = try outcome["record"].map {
       try parseRecord($0, command: command, kind: kind, id: parts, at: at, observedAt: observedAt)
     }
@@ -289,6 +299,9 @@ struct ConversationJournalV3PageSnapshot: Decodable, Sendable {
     }
     var facts = outcome
     facts.removeValue(forKey: "feedback")
+    // A conversation answer can appear after selection and be withheld by
+    // current clinical policy. It is never part of a registration receipt.
+    facts.removeValue(forKey: "turn_reply")
     if kind == .report || kind == .intake {
       // The public service projects the CURRENT continuation question here,
       // not an immutable original decision or an answer lease.
@@ -297,7 +310,7 @@ struct ConversationJournalV3PageSnapshot: Decodable, Sendable {
     return .init(
       eventID: id, at: at, threadID: thread, kind: kind, lineageKind: lineageKind, intakeID: intake,
       commandID: command, parentCommandID: parent, originEpoch: epoch, input: input, status: status,
-      reason: reason, question: question, record: record, feedback: feedback ?? nil,
+      reason: reason, question: question, record: record, feedback: feedback ?? nil, turnReply: answer,
       immutablePin: try ConversationMealEditJSON.object(immutable).data(),
       outcomePin: try ConversationMealEditJSON.object(facts).data())
   }

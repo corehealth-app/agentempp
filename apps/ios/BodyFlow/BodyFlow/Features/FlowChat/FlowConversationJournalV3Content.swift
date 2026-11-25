@@ -43,12 +43,6 @@ struct FlowConversationJournalV3Presentation {
     {
       facts.append(explanation)
     }
-    if case .media = entry.input {
-      facts.append(
-        english
-          ? "This history includes the caption. The original attachment is unavailable here."
-          : "Este histórico inclui a legenda. O anexo original está indisponível aqui.")
-    }
     switch entry.record {
     case .workout(let workout):
       facts.append(
@@ -62,10 +56,7 @@ struct FlowConversationJournalV3Presentation {
         } ?? (english ? "Energy expenditure unavailable." : "Gasto energético indisponível."))
     case .meal(let meal):
       facts.append(Self.meal(meal.mealType, english: english) + " · " + meal.localDate)
-    case .edit(let edit):
-      facts.append(
-        (english ? "Historical revision " : "Revisão histórica ") + String(edit.revision))
-    case nil: break
+    case .edit, nil: break
     }
     if let question = entry.question {
       switch question {

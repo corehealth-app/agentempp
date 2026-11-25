@@ -122,6 +122,11 @@ struct FlowConversationView: View {
         .onScrollPhaseChange { _, phase in
           if phase == .interacting { transcriptPositioning.userScrolled() }
         }
+        .onChange(of: model.neutralIntake?.activePreparedIntakeID) { _, id in
+          if let id, model.neutralIntake?.attachment != nil {
+            reader.scrollTo(FlowTranscriptPositioning.intakeAnchor(id), anchor: .bottom)
+          }
+        }
         .onChange(of: transcriptPositionObservation, initial: true) { _, observation in
           if let anchor = transcriptPositioning.observe(observation) {
             reader.scrollTo(anchor, anchor: .top)

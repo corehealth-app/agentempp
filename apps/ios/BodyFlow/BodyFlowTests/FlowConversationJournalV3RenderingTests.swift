@@ -89,7 +89,7 @@ import Testing
         })
       #expect(!nodes.contains { $0.label.contains("0 kcal") })
       #expect(
-        nodes.contains {
+        !nodes.contains {
           $0.label.contains(
             english ? "original attachment is unavailable" : "anexo original está indisponível")
         })

@@ -17,7 +17,7 @@ struct ConversationFeedbackPresentationView: View {
             if compact {
                 compactContent
             } else {
-                expandedContent
+                expandedContent(showHeader: true)
             }
         }
         .font(BodyFlowTypography.body)
@@ -27,17 +27,19 @@ struct ConversationFeedbackPresentationView: View {
         .accessibilityIdentifier("conversation.feedback.presentation")
     }
 
-    private var expandedContent: some View {
+    private func expandedContent(showHeader: Bool) -> some View {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(verbatim: "Flow AI")
-                .font(BodyFlowTypography.cardTitle)
-                .accessibilityAddTraits(.isHeader)
-            Text(verbatim: historicalTitle)
-                .font(BodyFlowTypography.body)
-                .accessibilityIdentifier("conversation.feedback.historical")
+            if showHeader {
+                Text(verbatim: "Flow AI")
+                    .font(BodyFlowTypography.cardTitle)
+                    .accessibilityAddTraits(.isHeader)
+                Text(verbatim: historicalTitle)
+                    .font(BodyFlowTypography.body)
+                    .accessibilityIdentifier("conversation.feedback.historical")
+            }
             switch feedback.presentation.content {
             case let .sections(_, sections), let .v3Sections(_, sections), let .placeholder(sections):
-                ForEach(sections, id: \.key) { section in
+                ForEach(sections.filter { showHeader || $0.key != .saved }, id: \.key) { section in
                     Text(verbatim: FoodDisplayLocalization.message(section.text,
                         english: BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates))
                         .accessibilityIdentifier("conversation.feedback.section.\(section.key.rawValue)")
@@ -67,9 +69,10 @@ struct ConversationFeedbackPresentationView: View {
                     .foregroundStyle(BodyFlowColor.secondaryText)
                     .accessibilityIdentifier("conversation.feedback.compact-summary")
             }
-            if let comment = preview.education {
+            if preview.pending == nil, let comment = preview.education,
+                !preview.isMeal || comment.count <= 110 {
                 Text(verbatim: comment)
-                    .lineLimit(3)
+                    .lineLimit(2)
                     .accessibilityIdentifier("conversation.feedback.compact-education")
             }
             if let pending = preview.pending {
@@ -80,7 +83,7 @@ struct ConversationFeedbackPresentationView: View {
             DisclosureGroup(
                 english ? "View details" : "Ver detalhes", isExpanded: $detailsExpanded
             ) {
-                if detailsExpanded { expandedContent.padding(.top, BodyFlowSpacing.xs) }
+                if detailsExpanded { expandedContent(showHeader: false).padding(.top, BodyFlowSpacing.xs) }
             }
             .tint(BodyFlowColor.accent)
             .accessibilityIdentifier("conversation.feedback.details")
@@ -101,6 +104,7 @@ struct FlowFeedbackPreview {
     let summary: String?
     let education: String?
     let pending: String?
+    let isMeal: Bool
 
     init(_ feedback: ConversationFeedbackPresentationSnapshot, english: Bool) {
         typealias Section = ConversationFeedbackPresentationSnapshot.Section
@@ -117,8 +121,10 @@ struct FlowFeedbackPreview {
             sections = savedSections
             switch recorded {
             case .meal(let meal):
+                isMeal = true
                 summary = mealSummary(meal.totals.kcal, meal.totals.proteinG)
             case .workout(let workout):
+                isMeal = false
                 workoutTitle = english ? "Activity registered" : "Atividade registrada"
                 let name = FoodDisplayLocalization.name(workout.workoutType, english: english)
                 summary = [
@@ -128,12 +134,15 @@ struct FlowFeedbackPreview {
                 ].compactMap { $0 }.joined(separator: " · ")
             }
         case let .sections(meal, savedSections):
+            isMeal = true
             sections = savedSections
             summary = mealSummary(meal.totals.kcal, meal.totals.proteinG)
         case let .placeholder(savedSections):
+            isMeal = false
             sections = savedSections
             summary = nil
         case .legacy:
+            isMeal = false
             sections = []
             summary = nil
         }
@@ -155,9 +164,10 @@ struct FlowFeedbackPreview {
         if let line = text(.summary)?.components(separatedBy: "\n").first(where: { $0.hasPrefix(marker) }),
             let separator = line.range(of: nextStep) {
             let names = line[line.index(line.startIndex, offsetBy: marker.count)..<separator.lowerBound]
-            pending = english
-                ? "Left out: \(names). Can you confirm the food and amount before recording just this part?"
-                : "Ficou de fora: \(names). Você confirma o alimento e a quantidade para registrar só essa parte?"
+            let multiple = names.contains(",") || names.count > 50
+            pending = multiple
+                ? (english ? "What else did you eat and how much?" : "O que mais você comeu e em que quantidade?")
+                : (english ? "Was that \(names)? How much did you eat?" : "Era \(names)? Quanto você comeu?")
         } else {
             pending = nil
         }

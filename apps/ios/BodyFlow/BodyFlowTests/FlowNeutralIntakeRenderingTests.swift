@@ -201,6 +201,9 @@ import Testing
       defer { host.detach() }
       #expect(
         host.nodes().contains { $0.identifier == "conversation.neutral.attach" && $0.isEnabled })
+      #expect(host.nodes().contains { $0.identifier == "conversation.neutral.record-audio" })
+      #expect(!host.nodes().contains { $0.identifier == "conversation.neutral.send" })
+      #expect(model.neutralIntake?.inlineVoiceContext != nil)
       #expect(
         !host.nodes().contains {
           $0.label.contains(
@@ -463,7 +466,7 @@ import Testing
       let preview = FlowFeedbackPreview(presentation, english: false)
       #expect(preview.title == "Refeição registrada parcialmente.")
       #expect(preview.summary == "Aprox. 126,1 kcal · 6,3 g de proteína")
-      #expect(preview.pending == "Ficou de fora: queijo ralado. Você confirma o alimento e a quantidade para registrar só essa parte?")
+      #expect(preview.pending == "Era queijo ralado? Quanto você comeu?")
     }
   }
   @MainActor @Observable private final class NeutralCaptureSheetPresentationProbe {

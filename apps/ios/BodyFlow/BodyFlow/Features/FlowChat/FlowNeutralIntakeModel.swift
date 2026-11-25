@@ -173,6 +173,12 @@ final class FlowNeutralIntakeModel {
     isVisible && heldOriginal == nil && mediaService != nil && mediaStaging != nil
       ? context?.identity : nil
   }
+  var inlineVoiceContext: ConversationCommandContext.Identity? {
+    guard !isWorking, !isComposerLocked, selectedAttachment == nil,
+      draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return nil }
+    return captureContext
+  }
   /// Local presentation ownership only; never a grant to attach, upload or send.
   var captureSelectionIdentity: ConversationCommandContext.Identity? {
     closed ? nil : parentIdentity

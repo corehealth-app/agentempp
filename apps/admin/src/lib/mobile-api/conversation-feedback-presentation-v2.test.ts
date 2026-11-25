@@ -89,7 +89,7 @@ function fixture(kind: 'root' | 'linked' = 'root') {
   })
   return { who, state: structuredClone(parsedState), proof, canonical, receipt }
 }
-function setup(kind: 'root' | 'linked' = 'root') {
+function setup(kind: 'root' | 'linked' = 'root', photoReview?: readonly string[]) {
   const f = fixture(kind),
     events: string[] = [],
     auth = {
@@ -118,6 +118,7 @@ function setup(kind: 'root' | 'linked' = 'root') {
       auth,
       clinical: { capture },
       original: { readOriginal },
+      ...(photoReview ? { readPhotoReview: async () => photoReview } : {}),
     })
   return { ...f, auth, capture, readOriginal, service, events }
 }
@@ -150,6 +151,18 @@ function rich() {
 }
 
 describe('new current-safe v3 presentation without modifying wrapper1', () => {
+  it('shows excluded photo observations on every read without changing the recorded nutrients', async () => {
+    const { service, who, proof, canonical } = setup('root', ['queijo ralado'])
+    const first = requireValue(await service.readHistorical({ auth: who, proof }))
+    const reopened = requireValue(await service.readHistorical({ auth: who, proof }))
+    expect(reopened).toEqual(first)
+    expect(first.recorded).toEqual(canonical.registration)
+    expect(find(first.sections, 'saved')).toBe('Refeição registrada parcialmente.')
+    expect(find(first.sections, 'summary')).toContain(
+      'Ficou para revisar: queijo ralado. Se confirmar, registre só o que ficou de fora.',
+    )
+    expect(find(first.sections, 'items')).not.toContain('queijo ralado')
+  })
   it.each([
     'root',
     'linked',

@@ -1,7 +1,9 @@
 /** Private SQL transport contracts. Decoding a resolved payload supplies no
  * semantic authority, live catalog validation or permission to call a writer. */
 import { isDeepStrictEqual } from 'node:util'
+import { visionFoodIdentity } from '@mpp/agent'
 import type { Json } from '@mpp/db'
+import { parseConversationImageResult } from '@mpp/providers/vision/conversation-image-result'
 import { z } from 'zod'
 import {
   type BoundConversationMealCommand,
@@ -194,6 +196,7 @@ const resolvedSchema = z
       })
       .strict(),
     items: z.array(itemSchema).min(1).max(30),
+    photo_review: indexes.max(29).optional(),
     totals: z
       .object({
         kcal: number.nonnegative(),
@@ -220,6 +223,44 @@ const resolvedSchema = z
   })
   .strict()
 export type ConversationResolvedMeal = Readonly<z.infer<typeof resolvedSchema>>
+
+export function conversationMealPhotoReviewNames(
+  resolved: ConversationResolvedMeal,
+  source: ConversationMealStoredSource,
+): readonly string[] {
+  const review = resolved.photo_review
+  if (!review) return []
+  const context = source.context
+  const input = context.source_input
+  const media = context.media
+  if (
+    context.schema !== 'conversation.meal-source.v2' ||
+    !('intake_origin' in input) ||
+    input.source.channel !== 'media' ||
+    input.source.caption !== undefined ||
+    !isDeepStrictEqual(context.source_units, ['vision_items']) ||
+    media?.kind !== 'conversation_photo' ||
+    media.catalog_version !== 2
+  )
+    return conversationWriterUnavailable()
+  const image = parseConversationImageResult(media.processing_result)
+  if (image.status !== 'ready' || image.analysis.type !== 'meal')
+    return conversationWriterUnavailable()
+  const items = image.analysis.items
+  if (
+    resolved.semantic_proof.input_count + review.length !== items.length ||
+    review.some(
+      (index, position) =>
+        index >= items.length || index <= (review[position - 1] ?? -1),
+    )
+  )
+    return conversationWriterUnavailable()
+  return review.map((index) => {
+    const item = items[index]
+    if (!item) return conversationWriterUnavailable()
+    return text(160).parse(visionFoodIdentity(item.name).name.trim())
+  })
+}
 
 export function conversationWriterUnavailable(): never {
   throw new MobileApiError(
@@ -386,6 +427,7 @@ export function parseConversationResolvedMeal(
       (command.command.meal_type !== undefined && v.meal_type !== command.command.meal_type)
     )
       return conversationWriterUnavailable()
+    conversationMealPhotoReviewNames(v, source)
     const covered = new Set<number>(),
       names = new Set<string>()
     const validIndexes = (ids: number[]) =>

@@ -201,7 +201,9 @@ describe('actual source-to-factual meal registration composition', () => {
     'bebida achocolatada',
     'bebida quente com chocolate em pó',
     'café com leite com chocolate em pó',
-  ])('registers a four-item photo-only report with %s and requests meal feedback', async (beverage) => {
+    'queijo ralado',
+  ])('registers qualified visual items when the fourth observation is %s', async (lastObservation) => {
+    const partial = lastObservation === 'queijo ralado'
     const d = dependencies()
     const original = writerCommand()
     const binding = writerBinding()
@@ -225,7 +227,7 @@ describe('actual source-to-factual meal registration composition', () => {
       { name: 'pão francês', quantity_g_estimate: 50, confidence: 0.95 },
       { name: 'ovo mexido', quantity_g_estimate: 100, confidence: 0.9 },
       { name: 'geleia de morango', quantity_g_estimate: 30, confidence: 0.9 },
-      { name: beverage, quantity_g_estimate: 200, confidence: 0.85 },
+      { name: lastObservation, quantity_g_estimate: 200, confidence: 0.85 },
     ]
     const media = {
       asset_id: id,
@@ -296,7 +298,9 @@ describe('actual source-to-factual meal registration composition', () => {
       ...writerReceipt(),
       input_hash: action.inputHash,
       meal_type: 'cafe',
-      log_ids: observations.map((_, index) => `10000000-0000-4000-8000-00000000002${index}`),
+      log_ids: observations
+        .slice(0, partial ? 3 : 4)
+        .map((_, index) => `10000000-0000-4000-8000-00000000002${index}`),
     }
     d.writer.commit.mockResolvedValue({ action: 'committed', receipt })
     const read = Promise.resolve({ data: [], error: null })
@@ -377,23 +381,28 @@ describe('actual source-to-factual meal registration composition', () => {
     // Noon UTC is 09:00 at the account's civil time zone.
     expect(resolved).toMatchObject({
       meal_type: 'cafe',
-      totals: { kcal: 548 },
+      totals: { kcal: partial ? 382.4 : 548 },
+      ...(partial ? { photo_review: [3] } : {}),
       items: [
         { quantity_g: 50, quantity_basis: 'visual_estimate', kcal: 150 },
         { quantity_g: 100, quantity_basis: 'visual_estimate', kcal: 149 },
         { quantity_g: 30, quantity_basis: 'visual_estimate', kcal: 83.4 },
-        {
-          name: beverage,
-          quantity_g: 200,
-          display_qty: 200,
-          display_unit: 'ml',
-          quantity_basis: 'visual_estimate',
-          nutrition_source: 'llm_estimate',
-          kcal: 165.6,
-          protein_g: 4.2,
-          carbs_g: 28.32,
-          fat_g: 4.34,
-        },
+        ...(partial
+          ? []
+          : [
+              {
+                name: lastObservation,
+                quantity_g: 200,
+                display_qty: 200,
+                display_unit: 'ml',
+                quantity_basis: 'visual_estimate',
+                nutrition_source: 'llm_estimate',
+                kcal: 165.6,
+                protein_g: 4.2,
+                carbs_g: 28.32,
+                fat_g: 4.34,
+              },
+            ]),
       ],
     })
     expect(d.writer.commit).toHaveBeenCalledTimes(1)

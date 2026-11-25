@@ -201,7 +201,15 @@ function materialBinding(
     m.attempt_id !== i.attempt_id
   )
     unavailable()
-  const occurrenceIndexes = m.source_groups.flatMap((g) => g.interpretation_food_indexes)
+  const reviewed = m.photo_review ?? []
+  const omitted = i.foods.filter(
+    (food) => food.visual_index !== null && reviewed.includes(food.visual_index),
+  )
+  if (omitted.length !== reviewed.length) unavailable()
+  const occurrenceIndexes = [
+    ...m.source_groups.flatMap((g) => g.interpretation_food_indexes),
+    ...omitted.map((food) => food.index),
+  ]
   if (
     occurrenceIndexes.length !== i.foods.length ||
     new Set(occurrenceIndexes).size !== i.foods.length ||
@@ -313,6 +321,7 @@ function resolvedPayload(
       carbs_g: calc.totals.carbs_g,
       fat_g: calc.totals.fat_g,
     },
+    ...(material.photo_review ? { photo_review: [...material.photo_review] } : {}),
     preparation_annotations: calc.preparation_annotations ?? [],
     source_receipts: structuredClone(s.sourceReceipts()),
   }

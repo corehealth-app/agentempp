@@ -86,6 +86,8 @@ export interface MaterializedConversationMeal {
   readonly source_groups: readonly ConversationMealSourceGroup[]
   /** Review hint only. No approved_nutrition or implicit label consent. */
   readonly nutrition_label: MealDraft['nutrition_label']
+  /** Indexes into the immutable photo observations, outside the saved subtotal. */
+  readonly photo_review?: readonly number[]
 }
 export type ConversationMealMaterialization =
   | MaterializedConversationMeal
@@ -763,6 +765,32 @@ async function materializeConversationMealCore(
       qualified.set(key, answer)
       return answer
     }
+    const media = record(context.media)
+    const imageResult = record(media?.processing_result)
+    const allowPhotoReview =
+      !continuation &&
+      'intake_origin' in command.command &&
+      command.command.source.channel === 'media' &&
+      command.command.source.caption === undefined &&
+      isDeepStrictEqual(source.source_units, ['vision_items']) &&
+      source.media_binding?.kind === 'conversation_photo' &&
+      source.media_binding.catalog_version === 2 &&
+      imageResult?.classification === 'meal'
+    const photoReview: number[] = []
+    let firstExcluded: ConversationMealMaterialization | undefined
+    const deferPhotoItem = (
+      visualIndex: number,
+      foodIndex: number,
+      reason: Extract<
+        ConversationMealMaterialization,
+        { status: 'clarification_required' }
+      >['reason'],
+    ) => {
+      if (!allowPhotoReview) return false
+      photoReview.push(visualIndex)
+      firstExcluded ??= clarify(reason, [foodIndex])
+      return true
+    }
     const inputs: MaterializedConversationMeal['inputs'][number][] = [],
       groups: ConversationMealSourceGroup[] = []
     for (const food of interpretation.foods) {
@@ -811,7 +839,24 @@ async function materializeConversationMealCore(
           return clarify('ambiguous_source_group', [food.index])
         const correctedName = replacementName ?? visual.name
         const qualification = await qualify(correctedName)
-        if (qualification !== 'qualified') return clarify(qualification, [food.index])
+        if (qualification !== 'qualified') {
+          if (
+            qualification === 'unqualified_whole_name' &&
+            deferPhotoItem(food.visual_index, food.index, qualification)
+          )
+            continue
+          return clarify(qualification, [food.index])
+        }
+        if (
+          visual.review_reason === 'low_confidence' &&
+          deferPhotoItem(food.visual_index, food.index, 'low_confidence')
+        )
+          continue
+        if (
+          visual.quantity_g === null &&
+          deferPhotoItem(food.visual_index, food.index, 'missing_quantity')
+        )
+          continue
         const indexed = freshCandidate({ name: correctedName }, inputs.length)
         if (!indexed) return clarify('ambiguous_source_group', [food.index])
         candidates.push({
@@ -1013,14 +1058,13 @@ async function materializeConversationMealCore(
         source_positions: positions,
       })
     }
-    if (!inputs.length) return clarify('missing_quantity', [])
-    const media = record(context.media),
-      processing = media
-        ? conversationMealMediaAnalysis({
-            kind: String(media.kind),
-            processing_result: media.processing_result,
-          })
-        : null
+    if (!inputs.length) return firstExcluded ?? clarify('missing_quantity', [])
+    const processing = media
+      ? conversationMealMediaAnalysis({
+          kind: String(media.kind),
+          processing_result: media.processing_result,
+        })
+      : null
     return freezeInterpretation({
       status: 'materialized',
       schema: 'conversation.meal-materialization.v1',
@@ -1029,6 +1073,7 @@ async function materializeConversationMealCore(
       attempt_id: interpretation.attempt_id,
       inputs,
       source_groups: groups,
+      ...(photoReview.length ? { photo_review: photoReview.sort((a, b) => a - b) } : {}),
       nutrition_label: metadataLabel(
         processing?.nutrition_label,
         inputs.map((i) => i.candidate),

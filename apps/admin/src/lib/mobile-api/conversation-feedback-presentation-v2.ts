@@ -263,6 +263,7 @@ function parsedOriginal(raw: RegistrationFeedbackV3): RegistrationFeedbackV3 {
 export function renderHistoricalRegistrationFeedbackV3Sections(
   raw: RegistrationFeedbackV3,
   rawPolicy: ReturnType<typeof projectCurrentClinicalPublicPolicy>,
+  photoReview: readonly string[] = [],
 ): readonly FeedbackV3Section[] {
   const saved = parsedOriginal(raw),
     policy = exact(policySchema, rawPolicy),
@@ -313,6 +314,18 @@ export function renderHistoricalRegistrationFeedbackV3Sections(
   const en = saved.locale === 'en'
   return workoutSnapshot(
     renderRegistrationFeedbackV3(display).map((section) => {
+      if (section.key === 'saved' && photoReview.length > 0)
+        return {
+          ...section,
+          text: en ? 'Meal partially recorded.' : 'Refeição registrada parcialmente.',
+        }
+      if (section.key === 'summary' && photoReview.length > 0)
+        return {
+          ...section,
+          text: en
+            ? `Only recorded items count towards the totals below.\n${section.text}\nTo review separately: ${photoReview.join(', ')}. If confirmed, register only the missing items.`
+            : `Os totais abaixo incluem apenas os itens registrados.\n${section.text}\nFicou para revisar: ${photoReview.join(', ')}. Se confirmar, registre só o que ficou de fora.`,
+        }
       if (section.key === 'day')
         return {
           ...section,
@@ -374,7 +387,10 @@ const wireSchema = z
  * immutable canonical. Native still requires trusted transport/current binding. */
 export function parseConversationFeedbackPresentationV2(
   raw: unknown,
-  input: ConversationFeedbackPresentationV2Input & { readonly canonical: unknown },
+  input: ConversationFeedbackPresentationV2Input & {
+    readonly canonical: unknown
+    readonly photoReview?: readonly string[]
+  },
 ): ConversationFeedbackPresentationV2 {
   const b = bind(input),
     saved = original(input.canonical, b),
@@ -397,7 +413,11 @@ export function parseConversationFeedbackPresentationV2(
     !isDeepStrictEqual(recorded, saved.registration) ||
     !isDeepStrictEqual(
       value.sections,
-      renderHistoricalRegistrationFeedbackV3Sections(saved, value.current_policy),
+      renderHistoricalRegistrationFeedbackV3Sections(
+        saved,
+        value.current_policy,
+        input.photoReview,
+      ),
     )
   )
     return invalid()
@@ -425,6 +445,9 @@ export interface ConversationFeedbackPresentationV2OriginalReader {
 export interface ConversationFeedbackPresentationV2Dependencies
   extends ConversationCurrentScopeDependencies {
   readonly original: ConversationFeedbackPresentationV2OriginalReader
+  readonly readPhotoReview?: (
+    proof: ConversationFeedbackPresentationV2Proof,
+  ) => Promise<readonly string[]>
 }
 export function createConversationFeedbackPresentationV2Service(
   db: ServiceClient,
@@ -471,6 +494,7 @@ export function createConversationFeedbackPresentationV2Service(
         if (conversationJournalInstant(before.observed_at) < conversationJournalInstant(b.effectAt))
           return null
         let raw: unknown,
+          photoReview: readonly string[] = [],
           failed = false
         try {
           // Pin transport data before the post-scope await can invoke callbacks.
@@ -490,6 +514,8 @@ export function createConversationFeedbackPresentationV2Service(
               }),
             ),
           )
+          if (dependencies.readPhotoReview)
+            photoReview = workoutSnapshot(await dependencies.readPhotoReview(b.proof))
         } catch {
           failed = true
         }
@@ -513,11 +539,11 @@ export function createConversationFeedbackPresentationV2Service(
             status: 'available',
             format: 'sections',
             recorded: saved.registration,
-            sections: renderHistoricalRegistrationFeedbackV3Sections(saved, policy),
+            sections: renderHistoricalRegistrationFeedbackV3Sections(saved, policy, photoReview),
             current_policy: policy,
             provenance: { epoch: b.epoch, command_id: b.commandId, observed_at: after.observed_at },
           },
-          { auth: b.who, proof: b.proof, canonical: saved },
+          { auth: b.who, proof: b.proof, canonical: saved, photoReview },
         )
       } catch {
         return null

@@ -1,5 +1,6 @@
 /** Actual immutable canonical reads composed with the separate current-safe
  * renderer. This adapter does not admit, prepare or commit a domain effect. */
+import { isDeepStrictEqual } from 'node:util'
 import type { ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import { conversationJournalBindingSchema } from './conversation-command-candidate-contracts'
@@ -10,6 +11,9 @@ import {
   createConversationFeedbackV3OriginalBridge,
 } from './conversation-feedback-v3-original-bridge'
 import { parseConversationMealContinuationFeedbackBinding } from './conversation-meal-continuation-read-contracts'
+import { parseConversationMealEffectReceipt } from './conversation-meal-feedback-store'
+import { createSupabaseConversationMealWriter } from './conversation-meal-writer'
+import { conversationMealPhotoReviewNames } from './conversation-meal-writer-contracts'
 
 export interface ConversationFeedbackPublicCompositionDependencies
   extends ConversationCurrentScopeDependencies {
@@ -31,6 +35,29 @@ export function createConversationFeedbackPublicComposition(
     service = createConversationFeedbackPresentationV2Service(db, {
       ...(deps.auth ? { auth: deps.auth } : {}),
       ...(deps.clinical ? { clinical: deps.clinical } : {}),
+      async readPhotoReview(proof) {
+        if (proof.kind !== 'meal.report') return []
+        const input = proof.command.command
+        if (
+          !('intake_origin' in input) ||
+          input.source.channel !== 'media' ||
+          input.source.caption !== undefined
+        )
+          return []
+        const meal = await createSupabaseConversationMealWriter(db).readPrepared(proof.command)
+        if (
+          meal.action !== 'available' ||
+          meal.binding.epoch !== epoch ||
+          !meal.source ||
+          !meal.resolved ||
+          !isDeepStrictEqual(
+            meal.receipt,
+            parseConversationMealEffectReceipt(proof.receipt, proof.command),
+          )
+        )
+          throw new Error('Photo review is unavailable')
+        return conversationMealPhotoReviewNames(meal.resolved.value, meal.source)
+      },
       original: {
         async readOriginal(input) {
           const p = input.proof

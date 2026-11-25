@@ -12,6 +12,7 @@ import { bindConversationCommand } from './conversation-command-contracts'
 import type { ConversationMealInterpretation } from './conversation-meal-interpretation-contracts'
 import { interpretPersistedConversationMeal } from './conversation-meal-interpretation-service'
 import { createOpenRouterConversationMealInterpreter } from './conversation-meal-interpreter'
+import { workoutDigest } from './conversation-workout-contracts'
 import { MobileApiError } from './http'
 
 const attemptId = '10000000-0000-4000-8000-000000000010'
@@ -125,6 +126,115 @@ function run(d: ReturnType<typeof dependencies>, raw: unknown = candidateCommand
 }
 
 describe('actual durable meal interpretation composition', () => {
+  it.each([
+    null,
+    'Só queria saber o que tem na foto',
+  ])('uses only explicit, captionless photo intent locally (%s)', async (caption) => {
+    const base = candidateCommand()
+    const assetId = '10000000-0000-4000-8000-000000000011'
+    const origin = {
+      schema: 'conversation.intake-media-origin.v1',
+      intake_id: '10000000-0000-4000-8000-000000000012',
+      claim_id: '10000000-0000-4000-8000-000000000013',
+      input_hash: 'd'.repeat(64),
+      source_hash: 'e'.repeat(64),
+      decision_hash: 'f'.repeat(64),
+      epoch: candidateEpoch,
+    }
+    const media = {
+      asset_id: assetId,
+      owner_id: candidateOwner,
+      catalog_version: 2,
+      kind: 'conversation_photo',
+      status: 'processed',
+      processed_at: '2026-11-04T00:00:00Z',
+      updated_at: '2026-11-04T00:00:00Z',
+      context_text: null,
+      processing_result: {
+        schema: 'conversation.image-result.v1',
+        status: 'ready',
+        classification: 'meal',
+        analysis: {
+          type: 'meal',
+          items: [{ name: 'pão francês', quantity_g_estimate: 50, confidence: 0.95 }],
+        },
+      },
+    }
+    const command = bindConversationCommand(candidateOwner, `cmsg1:${candidateId}`, {
+      ...base.command,
+      source: {
+        channel: 'media',
+        user_action: 'report_actual_record',
+        media_asset_id: assetId,
+        ...(caption ? { caption } : {}),
+      },
+      intake_origin: origin,
+    })
+    const d = dependencies(command)
+    const source_units = caption ? ['media_caption', 'vision_items'] : ['vision_items']
+    d.sources.capture.mockResolvedValue({
+      sourceHash,
+      capturedAt: '2026-11-04T00:00:00Z',
+      epoch: candidateEpoch,
+      context: {
+        schema: 'conversation.meal-source.v2',
+        owner_id: candidateOwner,
+        command_id: candidateId,
+        input_hash: command.inputHash,
+        epoch: candidateEpoch,
+        source_input: command.command,
+        source_units,
+        source_evidence: { caption, context_text: null, transcript: null },
+        media,
+        intake_projection: {
+          schema: 'conversation.intake-media-projection.v1',
+          origin,
+          media: {
+            asset_id: assetId,
+            owner_id: candidateOwner,
+            catalog_version: 2,
+            kind: media.kind,
+            processed_at: media.processed_at,
+            updated_at: media.updated_at,
+            processing_hash: workoutDigest({
+              context_text: media.context_text,
+              processing_result: media.processing_result,
+            }),
+          },
+          child_input_hash: command.inputHash,
+        },
+        catalog: {},
+        owner: {},
+        clinical: {},
+        day: {},
+      },
+    })
+    d.interpreter.interpret.mockResolvedValue({
+      ...interpretation(),
+      input_hash: command.inputHash,
+      source_units,
+    })
+    d.store.commit.mockImplementation(async (_command, _attempt, result) => ({
+      ...record('committed'),
+      input_hash: command.inputHash,
+      result,
+    }))
+    const outcome = await run(d, command.command)
+    if (caption) {
+      expect(d.interpreter.interpret).toHaveBeenCalledTimes(1)
+      expect(outcome.interpretation).toMatchObject({ decision: 'clarification_required' })
+    } else {
+      expect(d.interpreter.interpret).not.toHaveBeenCalled()
+      expect(outcome.interpretation).toMatchObject({
+        decision: 'reported_meal',
+        reason: 'explicit_media_action',
+        foods: [{ index: 0, name: null, quantity: null, unit: null, visual_index: 0 }],
+        provider_metadata: { prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 },
+      })
+    }
+    expect(d.store.commit).toHaveBeenCalledTimes(1)
+  })
+
   it('does not reconcile or process after a known admission quota refusal', async () => {
     const d = dependencies()
     d.journal.admit.mockRejectedValue(

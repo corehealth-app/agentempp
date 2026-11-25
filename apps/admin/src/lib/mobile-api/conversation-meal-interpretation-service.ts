@@ -19,6 +19,7 @@ import {
   freezeInterpretation,
   mealInterpretationSchema,
 } from './conversation-meal-interpretation-contracts'
+import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
 import {
   type ConversationMealSemanticOutcome,
   type ConversationMealSemanticStore,
@@ -101,6 +102,75 @@ function existing(
   )
     return unavailable()
   return freezeInterpretation({ status: 'interpreted', command, interpretation })
+}
+
+/** A bound send already declares consumption when there is no text to interpret.
+ * Quantities, confidence and nutrition references still pass through materialization. */
+function interpretCaptionlessMealPhoto(
+  command: BoundConversationMealCommand,
+  source: ConversationMealInterpretationSource,
+  attemptId: string,
+): ConversationMealInterpretation | null {
+  const input = command.command
+  const observation = source.sources[0]
+  if (
+    !('intake_origin' in input) ||
+    input.source.channel !== 'media' ||
+    input.source.user_action !== 'report_actual_record' ||
+    input.source.caption !== undefined ||
+    source.media_binding?.kind !== 'conversation_photo' ||
+    source.media_binding.catalog_version !== 2 ||
+    source.sources.length !== 1 ||
+    observation?.unit !== 'vision_items' ||
+    !observation.visual_items.length
+  )
+    return null
+
+  // A nutrition label is represented by a missing-portion sentinel. It must
+  // still pass through the existing interpretation/confirmation flow.
+  const hasPortions = observation.visual_items.every((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+    const grams = item.quantity_g_estimate
+    return typeof grams === 'number' && grams > 0
+  })
+  if (!hasPortions) return null
+
+  const indexes = observation.visual_items.map((_, index) => index)
+  const result = validateConversationMealInterpretationModel(
+    {
+      schema: 'conversation.meal-interpretation.v1',
+      decision: 'reported_meal',
+      reason: 'explicit_media_action',
+      sources: [
+        { unit: 'vision_items', classification: 'visual', spans: [], visual_indexes: indexes },
+      ],
+      foods: indexes.map((index) => ({
+        index,
+        name: null,
+        quantity: null,
+        unit: null,
+        visual_index: index,
+      })),
+    },
+    source,
+  )
+  return {
+    ...result,
+    interpreter_version: source.interpreter_version,
+    owner_id: source.owner_id,
+    command_id: source.command_id,
+    attempt_id: attemptId,
+    input_hash: source.input_hash,
+    source_hash: source.source_hash,
+    source_units: source.source_units,
+    provider_metadata: {
+      model: 'bound-photo-observations',
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      cost_usd: 0,
+      latency_ms: 0,
+    },
+  }
 }
 
 export async function interpretPersistedConversationMeal(
@@ -196,7 +266,9 @@ export async function interpretPersistedConversationMeal(
     try {
       const remainingMs = deadline - Date.now()
       if (remainingMs <= 0) return reconciliation()
-      const returned = await interpret(source, { attemptId: claim.attempt_id, remainingMs })
+      const returned =
+        interpretCaptionlessMealPhoto(command, source, claim.attempt_id) ??
+        (await interpret(source, { attemptId: claim.attempt_id, remainingMs }))
       interpreted = mealInterpretationSchema.parse(structuredClone(returned))
       if (
         !isDeepStrictEqual(returned, interpreted) ||

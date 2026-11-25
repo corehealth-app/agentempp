@@ -26,8 +26,8 @@ import { prepareConversationMealSourceLabels } from './conversation-meal-source-
 import { readJsonBody } from './http'
 import { MEAL_TEXT_EXTRACTION_MODEL } from './meal-text-extractor'
 
-// Existing Flow call cap and existing provider output default, now explicit.
-// 800 extraction tokens cannot encode 30 occurrences plus full source partitions.
+// Existing upper bound for long reports. Short reports reserve only what the
+// closed response can need: an envelope, one label per token and food references.
 export const MEAL_INTERPRETER_TIMEOUT_MS = 45_000
 export const MEAL_INTERPRETER_MAX_TOKENS = 8192
 export const MEAL_INTERPRETER_PROMPT = `Você interpreta um relato de alimentação. Não conversa, aconselha, calcula nutrientes ou executa ações.
@@ -198,6 +198,10 @@ export interface ConversationMealInterpreterDiagnostic {
   readonly stage: 'source' | 'provider' | 'decode' | 'validation' | 'result'
   readonly error_name: (typeof diagnosticErrorNames)[number] | 'UnknownError'
   readonly http_status?: number
+  readonly budget_limit?:
+    | 'openrouter_credits'
+    | 'openrouter_key_limit'
+    | 'openrouter_in_flight_budget'
   readonly validation_reason?: MealInterpretationValidationReason
   readonly provider_rejection?:
     | 'schema_complexity'
@@ -516,12 +520,21 @@ function reportFailure(
     }
   }
   const status = ownData(error, 'status'),
+    limitSource =
+      stage === 'provider' && status === 402
+        ? ownData(ownData(ownData(error, 'error'), 'metadata'), 'limit_source')
+        : undefined,
     diagnostic: ConversationMealInterpreterDiagnostic = Object.freeze({
       event: 'conversation_meal_interpreter_failure',
       stage,
       error_name: diagnosticErrorNames.find((allowed) => allowed === name) ?? 'UnknownError',
       ...(rejection ? { provider_rejection: rejection } : {}),
       ...(details ? { provider_error: details } : {}),
+      ...(limitSource === 'openrouter_credits' ||
+      limitSource === 'openrouter_key_limit' ||
+      limitSource === 'openrouter_in_flight_budget'
+        ? { budget_limit: limitSource }
+        : {}),
       ...(stage === 'validation'
         ? {
             validation_reason:
@@ -603,6 +616,11 @@ export function createOpenRouterConversationMealInterpreter(
           packet = prepareConversationMealSourceLabels(source)
         const timeout = Math.floor(Math.min(MEAL_INTERPRETER_TIMEOUT_MS, job.remainingMs))
         if (timeout < 1) return interpretationUnavailable()
+        const labelCount = packet.input.sources.reduce(
+          (count, unit) => count + unit.tokens.length,
+          0,
+        )
+        const maxTokens = Math.min(MEAL_INTERPRETER_MAX_TOKENS, 1280 + 32 * labelCount)
         // Only full discourse evidence goes to the model, never private clinical
         // context, nutrition authority, owner, source hash or database attempt ID.
         const messages = [
@@ -625,7 +643,7 @@ export function createOpenRouterConversationMealInterpreter(
             ),
           messages,
           temperature: 0,
-          maxTokens: MEAL_INTERPRETER_MAX_TOKENS,
+          maxTokens,
           responseFormat: mealInterpretationResponseFormat(packet.schema),
           provider: { require_parameters: true },
           toolChoice: 'none',

@@ -216,7 +216,7 @@ describe('closed semantic interpreter input and result', () => {
       model: 'anthropic/claude-haiku-4.5',
       maxRetries: 0,
       requestTimeoutMs: 5000,
-      maxTokens: 8192,
+      maxTokens: 1376,
       temperature: 0,
       responseFormat: { type: 'json_schema', json_schema: { strict: true } },
       provider: { require_parameters: true },
@@ -433,6 +433,39 @@ describe('closed semantic interpreter input and result', () => {
       interpreter.interpret(source, { attemptId: epoch, remainingMs: 50000 }),
     ).rejects.toMatchObject({ code: 'conversation_meal_interpretation_unavailable' })
     expect(complete).toHaveBeenCalledTimes(1)
+  })
+  it('keeps the long-report ceiling and classifies a provider budget refusal without retry', async () => {
+    const f = textSource('arroz 100 g; '.repeat(60).trim())
+    const source = buildConversationMealInterpretationSource(f.command, f.capture)
+    const complete = vi.fn<(p: LLMCallParams) => Promise<LLMResult>>().mockRejectedValue({
+      status: 402,
+      error: { metadata: { limit_source: 'openrouter_key_limit', secret: 'must not escape' } },
+    })
+    const diagnostic = vi.fn()
+    const interpreter = createOpenRouterConversationMealInterpreter(
+      'synthetic',
+      { complete },
+      diagnostic,
+    )
+    await expect(
+      interpreter.interpret(source, { attemptId: epoch, remainingMs: 5000 }),
+    ).rejects.toMatchObject({
+      code: 'conversation_meal_interpretation_unavailable',
+    })
+    expect(complete.mock.calls).toEqual([
+      [expect.objectContaining({ maxTokens: 8192, maxRetries: 0 })],
+    ])
+    expect(diagnostic.mock.calls).toEqual([
+      [
+        {
+          event: 'conversation_meal_interpreter_failure',
+          stage: 'provider',
+          error_name: 'UnknownError',
+          http_status: 402,
+          budget_limit: 'openrouter_key_limit',
+        },
+      ],
+    ])
   })
   it('handles owned photo and audio evidence without rerunning Vision/STT or selecting nutrition', () => {
     for (const kind of ['meal_photo', 'audio_note'] as const) {

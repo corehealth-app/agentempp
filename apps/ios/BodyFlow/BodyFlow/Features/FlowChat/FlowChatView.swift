@@ -124,10 +124,10 @@ struct FlowChatView: View {
         // Reduce Motion. The scroll policy below is untouched.
         Group {
             if isLoadingHistory {
-                BodyFlowDelayedProgress(label: flowCopy("flow.loading"))
-                    .font(BodyFlowTypography.body)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("flow.loading")
+                FlowHistorySkeleton(label: flowCopy("flow.loading"), identifier: "flow.loading")
+                    .padding(.horizontal, gutter)
+                    .padding(.vertical, BodyFlowSpacing.md)
+                    .frame(maxHeight: .infinity, alignment: .top)
                     .transition(transition)
             } else {
                 history(gutter: gutter)

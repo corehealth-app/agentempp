@@ -73,6 +73,7 @@ final class FlowNeutralIntakeModel {
   private var operationID = UUID()
   private var closed = false
   private(set) var isWorking = false
+  private(set) var respondingIntakeID: UUID?
   // Session restoration is read-only; only completed user work requests another journal read.
   private(set) var historyRefreshID: UUID?
   private var heldIntakeCount = 0
@@ -331,7 +332,7 @@ final class FlowNeutralIntakeModel {
         return
       }
     }
-    await run { id in
+    await run(respondingTo: prepared?.input.intakeID ?? preparedCapture?.attachment.commandID) { id in
       let original: Prepared
       if let ready = self.prepared {
         original = ready
@@ -449,7 +450,7 @@ final class FlowNeutralIntakeModel {
         $0.input.intakeID == intakeID && $0.state == .queued && $0.hold == nil
       })
     else { return }
-    await run { id in
+    await run(respondingTo: intakeID) { id in
       let publish = self.publisher(id)
       try await self.process(row.input, identity: self.parentIdentity)
       try await self.controller.send(intakeID: intakeID, publish: publish)
@@ -464,7 +465,7 @@ final class FlowNeutralIntakeModel {
   func continueOriginal(intakeID: UUID) async {
     guard canContinue(intakeID: intakeID) else { return }
     continuationIDs.remove(intakeID)
-    await run { id in
+    await run(respondingTo: intakeID) { id in
       let publish = self.publisher(id)
       try await self.controller.continueOriginal(intakeID: intakeID, publish: publish)
     }
@@ -526,6 +527,7 @@ final class FlowNeutralIntakeModel {
   func invalidateSynchronously() {
     closed = true
     operationID = UUID()
+    respondingIntakeID = nil
     task?.cancel()
     context = nil
     prepared = nil
@@ -714,12 +716,14 @@ final class FlowNeutralIntakeModel {
   }
   private func run(
     refreshHistory: Bool = true,
+    respondingTo intakeID: UUID? = nil,
     _ action: @escaping @MainActor @Sendable (UUID) async throws -> Void
   ) async {
     guard !closed, !isWorking, !Task.isCancelled else { return }
     let id = UUID()
     operationID = id
     isWorking = true
+    respondingIntakeID = intakeID
     failure = nil
     let operation = Task {
       do { try await action(id) } catch is CancellationError {} catch {
@@ -748,6 +752,7 @@ final class FlowNeutralIntakeModel {
     if operationID == id {
       task = nil
       isWorking = false
+      respondingIntakeID = nil
       mediaPhase = nil
       if !closed && refreshHistory { historyRefreshID = id }
       if !closed { await onWorkSettled() }

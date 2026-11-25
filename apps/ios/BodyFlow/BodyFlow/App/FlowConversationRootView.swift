@@ -13,29 +13,30 @@ struct FlowConversationRootView: View {
     Group {
       if let model = coordinator.model {
         FlowConversationView(model: model, capture: capture)
+      } else if coordinator.phase == .idle || coordinator.phase == .loading {
+        FlowHistorySkeleton(
+          label: english ? "Opening conversation…" : "Abrindo conversa…",
+          identifier: "conversation.runtime.loading")
+          .padding(BodyFlowSpacing.md)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       } else {
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
           Text(verbatim: "Flow AI").font(BodyFlowTypography.cardTitle)
-          if coordinator.phase == .idle || coordinator.phase == .loading {
-            ProgressView(english ? "Opening your conversation…" : "Abrindo sua conversa…")
-              .accessibilityIdentifier("conversation.runtime.loading")
-          } else {
-            Text(
-              english ? "Flow is unavailable right now." : "O Flow está indisponível no momento."
-            )
-            .accessibilityIdentifier("conversation.runtime.unavailable")
-            Text(
-              english
-                ? "Pending reports stay protected on this device."
-                : "Relatos pendentes continuam protegidos neste dispositivo."
-            )
-            .foregroundStyle(BodyFlowColor.secondaryText)
-            if coordinator.phase != .closed {
-              Button(english ? "Try again" : "Tentar novamente") {
-                Task { await coordinator.load() }
-              }
-              .accessibilityIdentifier("conversation.runtime.retry")
+          Text(
+            english ? "Flow is unavailable right now." : "O Flow está indisponível no momento."
+          )
+          .accessibilityIdentifier("conversation.runtime.unavailable")
+          Text(
+            english
+              ? "Pending reports stay protected on this device."
+              : "Relatos pendentes continuam protegidos neste dispositivo."
+          )
+          .foregroundStyle(BodyFlowColor.secondaryText)
+          if coordinator.phase != .closed {
+            Button(english ? "Try again" : "Tentar novamente") {
+              Task { await coordinator.load() }
             }
+            .accessibilityIdentifier("conversation.runtime.retry")
           }
           Spacer()
         }.padding(BodyFlowSpacing.md).frame(maxWidth: .infinity, alignment: .leading)

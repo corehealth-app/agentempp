@@ -25,9 +25,10 @@ struct FlowConversationMealQuestionOriginsContent: View {
             .accessibilityIdentifier("conversation.origins.answer.\(origin.id.uuidString.lowercased())")
           }.padding(BodyFlowSpacing.sm)
         }
-        if origins.isLoading {
-          ProgressView(english ? "Checking previous reports…" : "Consultando relatos anteriores…")
-            .accessibilityIdentifier("conversation.origins.loading")
+        if origins.isLoading && origins.hasMore {
+          FlowWaitingBubble(
+            label: english ? "Loading earlier messages…" : "Carregando mensagens anteriores…",
+            identifier: "conversation.origins.loading")
         }
         if origins.unavailable {
           Text(english ? "Previous reports are unavailable right now." : "Não foi possível consultar os relatos anteriores agora.")

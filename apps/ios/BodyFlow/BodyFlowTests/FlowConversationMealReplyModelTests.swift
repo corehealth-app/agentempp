@@ -1390,8 +1390,9 @@ struct FlowAutomaticHistoryLoadingTests {
     defer { f.disk.remove() }
     let model = try await f.open(), barrier = ConversationControllerBarrier()
     await f.server.holdOrigins(barrier)
-    let shell = SignUpRenderingProbe.host(
-      FlowConversationView(model: model), width: 390, height: 1200)
+    let shell = PremiumRenderingTestSupport.liveAccessibilityHost(
+      FlowConversationView(model: model).environment(\.locale, Locale(identifier: "pt_BR")),
+      width: 390)
     defer { shell.detach() }
     let deadline = Task {
       try? await Task.sleep(for: .seconds(5))
@@ -1400,7 +1401,7 @@ struct FlowAutomaticHistoryLoadingTests {
     let entered = await barrier.waitEnteredOrFinished()
     deadline.cancel()
     #expect(entered, "The mounted Flow task must reach its actual origins request")
-    shell.settle()
+    #expect(shell.nativeViews(FlowLoaderMotionView.self).count == 1)
     let beforeOrigins = await f.http.stub.requests.filter {
       $0.url?.path == "/api/mobile/v1/conversation/journal"
     }
@@ -1409,7 +1410,8 @@ struct FlowAutomaticHistoryLoadingTests {
     await barrier.release()
     for _ in 0..<100 {
       shell.settle()
-      if model.recoveredMealQuestionOrigins.count == 2 && !model.isLoadingUnifiedHistory {
+      if model.recoveredMealQuestionOrigins.count == 2 && !model.isLoadingUnifiedHistory
+        && shell.nativeViews(FlowLoaderMotionView.self).isEmpty {
         let reads = await f.http.stub.requests.filter {
           $0.url?.path == "/api/mobile/v1/conversation/journal"
         }
@@ -1419,6 +1421,7 @@ struct FlowAutomaticHistoryLoadingTests {
     }
     let requests = await f.http.stub.requests
     #expect(model.recoveredMealQuestionOrigins.count == 2)
+    #expect(shell.nativeViews(FlowLoaderMotionView.self).isEmpty)
     #expect(requests.filter { $0.url?.path == "/api/mobile/v1/conversation/journal" }.count == 1)
     #expect(requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
     #expect(model.savedEffectRevision == 0)

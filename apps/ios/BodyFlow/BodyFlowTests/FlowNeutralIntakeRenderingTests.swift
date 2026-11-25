@@ -8,6 +8,72 @@ import Testing
   import UIKit
   @MainActor @Suite("Real neutral composer and factual transcript content")
   struct FlowNeutralIntakeRenderingTests {
+    @Test
+    func openingConversationAnimatesOnlyWhileTheSkeletonIsMounted() throws {
+      let host = PremiumRenderingTestSupport.liveAccessibilityHost(
+        FlowHistorySkeleton(label: "Abrindo conversa…", identifier: "conversation.history-loading")
+          .environment(\.bodyFlowReduceMotion, false)
+          .environment(\.bodyFlowVisualPolicy, BodyFlowVisualPolicy())
+          .environment(\.scenePhase, .active), width: 390)
+      defer { host.detach() }
+      #expect(host.probe().contains { $0.label == "Abrindo conversa…" })
+      let loader = try #require(host.nativeViews(FlowLoaderMotionView.self).first)
+      #expect(loader.particles.count == 3)
+      #expect(loader.particles.allSatisfy {
+        $0.layer.animation(forKey: FlowLoaderMotionView.animationKey)?.repeatCount.isInfinite == true
+      })
+      host.detach()
+      #expect(loader.particles.allSatisfy {
+        $0.layer.animation(forKey: FlowLoaderMotionView.animationKey) == nil
+      })
+    }
+
+    @Test
+    func pendingSendShowsOneWaitingBubbleAndKeepsUncertainResultAfterConnectionLoss() async throws {
+      let f = try await neutralVisibleFixture(loseFirstPost: true)
+      defer { f.disk.remove() }
+      let delivery = ConversationControllerBarrier()
+      await f.http.stub.respond { request, _ in
+        if request.httpMethod == "POST", request.url?.path.hasSuffix("/conversation/intakes") == true {
+          await delivery.enter()
+        }
+        return try await f.server.reply(request)
+      }
+      let conversation = try await FlowConversationModel.open(
+        transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+        keyVault: f.vault, neutralIntakeEnabled: true)
+      let model = try #require(conversation.neutralIntake)
+      let host = PremiumRenderingTestSupport.liveAccessibilityHost(
+        FlowNeutralIntakeTranscriptContent(model: model)
+          .environment(\.locale, Locale(identifier: "pt_BR"))
+          .environment(\.bodyFlowReduceMotion, true)
+          .environment(\.scenePhase, .active), width: 390)
+      defer { host.detach() }
+      model.composer = "leite integral 206 g"
+      let request = Task {
+        await model.submit()
+        await delivery.finish()
+      }
+      let started = await delivery.waitEnteredOrFinished()
+      #expect(started)
+      #expect(model.respondingIntakeID != nil)
+      try? await Task.sleep(for: .milliseconds(300))
+      let busy = host.probe()
+      #expect(busy.filter { $0.label == "Aguardando o Flow…" }.count == 1)
+      #expect(!busy.contains { $0.identifier == "conversation.neutral.state" })
+      let loader = host.nativeViews(FlowLoaderMotionView.self)
+      #expect(loader.count == 1 && loader.allSatisfy { !$0.isLooping })
+
+      await delivery.release()
+      await request.value
+      let settled = host.probe()
+      #expect(model.respondingIntakeID == nil && model.pendingRows.count == 1)
+      #expect(!settled.contains { $0.label == "Aguardando o Flow…" })
+      #expect(settled.contains { $0.identifier == "conversation.neutral.state" })
+      #expect(host.nativeViews(FlowLoaderMotionView.self).isEmpty)
+      await conversation.close()
+    }
+
     @Test(arguments: ["epoch", "capture_unavailable"])
     func heldOriginalExplainsItsHoldWithoutShowingOldCaptionAndCanBeDiscarded(_ change: String)
       async throws

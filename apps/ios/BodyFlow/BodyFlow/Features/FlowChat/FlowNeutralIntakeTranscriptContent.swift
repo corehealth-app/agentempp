@@ -69,14 +69,6 @@ struct FlowNeutralIntakeComposerContent: View {
         .onDisappear { attachmentPreview = nil }
         .accessibilityIdentifier("conversation.neutral.attachment")
       }
-      if let phase = model.mediaPhase {
-        ProgressView(
-          phase == .uploading
-            ? (english ? "Sending…" : "Enviando…")
-            : (english ? "Flow is reviewing…" : "O Flow está analisando…")
-        )
-        .accessibilityIdentifier("conversation.neutral.media-progress")
-      }
       HStack(alignment: .bottom, spacing: BodyFlowSpacing.xs) {
         if let capture, model.captureContext != nil {
           Menu {
@@ -185,6 +177,7 @@ struct FlowNeutralIntakeTranscriptContent: View {
   var historicalSavedIntakeIDs: Set<UUID> = []
   var historicalOriginalIntakeIDs: Set<UUID> = []
   var historicalTerminalIntakeIDs: Set<UUID> = []
+  var onResponseWaitPresented: () -> Void = {}
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
@@ -238,29 +231,31 @@ struct FlowNeutralIntakeTranscriptContent: View {
           if !historicalOriginalIntakeIDs.contains(row.input.intakeID) {
             source(row.input, sent: false)
           }
-          Text(status(row)).accessibilityIdentifier("conversation.neutral.state")
-          if let response = model.state(intakeID: row.input.intakeID) {
-            if let question = response.question { questionContent(question.text) }
-            if case .workout(.state(let state)) = response.result, let question = state.question {
-              questionContent(question.text)
-            }
-          }
-          if row.state == .queued && row.hold == nil {
-            Button(english ? "Send original" : "Enviar original") {
-              Task { await model.sendQueued(intakeID: row.input.intakeID) }
-            }
-            Button(english ? "Discard unsent" : "Descartar não enviado", role: .destructive) {
-              Task { await model.discardUnsent(intakeID: row.input.intakeID) }
-            }
-          } else {
-            Button(reviewButtonLabel(row)) {
-              Task { await model.reconcile(intakeID: row.input.intakeID) }
-            }
-            if model.canContinue(intakeID: row.input.intakeID) {
-              Button(english ? "Continue the same original" : "Continuar o mesmo original") {
-                Task { await model.continueOriginal(intakeID: row.input.intakeID) }
+          if model.respondingIntakeID != row.input.intakeID {
+            Text(status(row)).accessibilityIdentifier("conversation.neutral.state")
+            if let response = model.state(intakeID: row.input.intakeID) {
+              if let question = response.question { questionContent(question.text) }
+              if case .workout(.state(let state)) = response.result, let question = state.question {
+                questionContent(question.text)
               }
-              .accessibilityIdentifier("conversation.neutral.continue")
+            }
+            if row.state == .queued && row.hold == nil {
+              Button(english ? "Send original" : "Enviar original") {
+                Task { await model.sendQueued(intakeID: row.input.intakeID) }
+              }
+              Button(english ? "Discard unsent" : "Descartar não enviado", role: .destructive) {
+                Task { await model.discardUnsent(intakeID: row.input.intakeID) }
+              }
+            } else {
+              Button(reviewButtonLabel(row)) {
+                Task { await model.reconcile(intakeID: row.input.intakeID) }
+              }
+              if model.canContinue(intakeID: row.input.intakeID) {
+                Button(english ? "Continue the same original" : "Continuar o mesmo original") {
+                  Task { await model.continueOriginal(intakeID: row.input.intakeID) }
+                }
+                .accessibilityIdentifier("conversation.neutral.continue")
+              }
             }
           }
         }.disabled(model.isWorking).padding(BodyFlowSpacing.md)
@@ -298,14 +293,24 @@ struct FlowNeutralIntakeTranscriptContent: View {
         )
         .accessibilityIdentifier("conversation.neutral.offline-queued")
       }
-      if model.isWorking, model.mediaPhase == nil {
-        ProgressView(english ? "Please wait…" : "Só um instante…")
-      }
       if let failure = model.failure {
         Text(failureText(failure)).foregroundStyle(BodyFlowColor.secondaryText)
           .accessibilityIdentifier("conversation.neutral.failure")
       }
+      if model.respondingIntakeID != nil {
+        FlowWaitingBubble(
+          label: responseWaitLabel, onPresented: onResponseWaitPresented
+        )
+        .id("conversation.response-wait")
+      }
     }.accessibilityIdentifier("conversation.neutral.transcript")
+  }
+
+  private var responseWaitLabel: String {
+    if model.mediaPhase == .uploading || (model.mediaPhase == nil && model.attachment != nil) {
+      return english ? "Sending…" : "Enviando…"
+    }
+    return english ? "Waiting for Flow…" : "Aguardando o Flow…"
   }
   private func source(_ input: FlowNeutralIntakeInput, sent: Bool = true) -> some View {
     FlowChatBubble(outgoing: true) {

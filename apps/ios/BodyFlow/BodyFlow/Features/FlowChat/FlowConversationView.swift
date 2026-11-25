@@ -10,10 +10,14 @@ struct FlowConversationView: View {
   @State private var capturePresentation: FlowConversationCapturePresentation?
   @Environment(\.locale) private var locale
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.bodyFlowReduceMotion) private var reduceMotion
   @State private var keyboardClearance: CGFloat = 0
   @State private var discardID: UUID?
   @State private var discardIsPrepared = false
   @State private var transcriptPositioning = FlowTranscriptPositioning()
+  @State private var isOpeningConversation = true
+  @State private var isLoadingEarlierHistory = false
+  @State private var scrolledWhileWaiting = false
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
 
   var body: some View {
@@ -63,7 +67,10 @@ struct FlowConversationView: View {
     ) { presentation in
       FlowConversationMealReplyView(model: presentation.model)
     }
-    .task { await model.refreshConversation() }
+    .task {
+      await model.refreshConversation()
+      isOpeningConversation = false
+    }
     .onDisappear { model.cancelTransientWork() }
     .onChange(of: model.isWorking) { _, busy in if !busy { Task { await model.loadHistory() } } }
     .onChange(of: model.neutralIntake?.historyRefreshID) { _, completedWork in
@@ -118,9 +125,20 @@ struct FlowConversationView: View {
 
   private var transcript: some View {
     ScrollViewReader { reader in
-      transcriptScrollView
+      transcriptScrollView {
+        guard !scrolledWhileWaiting else { return }
+        withAnimation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion)) {
+          reader.scrollTo("conversation.response-wait", anchor: .bottom)
+        }
+      }
         .onScrollPhaseChange { _, phase in
-          if phase == .interacting { transcriptPositioning.userScrolled() }
+          if phase == .interacting {
+            transcriptPositioning.userScrolled()
+            scrolledWhileWaiting = model.neutralIntake?.respondingIntakeID != nil
+          }
+        }
+        .onChange(of: model.neutralIntake?.respondingIntakeID) { _, _ in
+          scrolledWhileWaiting = false
         }
         .onChange(of: model.neutralIntake?.activePreparedIntakeID) { _, id in
           if let id, model.neutralIntake?.attachment != nil {
@@ -135,17 +153,32 @@ struct FlowConversationView: View {
     }
   }
 
-  private var transcriptScrollView: some View {
+  private var showsOpeningSkeleton: Bool {
+    isOpeningConversation && model.failure == nil
+      && model.unifiedRows.isEmpty && model.journalRows.isEmpty && model.threadRows.isEmpty
+      && model.savedRows.isEmpty && model.pendingRows.isEmpty
+      && model.neutralIntake?.savedRows.isEmpty != false
+      && model.neutralIntake?.pendingRows.isEmpty != false
+      && model.neutralIntake?.terminalRows.isEmpty != false
+  }
+
+  private func transcriptScrollView(onResponseWaitPresented: @escaping () -> Void) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
         Text(english ? "Performe AI assistant" : "Assistente de IA do Performe")
           .font(BodyFlowTypography.caption)
           .foregroundStyle(BodyFlowColor.secondaryText)
           .frame(maxWidth: .infinity)
-        if model.isRefreshing {
-          ProgressView(english ? "Updating…" : "Atualizando…").accessibilityIdentifier(
-            "conversation.refreshing")
+        Group {
+          if showsOpeningSkeleton {
+            FlowHistorySkeleton(
+              label: english ? "Opening conversation…" : "Abrindo conversa…",
+              identifier: "conversation.history-loading")
+              .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
+          }
         }
+        .animation(
+          BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: showsOpeningSkeleton)
         if let replies = model.mealReplies {
           if replies.pendingIntent != nil {
             Button(
@@ -273,9 +306,18 @@ struct FlowConversationView: View {
         }
         if model.hasMoreHistory {
           Button(english ? "Load earlier reports" : "Carregar relatos anteriores") {
-            Task { await model.loadHistory(reset: false) }
+            Task {
+              isLoadingEarlierHistory = true
+              defer { isLoadingEarlierHistory = false }
+              await model.loadHistory(reset: false)
+            }
           }
           .disabled(model.isLoadingHistory || model.isLoadingUnifiedHistory)
+          if isLoadingEarlierHistory {
+            FlowWaitingBubble(
+              label: english ? "Loading earlier messages…" : "Carregando mensagens anteriores…",
+              identifier: "conversation.earlier-loading")
+          }
         }
         ForEach(Array(model.unifiedRows.reversed()), id: \.eventID) { entry in
           VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
@@ -318,9 +360,6 @@ struct FlowConversationView: View {
             }
           }.id(entry.eventID)
         }
-        if model.isLoadingHistory || model.isLoadingUnifiedHistory {
-          ProgressView(english ? "Loading history…" : "Carregando histórico…")
-        }
         FlowConversationHistoryRecoveryContent(model: model, english: english)
         if model.mealQuestionOrigins != nil {
           FlowConversationMealQuestionOriginsContent(model: model)
@@ -334,7 +373,8 @@ struct FlowConversationView: View {
             historicalMealIDs: Set(neutral.savedRows.filter { model.hasJournalChild($0.childID) }.map(\.childID)),
             historicalSavedIntakeIDs: model.unifiedSavedIntakeIDs,
             historicalOriginalIntakeIDs: Set(model.unifiedRows.filter { $0.kind == .intake }.compactMap(\.intakeID)),
-            historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs)
+            historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs,
+            onResponseWaitPresented: onResponseWaitPresented)
         }
         ForEach(model.pendingRows) { row in
           source(row.command.source)
@@ -394,12 +434,10 @@ struct FlowConversationView: View {
           .accessibilityIdentifier("conversation.queued-offline")
         }
         if model.isWorking {
-          ProgressView(
-            model.mediaPhase == .uploading
-              ? (english ? "Sending attachment…" : "Enviando anexo…")
-              : model.mediaPhase == .processing
-                ? (english ? "Reading attachment…" : "Lendo anexo…")
-                : (english ? "Waiting for confirmation…" : "Aguardando confirmação…"))
+          FlowWaitingBubble(
+            label: model.mediaPhase == .uploading
+              ? (english ? "Sending…" : "Enviando…")
+              : (english ? "Waiting for Flow…" : "Aguardando o Flow…"))
         }
         if let failure = model.failure {
           Text(failureText(failure)).foregroundStyle(BodyFlowColor.secondaryText)

@@ -21,7 +21,7 @@ import {
 } from './conversation-feedback-public-composition'
 import { conversationFeedbackV3WriterEnabled } from './conversation-feedback-server-policy'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
-import { resolveConversationWorkoutReport } from './conversation-workout-authority'
+import { resolveStoredConversationWorkoutReport } from './conversation-workout-authority'
 import { createSupabaseConversationWorkoutBackend } from './conversation-workout-backend'
 import {
   bindConversationWorkoutCommand,
@@ -128,7 +128,7 @@ function currentWorkoutPresentation(
 
 function decisionState(
   identity: ConversationWorkoutReadIdentity,
-  decision: ReturnType<typeof resolveConversationWorkoutReport>,
+  decision: ReturnType<typeof resolveStoredConversationWorkoutReport>,
 ) {
   if (decision.status === 'needs_reply')
     return state(identity, 'needs_reply', { question: decision.question })
@@ -353,7 +353,10 @@ export function createConversationWorkoutCommandService(
             prior.source.context.source_input,
           ),
           source = parseConversationWorkoutSource(command, prior.source)
-        return decisionState(c.identity, resolveConversationWorkoutReport(source))
+        return decisionState(
+          c.identity,
+          resolveStoredConversationWorkoutReport(source, prior.preparation.prepared),
+        )
       }
       return state(c.identity, 'pending', { reason: 'reconciliation_required' })
     },

@@ -149,6 +149,24 @@ function spokenPerformedClause(original: string): PerformedClause | null {
 /** Every owned source unit must independently describe the same completed
  * activity. This is not permission to dispatch from an unsealed generic intake. */
 export function resolveConversationWorkoutReport(original: CapturedConversationWorkoutSource) {
+  return resolvePerformedReport(original, true)
+}
+
+/** A later grammar cannot turn a previously sealed question into a new write. */
+export function resolveStoredConversationWorkoutReport(
+  source: CapturedConversationWorkoutSource,
+  archived: unknown,
+) {
+  const current = resolveConversationWorkoutReport(source)
+  if (current.status !== 'ready') return current
+  const original = resolvePerformedReport(source, false)
+  return original.status !== 'ready' && isDeepStrictEqual(original, archived) ? original : current
+}
+
+function resolvePerformedReport(
+  original: CapturedConversationWorkoutSource,
+  allowSpokenPhrasing: boolean,
+) {
   const source = pinned(original),
     evidence: { unit: string; text: string }[] = []
   let activity: Activity | null = null,
@@ -168,7 +186,7 @@ export function resolveConversationWorkoutReport(original: CapturedConversationW
           normalize(row.slug.replace(/_/gu, ' ')) === name || normalize(row.display_name) === name,
       )
     let clause = performedClause(text)
-    if (!clause || catalogueRows(clause.name).length === 0) {
+    if (allowSpokenPhrasing && (!clause || catalogueRows(clause.name).length === 0)) {
       clause = spokenPerformedClause(text) ?? clause
     }
     if (!clause) return question(source, 'activity')

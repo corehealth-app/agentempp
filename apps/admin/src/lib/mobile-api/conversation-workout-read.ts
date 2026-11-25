@@ -8,7 +8,7 @@ import {
   type ConversationCurrentScopeDependencies,
   createConversationCurrentScope,
 } from './conversation-current-scope'
-import { resolveConversationWorkoutReport } from './conversation-workout-authority'
+import { resolveStoredConversationWorkoutReport } from './conversation-workout-authority'
 import {
   bindConversationWorkoutCommand,
   type CapturedConversationWorkoutSource,
@@ -179,7 +179,7 @@ export function parseConversationWorkoutReconciliation(
       .strict(),
     value.preparation,
   )
-  const decision = resolveConversationWorkoutReport(source)
+  const decision = resolveStoredConversationWorkoutReport(source, preparation.prepared)
   const prepared =
     decision.status === 'ready'
       ? pinConversationWorkoutPreparation(source, preparation.prepared)

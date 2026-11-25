@@ -141,10 +141,17 @@ describe('closed existing workout reconciliation decoder', () => {
     }
   })
 
-  it('reads an immutable question without fulfilling or retyping the command', () => {
+  it.each([
+    ['Fiz caminhada', 'duration_min', 'Quantos minutos durou essa atividade?'],
+    [
+      'Fiz 30 minutos de caminhada no fim da tarde.',
+      'activity',
+      'Qual atividade você realizou e por quantos minutos?',
+    ],
+  ])('reads an immutable question without fulfilling or retyping the command (%s)', (text, field, prompt) => {
     const f = sample(),
       raw = structuredClone(f.wire)
-    raw.source.context.source_input.source = { channel: 'text', text: 'Fiz caminhada' }
+    raw.source.context.source_input.source = { channel: 'text', text }
     const command = bindConversationWorkoutCommand(
       f.identity.ownerId,
       `cmsg1:${f.identity.commandId}`,
@@ -160,9 +167,9 @@ describe('closed existing workout reconciliation decoder', () => {
       epoch: identity.epoch,
       status: 'needs_reply',
       question: {
-        key: workoutDigest({ source_hash: raw.source.source_hash, field: 'duration_min' }),
-        field: 'duration_min',
-        text: 'Quantos minutos durou essa atividade?',
+        key: workoutDigest({ source_hash: raw.source.source_hash, field }),
+        field,
+        text: prompt,
       },
     }
     const wire = {
@@ -172,6 +179,16 @@ describe('closed existing workout reconciliation decoder', () => {
       effect: null,
     }
     expect(parseConversationWorkoutReconciliation(wire, identity)).toEqual(wire)
+    const changed = { ...prepared, question: { ...prepared.question, text: 'Outro texto?' } }
+    expect(() =>
+      parseConversationWorkoutReconciliation(
+        {
+          ...wire,
+          preparation: { prepared: changed, prepared_hash: workoutDigest(changed) },
+        },
+        identity,
+      ),
+    ).toThrow()
   })
 
   it('keeps original receipt and facts after removal of the live row', () => {

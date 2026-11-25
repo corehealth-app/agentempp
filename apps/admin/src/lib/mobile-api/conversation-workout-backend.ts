@@ -4,7 +4,10 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
-import { resolveConversationWorkoutReport } from './conversation-workout-authority'
+import {
+  resolveConversationWorkoutReport,
+  resolveStoredConversationWorkoutReport,
+} from './conversation-workout-authority'
 import {
   type BoundConversationWorkoutCommand,
   parseConversationWorkoutSource,
@@ -155,7 +158,7 @@ export function createConversationWorkoutBackend(
         })
         .strict()
         .parse(rawPreparation)
-      const decision = resolveConversationWorkoutReport(source)
+      const decision = resolveStoredConversationWorkoutReport(source, preparation.prepared)
       const prepared =
         decision.status === 'ready'
           ? pinConversationWorkoutPreparation(source, preparation.prepared)

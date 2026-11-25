@@ -119,6 +119,31 @@ describe('concrete workout backend composition', () => {
     expect(await h.service.report(h.command, h.epoch)).toEqual(result)
     expect(h.rpc.mock.calls.map((c) => c[0])).toEqual(['read_conversation_workout_preparation'])
   })
+  it('replays the old question without writing a now-recognized workout', async () => {
+    const h = setup('Fiz 30 minutos de caminhada no fim da tarde.')
+    const prepared = {
+      owner_id: h.command.ownerId,
+      command_id: h.command.commandId,
+      input_hash: h.command.inputHash,
+      source_hash: h.rawSource.source_hash,
+      epoch: h.epoch,
+      status: 'needs_reply',
+      question: {
+        key: workoutDigest({ source_hash: h.rawSource.source_hash, field: 'activity' }),
+        field: 'activity',
+        text: 'Qual atividade você realizou e por quantos minutos?',
+      },
+    }
+    h.responses.read_conversation_workout_preparation = {
+      action: 'available',
+      source: h.rawSource,
+      preparation: { prepared_hash: workoutDigest(prepared), prepared },
+    }
+    expect(await h.service.report(h.command, h.epoch)).toEqual(prepared)
+    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'read_conversation_workout_preparation',
+    ])
+  })
   it('revocation after an await is sticky and prevents every later RPC', async () => {
     const h = setup()
     h.checkCurrentScope

@@ -17,7 +17,6 @@ struct FlowConversationView: View {
   @State private var transcriptPositioning = FlowTranscriptPositioning()
   @State private var isOpeningConversation = true
   @State private var isLoadingEarlierHistory = false
-  @State private var scrolledWhileWaiting = false
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
 
   var body: some View {
@@ -125,31 +124,28 @@ struct FlowConversationView: View {
 
   private var transcript: some View {
     ScrollViewReader { reader in
-      transcriptScrollView {
-        guard !scrolledWhileWaiting else { return }
-        withAnimation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion)) {
-          reader.scrollTo("conversation.response-wait", anchor: .bottom)
-        }
-      }
+      transcriptScrollView
         .onScrollPhaseChange { _, phase in
-          if phase == .interacting {
-            transcriptPositioning.userScrolled()
-            scrolledWhileWaiting = model.neutralIntake?.respondingIntakeID != nil
-          }
+          if phase == .interacting { transcriptPositioning.userScrolled() }
         }
-        .onChange(of: model.neutralIntake?.respondingIntakeID) { _, _ in
-          scrolledWhileWaiting = false
-        }
-        .onChange(of: model.neutralIntake?.activePreparedIntakeID) { _, id in
-          if let id, model.neutralIntake?.attachment != nil {
-            reader.scrollTo(FlowTranscriptPositioning.intakeAnchor(id), anchor: .bottom)
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
+          if transcriptPositioning.followsSendingMessage {
+            scroll(to: FlowTranscriptPositioning.latestAnchor, in: reader)
           }
         }
         .onChange(of: transcriptPositionObservation, initial: true) { _, observation in
           if let anchor = transcriptPositioning.observe(observation) {
-            reader.scrollTo(anchor, anchor: .top)
+            scroll(to: anchor, in: reader)
           }
         }
+    }
+  }
+
+  private func scroll(to anchor: String, in reader: ScrollViewProxy) {
+    if anchor == FlowTranscriptPositioning.latestAnchor {
+      reader.scrollTo(anchor, anchor: .bottom)
+    } else {
+      reader.scrollTo(anchor, anchor: .top)
     }
   }
 
@@ -162,7 +158,7 @@ struct FlowConversationView: View {
       && model.neutralIntake?.terminalRows.isEmpty != false
   }
 
-  private func transcriptScrollView(onResponseWaitPresented: @escaping () -> Void) -> some View {
+  private var transcriptScrollView: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
         Text(english ? "Performe AI assistant" : "Assistente de IA do Performe")
@@ -373,8 +369,7 @@ struct FlowConversationView: View {
             historicalMealIDs: Set(neutral.savedRows.filter { model.hasJournalChild($0.childID) }.map(\.childID)),
             historicalSavedIntakeIDs: model.unifiedSavedIntakeIDs,
             historicalOriginalIntakeIDs: Set(model.unifiedRows.filter { $0.kind == .intake }.compactMap(\.intakeID)),
-            historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs,
-            onResponseWaitPresented: onResponseWaitPresented)
+            historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs)
         }
         ForEach(model.pendingRows) { row in
           source(row.command.source)
@@ -443,6 +438,9 @@ struct FlowConversationView: View {
           Text(failureText(failure)).foregroundStyle(BodyFlowColor.secondaryText)
             .accessibilityIdentifier("conversation.failure")
         }
+        Color.clear.frame(height: 0)
+          .id(FlowTranscriptPositioning.latestAnchor)
+          .accessibilityHidden(true)
       }
       .padding(BodyFlowSpacing.md)
     }
@@ -471,7 +469,8 @@ struct FlowConversationView: View {
       historyIDs: model.unifiedRows.map(\.eventID) + model.journalRows.map(\.eventID)
         + model.threadRows.map(\.eventID),
       historyLoading: model.isLoadingUnifiedHistory || model.isLoadingHistory,
-      localResultIDs: results, historicalAnchors: history)
+      localResultIDs: results, historicalAnchors: history,
+      activeSendID: model.neutralIntake?.respondingIntakeID)
   }
 
   private func linkedCard(_ row: FlowConversationLinkedMealRow) -> some View {

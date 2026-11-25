@@ -202,13 +202,62 @@ actor ConversationNeutralIntakeController: ConversationNeutralIntakeControlling 
     let terminalCAS = try await outbox.captureTerminalCAS(
       ticket: ticket, server: context.observation)
     do {
-      let value = try await network { try await self.repository.submit(ticket) }
-      try await receive(value, ticket, context, terminalCAS: terminalCAS, fromRead: false, publish)
+      let result = try await submitObservingMediaReceipt(ticket)
+      try await receive(
+        result.value, ticket, context, terminalCAS: terminalCAS, fromRead: result.fromRead, publish)
     } catch {
       try await failure(error, ticket, context, publish)
       throw error
     }
   }
+
+  private func submitObservingMediaReceipt(_ ticket: FlowNeutralIntakeTicket) async throws
+    -> (value: FlowNeutralIntakeResponseSnapshot, fromRead: Bool)
+  {
+    guard case .media = ticket.input.source else {
+      return (try await network { try await self.repository.submit(ticket) }, false)
+    }
+    let submitted: FlowNeutralIntakeResponseSnapshot
+    do {
+      submitted = try await network { try await self.repository.submit(ticket) }
+    } catch let error as MobileAPITransportError {
+      switch error {
+      case .network, .timeout, .invalidResponse, .decodingFailure, .responseTooLarge, .server:
+        if let settled = try await observeSettledMediaReceipt(ticket) { return (settled, true) }
+      default: break
+      }
+      throw error
+    }
+    let pending: Bool
+    switch submitted.result {
+    case .meal(.state(let value)): pending = value.status == .pending
+    case .workout(.state(let value)): pending = value.status == .pending
+    default: pending = submitted.status == .pending
+    }
+    if pending, let settled = try await observeSettledMediaReceipt(ticket) {
+      return (settled, true)
+    }
+    return (submitted, false)
+  }
+
+  /// A media request can commit after the app loses its reply. Check the
+  /// same ticket once without dispatching it again or granting replay.
+  private func observeSettledMediaReceipt(_ ticket: FlowNeutralIntakeTicket) async throws
+    -> FlowNeutralIntakeResponseSnapshot?
+  {
+    do {
+      let value = try await network { try await self.repository.read(ticket) }
+      if value.factualAcknowledgement(for: ticket) != nil || value.deliveryState == .notRecorded {
+        return value
+      }
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      try Task.checkCancellation()
+    }
+    return nil
+  }
+
   private func receive(
     _ response: FlowNeutralIntakeResponseSnapshot, _ ticket: FlowNeutralIntakeTicket,
     _ context: ConversationCommandContext, terminalCAS: ConversationNeutralIntakeTerminalCAS,

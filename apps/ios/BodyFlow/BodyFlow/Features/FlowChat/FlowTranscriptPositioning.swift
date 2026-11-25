@@ -13,12 +13,18 @@ struct FlowTranscriptPositioning {
     let historyLoading: Bool
     let localResultIDs: [ResultID]
     var historicalAnchors: [ResultID: String] = [:]
+    var activeSendID: UUID? = nil
   }
 
+  static let latestAnchor = "conversation.latest"
   private var owner: ObjectIdentifier?
   private var initiallyPositioned = false
   private var seenLocalResults: Set<ResultID> = []
   private var awaitingHistoryResult: ResultID?
+  private var awaitingSendHistory: ResultID?
+  private var activeSendID: UUID?
+  private var followedSend = false
+  var followsSendingMessage: Bool { activeSendID != nil && followedSend }
 
   static func intakeAnchor(_ id: UUID) -> String {
     "intake/" + id.uuidString.lowercased()
@@ -86,10 +92,35 @@ struct FlowTranscriptPositioning {
       initiallyPositioned = false
       seenLocalResults = Set(observation.localResultIDs)
       awaitingHistoryResult = nil
+      awaitingSendHistory = nil
+      activeSendID = nil
+      followedSend = false
     }
 
     let newResults = observation.localResultIDs.filter { !seenLocalResults.contains($0) }
     seenLocalResults.formUnion(observation.localResultIDs)
+    if let sending = observation.activeSendID {
+      guard activeSendID != sending else { return nil }
+      activeSendID = sending
+      followedSend = true
+      initiallyPositioned = true
+      awaitingHistoryResult = nil
+      awaitingSendHistory = nil
+      return Self.latestAnchor
+    }
+    if let sent = activeSendID {
+      activeSendID = nil
+      guard followedSend else { return nil }
+      let result = ResultID.intake(sent)
+      awaitingSendHistory = historicalAnchor(result, in: observation) == nil ? result : nil
+      return Self.latestAnchor
+    }
+    if let result = awaitingSendHistory,
+      historicalAnchor(result, in: observation) != nil
+    {
+      awaitingSendHistory = nil
+      return Self.latestAnchor
+    }
     if let latest = newResults.last {
       initiallyPositioned = true
       let historical = historicalAnchor(latest, in: observation)
@@ -117,5 +148,7 @@ struct FlowTranscriptPositioning {
   mutating func userScrolled() {
     initiallyPositioned = true
     awaitingHistoryResult = nil
+    awaitingSendHistory = nil
+    followedSend = false
   }
 }

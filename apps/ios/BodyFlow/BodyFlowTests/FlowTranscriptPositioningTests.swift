@@ -18,6 +18,46 @@ struct FlowTranscriptPositioningTests {
   }
   private func intake(_ id: UUID) -> String { "intake/" + id.uuidString.lowercased() }
 
+  @Test func ownSendAndItsHistoryReplacementKeepTheBottomAnchor() {
+    let owner = Owner()
+    var policy = FlowTranscriptPositioning()
+    _ = policy.observe(snapshot(owner, history: ["old"]))
+    var sending = snapshot(owner, history: ["old"])
+    sending.activeSendID = first
+    #expect(policy.observe(sending) == FlowTranscriptPositioning.latestAnchor)
+    #expect(policy.followsSendingMessage)
+
+    sending = snapshot(owner, history: ["old"], local: [first])
+    sending.activeSendID = first
+    #expect(policy.observe(sending) == nil)
+    #expect(
+      policy.observe(snapshot(owner, history: ["old"], local: [first]))
+        == FlowTranscriptPositioning.latestAnchor)
+    #expect(!policy.followsSendingMessage)
+    #expect(
+      policy.observe(snapshot(owner, history: [intake(first), "old"]))
+        == FlowTranscriptPositioning.latestAnchor)
+    #expect(policy.observe(snapshot(owner, history: [intake(first), "old", "older"])) == nil)
+  }
+
+  @Test func readingOlderMessagesDuringSendSuppressesItsReplyAndHistoryJumps() {
+    let owner = Owner()
+    var policy = FlowTranscriptPositioning()
+    _ = policy.observe(snapshot(owner, history: ["old"]))
+    var sending = snapshot(owner, history: ["old"])
+    sending.activeSendID = first
+    _ = policy.observe(sending)
+    policy.userScrolled()
+    #expect(!policy.followsSendingMessage)
+    #expect(policy.observe(snapshot(owner, history: ["old"], local: [first])) == nil)
+    #expect(policy.observe(snapshot(owner, history: [intake(first), "old"])) == nil)
+
+    var next = snapshot(owner, history: [intake(first), "old"])
+    next.activeSendID = second
+    #expect(policy.observe(next) == FlowTranscriptPositioning.latestAnchor)
+    #expect(policy.followsSendingMessage)
+  }
+
   @Test func initialHistoryPositionsNewestOnlyAfterItsPageSettles() {
     let owner = Owner()
     var policy = FlowTranscriptPositioning()

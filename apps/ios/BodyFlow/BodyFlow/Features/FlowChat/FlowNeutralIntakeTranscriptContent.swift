@@ -177,7 +177,6 @@ struct FlowNeutralIntakeTranscriptContent: View {
   var historicalSavedIntakeIDs: Set<UUID> = []
   var historicalOriginalIntakeIDs: Set<UUID> = []
   var historicalTerminalIntakeIDs: Set<UUID> = []
-  var onResponseWaitPresented: () -> Void = {}
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
@@ -298,10 +297,7 @@ struct FlowNeutralIntakeTranscriptContent: View {
           .accessibilityIdentifier("conversation.neutral.failure")
       }
       if model.respondingIntakeID != nil {
-        FlowWaitingBubble(
-          label: responseWaitLabel, onPresented: onResponseWaitPresented
-        )
-        .id("conversation.response-wait")
+        FlowWaitingBubble(label: responseWaitLabel)
       }
     }.accessibilityIdentifier("conversation.neutral.transcript")
   }

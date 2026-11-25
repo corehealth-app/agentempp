@@ -96,6 +96,67 @@ struct ConversationNeutralIntakeRuntimeTests {
     #expect(await f.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
     await controller.close()
   }
+  @Test(arguments: ["lost-response", "processing", "status-unavailable"])
+  func uncertainMediaSendChecksTheOriginalReceiptOnce(_ scenario: String) async throws {
+    let disk = try OutboxDiskFixture()
+    defer { disk.remove() }
+    let f = try ConversationHTTPFixture()
+    let lease = try await f.lifecycle.leaseForRequest()
+    let unit = try mediaIntakeUnit("audio_workout")
+    let ticket = try mediaIntakeTicket(unit)
+    let packet = unit["response"] as! [String: Any]
+    let session = try neutralHTTP([
+      "schema": "conversation.intake-session.v1", "auth_user_id": lease.userID,
+      "owner_id": ticket.ownerID.uuidString.lowercased(), "epoch": ticket.epoch.uuidString.lowercased(),
+      "observed_at": "2026-11-03T12:00:00Z", "intake_protocol": "conversation.intake.v1",
+    ])
+    let payload = try neutralHTTP(packet)
+    let waiting = try neutralHTTP([
+      "schema": "conversation.intake-result.v1", "status": "pending", "intake": packet["intake"]!,
+      "lookup": [
+        "ownerId": ticket.ownerID.uuidString.lowercased(),
+        "intakeId": ticket.input.intakeID.uuidString.lowercased(), "inputHash": ticket.input.inputHash,
+        "epoch": ticket.epoch.uuidString.lowercased(),
+      ], "reason": "processing",
+    ], status: 202)
+    let mediaHeaders = ["X-Conversation-Media-Provenance": "1", "Cache-Control": "no-store"]
+    await f.stub.respond { request, _ in
+      if request.url?.path.hasSuffix("/session") == true { return session }
+      if request.httpMethod == "POST" && scenario != "processing" {
+        throw URLError(.networkConnectionLost)
+      }
+      if scenario == "status-unavailable" { return .failure(503, "synthetic_unavailable") }
+      var reply = request.httpMethod == "POST" ? waiting : payload
+      reply.headers.merge(mediaHeaders) { _, updated in updated }
+      return reply
+    }
+    let controller = try await ConversationNeutralIntakeController.open(
+      transport: f.transport, lifecycle: f.lifecycle, store: disk.store,
+      keyVault: .init(service: "neutral-media-receipt", security: OutboxKeychainFake()))
+    let seen = await MainActor.run { NeutralRuntimeProbe() }
+    let publish: ConversationNeutralIntakeController.Publisher = {
+      seen.events.append($0)
+      if case .saved = $0 { seen.saved += 1 }
+    }
+    try await controller.publishSnapshot(publish)
+    let context = try #require(
+      await seen.events.compactMap { if case .scopeAccepted(let value) = $0 { value } else { nil } }.last)
+    _ = try await controller.enqueue(input: ticket.input, expectedContext: context.identity, publish: publish)
+    if scenario == "status-unavailable" {
+      await #expect(throws: (any Error).self) {
+        try await controller.send(intakeID: ticket.input.intakeID, publish: publish)
+      }
+      #expect(await seen.saved == 0)
+    } else {
+      try await controller.send(intakeID: ticket.input.intakeID, publish: publish)
+      #expect(await seen.saved == 1)
+    }
+    let requests = await f.stub.requests.filter { $0.url?.path.hasSuffix("/session") != true }
+    #expect(requests.map(\.httpMethod) == ["POST", "GET"])
+    #expect(requests.last?.url?.lastPathComponent == ticket.input.intakeID.uuidString.lowercased())
+    #expect(requests.last?.value(forHTTPHeaderField: "X-Conversation-Input-Hash") == ticket.input.inputHash)
+    await controller.close()
+  }
   @Test func actorCapacityUsesTheExistingFiftyRowsAndRefusesWithoutCiphertextMutation() async throws
   {
     let f = try await neutralDisk()

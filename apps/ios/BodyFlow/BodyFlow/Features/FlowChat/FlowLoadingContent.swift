@@ -4,7 +4,6 @@ import UIKit
 struct FlowWaitingBubble: View {
     let label: String
     var identifier = "conversation.responding"
-    var onPresented: () -> Void = {}
     @Environment(\.bodyFlowReduceMotion) private var reduceMotion
     @State private var gate = BodyFlowLoadingGate()
 
@@ -26,7 +25,6 @@ struct FlowWaitingBubble: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier(identifier)
                 .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
-                .onAppear(perform: onPresented)
             }
         }
         .animation(BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: gate.isVisible)

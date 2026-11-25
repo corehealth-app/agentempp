@@ -6,6 +6,7 @@ import {
   consumedCompositionParts,
   consumedFoodDefault,
   consumedIngredientReference,
+  consumedMealEstimateReference,
   draftFromVisionItems,
   labelCandidateId,
   type MealCalcResult,
@@ -716,7 +717,7 @@ async function materializeConversationMealCore(
       // calculator's exact component resolution, preserving the original name,
       // source positions and total mass. No unknown/partial ingredient passes.
       if (!found) {
-        const reference = consumedIngredientReference(name)
+        const reference = consumedIngredientReference(name) ?? consumedMealEstimateReference(name)
         if (reference && catalogueWording(reference) !== whole)
           found = await qualifyWhole(catalogueWording(reference))
       }

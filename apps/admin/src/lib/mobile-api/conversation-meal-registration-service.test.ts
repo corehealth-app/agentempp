@@ -14,6 +14,7 @@ import { buildConversationMealInterpretationSource } from './conversation-meal-i
 import { createOpenRouterConversationMealInterpreter } from './conversation-meal-interpreter'
 import { materializeConversationMealInterpretation } from './conversation-meal-materialization'
 import { registerPersistedConversationMeal } from './conversation-meal-registration-service'
+import { workoutDigest } from './conversation-workout-contracts'
 import { MobileApiError } from './http'
 
 const id = '10000000-0000-4000-8000-000000000010'
@@ -196,6 +197,203 @@ function stored(receipt: unknown = null, resolved: unknown = null) {
 }
 
 describe('actual source-to-factual meal registration composition', () => {
+  it('registers a four-item photo-only report and requests the meal feedback', async () => {
+    const d = dependencies()
+    const original = writerCommand()
+    const binding = writerBinding()
+    const origin = {
+      schema: 'conversation.intake-media-origin.v1' as const,
+      intake_id: '10000000-0000-4000-8000-000000000011',
+      input_hash: 'd'.repeat(64),
+      source_hash: 'e'.repeat(64),
+      epoch: binding.epoch,
+      claim_id: '10000000-0000-4000-8000-000000000012',
+      decision_hash: 'f'.repeat(64),
+    }
+    const action = bindConversationCommand(original.ownerId, `cmsg1:${original.commandId}`, {
+      command_protocol: 'conversation.command.v1',
+      command_id: original.commandId,
+      kind: 'meal.report',
+      source: { channel: 'media', media_asset_id: id, user_action: 'report_actual_record' },
+      intake_origin: origin,
+    })
+    const observations = [
+      { name: 'pão francês', quantity_g_estimate: 50, confidence: 0.95 },
+      { name: 'ovo mexido', quantity_g_estimate: 100, confidence: 0.9 },
+      { name: 'geleia de morango', quantity_g_estimate: 30, confidence: 0.9 },
+      { name: 'bebida achocolatada', quantity_g_estimate: 200, confidence: 0.85 },
+    ]
+    const media = {
+      asset_id: id,
+      catalog_version: 2 as const,
+      owner_id: original.ownerId,
+      kind: 'conversation_photo' as const,
+      status: 'processed' as const,
+      processed_at: '2026-11-04T11:59:59Z',
+      updated_at: '2026-11-04T11:59:59Z',
+      context_text: null,
+      processing_result: {
+        schema: 'conversation.image-result.v1',
+        status: 'ready',
+        classification: 'meal',
+        analysis: { type: 'meal', items: observations },
+      },
+    }
+    d.sources.capture.mockResolvedValue({
+      ...d.source,
+      context: {
+        ...d.source.context,
+        schema: 'conversation.meal-source.v2',
+        input_hash: action.inputHash,
+        source_input: action.command,
+        source_units: ['vision_items'],
+        source_evidence: { caption: null, context_text: null, transcript: null },
+        media,
+        intake_projection: {
+          schema: 'conversation.intake-media-projection.v1',
+          origin,
+          media: {
+            asset_id: id,
+            catalog_version: 2,
+            owner_id: original.ownerId,
+            kind: media.kind,
+            processed_at: media.processed_at,
+            updated_at: media.updated_at,
+            processing_hash: workoutDigest({
+              context_text: media.context_text,
+              processing_result: media.processing_result,
+            }),
+          },
+          child_input_hash: action.inputHash,
+        },
+      },
+    })
+    d.journal.admit.mockResolvedValue({
+      action: 'admitted',
+      binding: { ...binding, input_hash: action.inputHash },
+    })
+    d.interpret.mockResolvedValue({
+      ...interpretation(),
+      input_hash: action.inputHash,
+      reason: 'explicit_media_action',
+      source_units: ['vision_items'],
+      sources: [
+        { unit: 'vision_items', classification: 'visual', spans: [], visual_indexes: [0, 1, 2, 3] },
+      ],
+      foods: observations.map((_, index) => ({
+        index,
+        name: null,
+        quantity: null,
+        unit: null,
+        visual_index: index,
+      })),
+    })
+    const receipt = {
+      ...writerReceipt(),
+      input_hash: action.inputHash,
+      meal_type: 'cafe',
+      log_ids: observations.map((_, index) => `10000000-0000-4000-8000-00000000002${index}`),
+    }
+    d.writer.commit.mockResolvedValue({ action: 'committed', receipt })
+    const read = Promise.resolve({ data: [], error: null })
+    Object.assign(read, {
+      select: () => read,
+      eq: () => read,
+      or: () => read,
+      neq: () => read,
+      gte: () => read,
+      order: () => read,
+      limit: () => read,
+    })
+    const catalog = [
+      {
+        id: 5,
+        name_pt: 'Pão, trigo, francês',
+        category: 'Cereais',
+        kcal_per_100g: 300,
+        protein_g: 8,
+        carbs_g: 59,
+        fat_g: 3,
+        fiber_g: 2.3,
+      },
+      {
+        id: 6,
+        name_pt: 'Egg, whole, cooked, scrambled',
+        category: 'Eggs',
+        kcal_per_100g: 149,
+        protein_g: 10,
+        carbs_g: 1.6,
+        fat_g: 11,
+        fiber_g: 0,
+      },
+      {
+        id: 7,
+        name_pt: 'geleia de morango',
+        category: 'Sweets',
+        kcal_per_100g: 278,
+        protein_g: 0.37,
+        carbs_g: 68.86,
+        fat_g: 0.07,
+        fiber_g: 1.1,
+      },
+      {
+        id: 603,
+        name_pt: 'Leite, de vaca, achocolatado',
+        category: 'Leite e derivados',
+        kcal_per_100g: 82.82,
+        protein_g: 2.1,
+        carbs_g: 14.16,
+        fat_g: 2.17,
+        fiber_g: 0.65,
+      },
+    ]
+    const searchKey = (name: string) =>
+      name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{M}|,/gu, '')
+    const client = {
+      from: vi.fn(() => read),
+      rpc: vi.fn(async (_name: string, { search_term }: { search_term: string }) => ({
+        data: catalog
+          .filter((row) => searchKey(row.name_pt) === searchKey(search_term))
+          .map((row) => ({ ...row, similarity: 1, country_code: 'BR' })),
+        error: null,
+      })),
+    } as unknown as ServiceClient
+    const result = await registerPersistedConversationMeal(
+      client,
+      candidateAuth,
+      `cmsg1:${action.commandId}`,
+      action.command,
+      { ...d, materialize: materializeConversationMealInterpretation, calculate: calcMealMacros },
+    )
+    expect(result, JSON.stringify(result)).toMatchObject({ status: 'saved', receipt })
+    const resolved = d.writer.prepare.mock.calls[0]?.[0].resolved
+    // Noon UTC is 09:00 at the account's civil time zone.
+    expect(resolved).toMatchObject({
+      meal_type: 'cafe',
+      totals: { kcal: 548 },
+      items: [
+        { quantity_g: 50, quantity_basis: 'visual_estimate', kcal: 150 },
+        { quantity_g: 100, quantity_basis: 'visual_estimate', kcal: 149 },
+        { quantity_g: 30, quantity_basis: 'visual_estimate', kcal: 83.4 },
+        {
+          name: 'bebida achocolatada',
+          quantity_g: 200,
+          quantity_basis: 'visual_estimate',
+          nutrition_source: 'llm_estimate',
+          kcal: 165.6,
+          protein_g: 4.2,
+          carbs_g: 28.32,
+          fat_g: 4.34,
+        },
+      ],
+    })
+    expect(d.writer.commit).toHaveBeenCalledTimes(1)
+    expect(d.feedback.ensureOriginal).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     'combined_report',
     'separate_context',

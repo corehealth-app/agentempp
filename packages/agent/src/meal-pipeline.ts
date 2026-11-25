@@ -703,6 +703,14 @@ export function consumedIngredientReference(name: string): string | null {
   return null
 }
 
+/** A verified representative for a generic finished beverage. Preserve the
+ * reported name and disclose an estimate since the recipe or brand is unknown. */
+export function consumedMealEstimateReference(name: string): string | null {
+  return /^bebidas? achocolatadas?$/u.test(normalizeFoodText(name))
+    ? 'Leite, de vaca, achocolatado'
+    : null
+}
+
 /** Parse an explicitly named composition without dropping any ingredient or
  * nutritional qualifier. These are individual catalogue aliases, not recipes:
  * the current verified catalogue must still resolve EVERY returned component.
@@ -2355,11 +2363,13 @@ export async function calcMealMacros(
     // ainda podem se beneficiar do histórico pessoal compatível.
     let prefetchedMatch = await matchFood(supabase, it.food_name, country)
     let referenceName = it.food_name
+    let usedEstimateReference = false
     if (
       captured.consumptionPolicy === 'consumed-meal-v1' &&
       normalizeFoodText(prefetchedMatch.name_pt ?? '') !== normalizeFoodText(it.food_name)
     ) {
-      const reference = consumedIngredientReference(it.food_name)
+      const estimateReference = consumedMealEstimateReference(it.food_name)
+      const reference = consumedIngredientReference(it.food_name) ?? estimateReference
       if (reference) {
         const verified = await matchFood(supabase, reference, country)
         if (
@@ -2369,6 +2379,7 @@ export async function calcMealMacros(
         ) {
           prefetchedMatch = verified
           referenceName = reference
+          usedEstimateReference = reference === estimateReference
         }
       }
     }
@@ -2908,7 +2919,7 @@ export async function calcMealMacros(
         fat_g: fat,
         fiber_g: fiber,
         similarity: m.similarity,
-        source: canonicalSource(it.food_name, m.name_pt),
+        source: usedEstimateReference ? 'llm_estimate' : canonicalSource(it.food_name, m.name_pt),
         display_qty: nat.display_qty,
         display_unit: nat.display_unit,
       })

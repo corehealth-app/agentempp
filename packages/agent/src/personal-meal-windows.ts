@@ -260,7 +260,7 @@ export function resolveMealTypeByHour(
     const first = matches[0]
     if (first) return { expected: first.meal_type, source: 'personal' }
   }
-  return { expected: globalWindowFor(localHour), source: 'global' }
+  return { expected: resolveGlobalMealTypeByHour(localHour), source: 'global' }
 }
 
 function hourFallsInWindow(hour: number, start: number, end: number): boolean {
@@ -278,7 +278,7 @@ function spanOf(w: PersonalWindow): number {
   return 24 - w.p10 + w.p90
 }
 
-function globalWindowFor(hour: number): MealType {
+export function resolveGlobalMealTypeByHour(hour: number): MealType {
   if (hour >= GLOBAL_WINDOWS.cafe.startHour && hour < GLOBAL_WINDOWS.cafe.endHour) return 'cafe'
   if (hour >= GLOBAL_WINDOWS.almoco.startHour && hour < GLOBAL_WINDOWS.almoco.endHour)
     return 'almoco'

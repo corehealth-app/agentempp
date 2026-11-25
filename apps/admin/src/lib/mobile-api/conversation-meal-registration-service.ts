@@ -5,8 +5,10 @@ import { isDeepStrictEqual } from 'node:util'
 import {
   calcMealMacros,
   detectExplicitMealType,
+  getLocalHour,
   isUnresolvedNutritionSource,
   type MealCalcResult,
+  resolveGlobalMealTypeByHour,
 } from '@mpp/agent'
 import type { ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
@@ -526,14 +528,21 @@ export async function registerPersistedConversationMeal(
         'nutrition_unresolved',
         i.foods.map((food) => food.index),
       )
-    // The selected meal always wins over text or time. Optional automatic
-    // personal-routine classification remains an activation gate until the
-    // original source captures its actual owned meal-window evidence.
+    // Keep explicit choices first. A photo-only report uses the account's
+    // civil hour at admission, so retries cannot move a meal across windows.
     const text = evidence.sources
       .filter((source) => source.unit !== 'vision_items')
       .map((source) => source.text ?? '')
       .join('\n')
-    const mealType = command.command.meal_type ?? detectExplicitMealType(text)
+    const photoOnly = isDeepStrictEqual(evidence.source_units, ['vision_items'])
+    const mealType =
+      command.command.meal_type ??
+      detectExplicitMealType(text) ??
+      (photoOnly && typeof s.context.owner.timezone === 'string'
+        ? resolveGlobalMealTypeByHour(
+            getLocalHour(s.context.owner.timezone, new Date(b.admitted_at)),
+          )
+        : null)
     if (!mealType) return notRecorded(command, 'meal_type_required')
     const resolved = resolvedPayload(command, s, m, calc, mealType)
     let prepared: Awaited<ReturnType<ConversationMealWriter['prepare']>>

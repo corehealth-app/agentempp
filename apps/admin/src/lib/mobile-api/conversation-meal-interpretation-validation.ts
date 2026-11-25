@@ -282,8 +282,8 @@ function unclear(source: ConversationMealInterpretationSource): MealInterpretati
   })
 }
 
-/** Rejects incomplete/forged references. Structurally valid but unsupported
- * positive claims can only be downgraded; this function never upgrades a claim. */
+/** Rejects incomplete/forged references. A clean literal report with an
+ * unmeasured food may reach the existing quantity question, never a default. */
 export function validateConversationMealInterpretationModel(
   raw: unknown,
   originalSource: ConversationMealInterpretationSource,
@@ -444,6 +444,34 @@ export function validateConversationMealInterpretationModel(
     }
     for (const [k, span] of spans)
       if (span.food_index !== null && !used.has(k)) return reject('reference_binding')
+    const spokenText = source.sources[0]?.text
+    const labeledText = result.sources[0]
+    if (
+      result.decision === 'clarification_required' &&
+      result.reason === 'ambiguous' &&
+      source.media_binding === null &&
+      result.sources.length === 1 &&
+      labeledText?.unit === 'command_text' &&
+      labeledText.classification === 'mixed' &&
+      typeof spokenText === 'string' &&
+      result.foods.some(({ quantity, name }) => {
+        if (quantity || !name) return false
+        const literal = plain(spokenText.slice(name.start, name.end))
+        // The missing item must be a plain food name. Exclude recipes or
+        // embedded household measures that can yield an automatic portion.
+        return (
+          /^[a-z]+(?: [a-z]+)*$/u.test(literal) &&
+          !/\b(?:com|ou|e|medida|dose|caneca)\b/u.test(literal)
+        )
+      })
+    ) {
+      result = {
+        ...result,
+        decision: 'reported_meal',
+        reason: 'explicit_report',
+        sources: [{ ...labeledText, classification: 'reported' }],
+      }
+    }
     if (result.decision !== 'reported_meal') {
       if (
         positives.has(result.reason) ||
@@ -480,7 +508,7 @@ export function validateConversationMealInterpretationModel(
         if (span.kind === 'other') {
           // Labeling inert punctuation as `other` must not discard an otherwise
           // complete report. Words, numbers, quotes and question marks still
-          // require semantic accounting; this never upgrades a model refusal.
+          // require semantic accounting before any report can progress.
           if (
             !/^[\s,;:.!/]+$/u.test(text) &&
             !(

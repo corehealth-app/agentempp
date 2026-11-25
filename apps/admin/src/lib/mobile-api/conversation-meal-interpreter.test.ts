@@ -2007,6 +2007,59 @@ describe('content-free ambiguous screening observation', () => {
   })
 })
 
+describe('literal current meal with a missing quantity', () => {
+  it.each([
+    ['No almoço comi ', ' e ', 'reported_meal'],
+    ['No almoço não comi ', ' e ', 'clarification_required'],
+    ['No almoço vou comer ', ' e ', 'clarification_required'],
+    ['No almoço comi ', ' ou ', 'clarification_required'],
+  ])('classifies %s with conjunction %s and leaves the quantity absent', (prefix, connector, decision) => {
+    const text = `${prefix}100 g de arroz branco cozido${connector}feijão cozido.`
+    const f = textSource(text)
+    const source = buildConversationMealInterpretationSource(f.command, f.capture)
+    const unit = 'command_text' as const
+    const addresses = ['100', 'g', 'arroz branco cozido', 'feijão cozido'].map((literal) => {
+      const start = text.indexOf(literal, prefix.length)
+      return { unit, start, end: start + literal.length }
+    })
+    const [quantity, measure, rice, beans] = addresses.map((_, i) => at(addresses, i))
+    if (!quantity || !measure || !rice || !beans) throw new Error('Missing literal test span')
+    const raw = {
+      schema: 'conversation.meal-interpretation.v1',
+      decision: 'clarification_required',
+      reason: 'ambiguous',
+      sources: [
+        {
+          unit,
+          classification: 'mixed',
+          visual_indexes: [],
+          spans: [
+            { start: 0, end: 9, kind: 'other', food_index: null },
+            { start: 9, end: 10, kind: 'separator', food_index: null },
+            { start: 10, end: prefix.length - 1, kind: 'report', food_index: null },
+            { start: prefix.length - 1, end: quantity.start, kind: 'separator', food_index: null },
+            { start: quantity.start, end: quantity.end, kind: 'quantity', food_index: 0 },
+            { start: quantity.end, end: measure.start, kind: 'separator', food_index: null },
+            { start: measure.start, end: measure.end, kind: 'unit', food_index: 0 },
+            { start: measure.end, end: rice.start, kind: 'separator', food_index: null },
+            { start: rice.start, end: rice.end, kind: 'food', food_index: 0 },
+            { start: rice.end, end: beans.start, kind: 'separator', food_index: null },
+            { start: beans.start, end: beans.end, kind: 'food', food_index: 1 },
+            { start: beans.end, end: text.length, kind: 'separator', food_index: null },
+          ],
+        },
+      ],
+      foods: [
+        { index: 0, name: rice, quantity, unit: measure, visual_index: null },
+        { index: 1, name: beans, quantity: null, unit: null, visual_index: null },
+      ],
+    }
+    const result = validateConversationMealInterpretationModel(raw, source)
+    expect(result.decision).toBe(decision)
+    if (decision === 'reported_meal') expect(result.foods).toEqual(raw.foods)
+  })
+})
+
 describe('whole-source current meal context after reported foods', () => {
   function suffix(text: string, tailKind: 'other' | 'report' | 'separator' = 'other') {
     const raw = modelFor(text, [{ name: 'iogurte natural', quantity: '200', unit: 'g' }])

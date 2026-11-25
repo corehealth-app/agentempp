@@ -507,6 +507,51 @@ describe('safe routing failure diagnostics without changing the durable outcome'
 })
 
 describe('ordinary photos retain their validated classification and literal discourse', () => {
+  it('preserves a valid meal route when a processed photo gets a malformed provider reason', async () => {
+    const f = setup(
+      JSON.stringify({ ...decision, reason: 'Foto de pão - refeição', question: null }),
+    )
+    const photo = mediaSource(
+      'conversation_photo',
+      {
+        schema: 'conversation.image-result.v1',
+        status: 'ready',
+        classification: 'meal',
+        analysis: {
+          type: 'meal',
+          items: [{ name: 'pão francês', quantity_g_estimate: 50, confidence: 0.9 }],
+        },
+      },
+      null,
+      null,
+    )
+
+    expect(await f.router.route(photo)).toEqual({
+      ...decision,
+      reason: 'provider_reason_unavailable',
+    })
+    expect(f.complete).toHaveBeenCalledOnce()
+    expect(f.diagnostic).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { ...decision, reason: 'Motivo inválido', owner_id: owner },
+    { ...decision, reason: 'Motivo inválido', kind: 'unsafe' },
+    {
+      ...decision,
+      reason: 'Motivo inválido',
+      question: { field: 'description', text: 'Qual item?' },
+    },
+    { ...decision, reason: 123 },
+  ])('rejects provider responses with invalid semantic fields or non-string reasons', async (wire) => {
+    const f = setup(JSON.stringify(wire))
+    expect(await f.router.route(source())).toMatchObject({
+      kind: 'clarification_required',
+      reason: 'routing_unavailable',
+    })
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+
   it.each([
     'meal',
     'equipment',

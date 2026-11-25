@@ -340,7 +340,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-intake-router.ts',
-      'd4a62d927c1f3fc8006f4c0701fff0163fb812a422a5833f64ccafb527a5faae',
+      '2387db5c40f5e28c1e4a2b14710d1e81cb04926d4fbb42abc226c8c910f93a75',
     ],
     [
       'conversation-meal-interpretation-contracts.ts',
@@ -862,10 +862,12 @@ function originalIntakeSourceR172(name: string): string {
   }
   return text
 }
+// The current router substitutes a stable diagnostic reason after an isolated
+// reason-format error. Re-pin the full consumer; existing checks remain strict.
 function certifyVersionedIntakeBridgeR172(body: string): void {
   body = restoreWorkoutFacadeLinkR140(body)
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '921228c6a39061e494283bd41e527304958de5a19654e998855fd9d567adfe1f',
+    '206e4e452022a83bd2b3ef6098a88fb0462e758190fbaf5b86c0875c8dfad570',
   )
   certifyOrdinaryPhotoSourcesR102()
   for (const [name, hash] of [
@@ -887,7 +889,7 @@ function certifyVersionedIntakeBridgeR172(body: string): void {
     ],
     [
       'conversation-intake-router.ts',
-      'd4a62d927c1f3fc8006f4c0701fff0163fb812a422a5833f64ccafb527a5faae',
+      '2387db5c40f5e28c1e4a2b14710d1e81cb04926d4fbb42abc226c8c910f93a75',
     ],
   ])
     expect(
@@ -2294,7 +2296,7 @@ describe('authoritative Mobile API source surface', () => {
             ? [
                 [
                   '32978',
-                  '921228c6a39061e494283bd41e527304958de5a19654e998855fd9d567adfe1f',
+                  '206e4e452022a83bd2b3ef6098a88fb0462e758190fbaf5b86c0875c8dfad570',
                 ] as const,
               ]
             : [
@@ -4107,7 +4109,7 @@ describe('authoritative Mobile API source surface', () => {
           ),
         )
         .digest('hex'),
-    ).toBe('d4a62d927c1f3fc8006f4c0701fff0163fb812a422a5833f64ccafb527a5faae')
+    ).toBe('2387db5c40f5e28c1e4a2b14710d1e81cb04926d4fbb42abc226c8c910f93a75')
     const intakeBodies = certifyExactSharedTable(
       intakeChunk,
       [
@@ -4115,7 +4117,7 @@ describe('authoritative Mobile API source surface', () => {
         ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
         ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
         ...(readFileSync(intakeChunk, 'utf8').includes('32978:')
-          ? [['32978', '921228c6a39061e494283bd41e527304958de5a19654e998855fd9d567adfe1f'] as const]
+          ? [['32978', '206e4e452022a83bd2b3ef6098a88fb0462e758190fbaf5b86c0875c8dfad570'] as const]
           : [
               ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'] as const,
             ]),

@@ -289,19 +289,32 @@ async function decode(result: LLMResult): Promise<ConversationIntakeRoutingDecis
     }),
     MAX_REPLY_BYTES,
   )
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    'question' in value &&
-    value.question === null
-  ) {
-    // Only the required wire null is translated. Every other key and the
-    // question/kind invariant still pass the unchanged strict canonical parser.
-    const { question: _wireNull, ...canonical } = value
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    return parseConversationIntakeRoutingDecision(value)
+
+  // Translate the provider's required wire null without removing any other keys.
+  const canonical = { ...value } as Record<string, unknown>
+  if (canonical.question === null) delete canonical.question
+  try {
     return parseConversationIntakeRoutingDecision(canonical)
+  } catch (error) {
+    if (!(error instanceof z.ZodError) || error.issues.length !== 1) throw error
+    const [issue] = error.issues
+    if (
+      issue?.code !== 'invalid_string' ||
+      issue.validation !== 'regex' ||
+      issue.path.length !== 1 ||
+      issue.path[0] !== 'reason'
+    )
+      throw error
+
+    // The reason is provider metadata. Keep the validated kind and question,
+    // and never store the invalid text or relax the canonical decision schema.
+    return parseConversationIntakeRoutingDecision({
+      ...canonical,
+      reason: 'provider_reason_unavailable',
+    })
   }
-  return parseConversationIntakeRoutingDecision(value)
 }
 export function createOpenRouterConversationIntakeRouter(
   apiKey: string,

@@ -406,6 +406,10 @@ export function naturalUnit(
       return { display_qty: units, display_unit: units === 1 ? 'unidade' : 'unidades' }
     }
   }
+  // A bebida pronta continua líquida quando seu nome descreve o pó usado.
+  if (consumedMealEstimateReference(foodName)) {
+    return { display_qty: qtyG, display_unit: 'ml' }
+  }
   // SÓLIDOS/PÓS de marcas que costumam parecer líquido pelo nome.
   // Caso real Roberto 2026-05-15: "leite em pó" exibido como ml porque o regex
   // de líquidos abaixo casa em \bleite\b. Esta guarda EARLY força "g" pra:
@@ -706,7 +710,9 @@ export function consumedIngredientReference(name: string): string | null {
 /** A verified representative for a generic finished beverage. Preserve the
  * reported name and disclose an estimate since the recipe or brand is unknown. */
 export function consumedMealEstimateReference(name: string): string | null {
-  return /^bebidas? achocolatadas?$/u.test(normalizeFoodText(name))
+  return /^bebidas? (?:achocolatadas?|(?:(?:quentes?|frias?) )?com (?:chocolate|achocolatado) em po)$/u.test(
+    normalizeFoodText(name),
+  )
     ? 'Leite, de vaca, achocolatado'
     : null
 }
@@ -2708,8 +2714,10 @@ export async function calcMealMacros(
       (anchor == null || matchedNameLower.includes(anchor)) &&
       (m.name_pt == null || candidateNamesRequestedFood(referenceName, m.name_pt))
     const fruitSweetMismatch = isSweetDerivedFruitMismatch(it.food_name, m.name_pt, m.category)
+    // In reviewed finished beverages, “em pó” describes an ingredient.
+    const modifierName = usedEstimateReference ? referenceName : it.food_name
     const nutritionModifierMismatch =
-      m.name_pt != null && hasNutritionModifierConflict(it.food_name, m.name_pt)
+      m.name_pt != null && hasNutritionModifierConflict(modifierName, m.name_pt)
 
     // Threshold dinâmico por tamanho da query:
     // - Queries curtas (1-2 palavras, ≤15 chars) tendem a ter similarity baixa

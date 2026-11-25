@@ -197,7 +197,10 @@ function stored(receipt: unknown = null, resolved: unknown = null) {
 }
 
 describe('actual source-to-factual meal registration composition', () => {
-  it('registers a four-item photo-only report and requests the meal feedback', async () => {
+  it.each([
+    'bebida achocolatada',
+    'bebida quente com chocolate em pó',
+  ])('registers a four-item photo-only report with %s and requests meal feedback', async (beverage) => {
     const d = dependencies()
     const original = writerCommand()
     const binding = writerBinding()
@@ -221,7 +224,7 @@ describe('actual source-to-factual meal registration composition', () => {
       { name: 'pão francês', quantity_g_estimate: 50, confidence: 0.95 },
       { name: 'ovo mexido', quantity_g_estimate: 100, confidence: 0.9 },
       { name: 'geleia de morango', quantity_g_estimate: 30, confidence: 0.9 },
-      { name: 'bebida achocolatada', quantity_g_estimate: 200, confidence: 0.85 },
+      { name: beverage, quantity_g_estimate: 200, confidence: 0.85 },
     ]
     const media = {
       asset_id: id,
@@ -379,8 +382,10 @@ describe('actual source-to-factual meal registration composition', () => {
         { quantity_g: 100, quantity_basis: 'visual_estimate', kcal: 149 },
         { quantity_g: 30, quantity_basis: 'visual_estimate', kcal: 83.4 },
         {
-          name: 'bebida achocolatada',
+          name: beverage,
           quantity_g: 200,
+          display_qty: 200,
+          display_unit: 'ml',
           quantity_basis: 'visual_estimate',
           nutrition_source: 'llm_estimate',
           kcal: 165.6,

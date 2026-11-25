@@ -15,6 +15,7 @@ import {
   calcMealMacros,
   consumedCompositionParts,
   consumedIngredientReference,
+  consumedMealEstimateReference,
   estimateMacros,
   lookupUserHistory,
   naturalUnit,
@@ -2567,6 +2568,23 @@ describe('calcMealMacros — preparo ambíguo em partes de composto (device gate
     expect(r.items[0]?.kcal).toBe(0)
     expect(r.items[0]?.matched_taco_name ?? '').not.toMatch(/cru/i)
     expect(r.user_warnings.length).toBeGreaterThan(0)
+  })
+})
+
+describe('finished chocolate beverage estimate', () => {
+  it('preserves the generic finished beverage when the photo describes its preparation', () => {
+    const name = 'bebida quente com chocolate em pó'
+    expect(consumedMealEstimateReference(name)).toBe('Leite, de vaca, achocolatado')
+    expect(naturalUnit(name, 200)).toEqual({ display_qty: 200, display_unit: 'ml' })
+  })
+
+  it.each([
+    'chocolate em pó',
+    'bebida quente com chocolate em pó sem leite',
+    'bebida fria com chocolate em pó e whey',
+    'bebida quente com chocolate em pó sem açúcar',
+  ])('does not overwrite explicit ingredients or powder: %s', (name) => {
+    expect(consumedMealEstimateReference(name)).toBeNull()
   })
 })
 

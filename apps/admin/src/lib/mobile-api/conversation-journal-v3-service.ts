@@ -138,6 +138,7 @@ const readonlyRPCs = new Set([
   'read_mobile_registration_feedback_v3',
   'read_conversation_meal_feedback_source',
   'read_conversation_meal_feedback_v2',
+  'read_conversation_meal_prepared',
 ])
 function unavailable(): MobileApiError {
   return new MobileApiError(
@@ -271,6 +272,13 @@ export function createConversationJournalV3Service(
           }
           const args = rawArgs === undefined ? undefined : workoutSnapshot(rawArgs),
             options = rawOptions === undefined ? undefined : workoutSnapshot(rawOptions)
+          if (
+            name === 'read_conversation_meal_prepared' &&
+            (!args || !('p_user_id' in args) || args.p_user_id !== owner)
+          ) {
+            closed = changed()
+            throw closed
+          }
           await observe()
           try {
             const value = workoutSnapshot(

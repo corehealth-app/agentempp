@@ -454,6 +454,7 @@ export function createConversationFeedbackPresentationV2Service(
   dependencies: ConversationFeedbackPresentationV2Dependencies,
 ) {
   const read = dependencies.original.readOriginal.bind(dependencies.original),
+    readPhotoReview = dependencies.readPhotoReview,
     observerDependencies: ConversationCurrentScopeDependencies = {
       ...(dependencies.auth
         ? {
@@ -514,8 +515,7 @@ export function createConversationFeedbackPresentationV2Service(
               }),
             ),
           )
-          if (dependencies.readPhotoReview)
-            photoReview = workoutSnapshot(await dependencies.readPhotoReview(b.proof))
+          if (raw && readPhotoReview) photoReview = workoutSnapshot(await readPhotoReview(b.proof))
         } catch {
           failed = true
         }

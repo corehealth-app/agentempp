@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 @MainActor
 struct FlowChatVoiceButton: View {
@@ -33,7 +34,9 @@ struct FlowChatVoiceButton: View {
       .foregroundStyle(available || owner != nil ? BodyFlowColor.accent : BodyFlowColor.secondaryText)
       .frame(width: 44, height: 44)
       .overlay {
-        FlowChatVoicePress(begin: begin, release: finish, cancel: cancel)
+        FlowChatVoicePress(
+          enabled: available || owner != nil,
+          begin: begin, release: finish, cancel: cancel, interrupt: interrupt)
           .accessibilityHidden(true)
       }
       .accessibilityLabel(owner == nil
@@ -94,6 +97,9 @@ struct FlowChatVoiceButton: View {
     case .finished: stageAndSend()
     case .idle:
       cancel()
+      notice = english
+        ? "Hold the microphone until recording starts."
+        : "Segure o microfone até começar a gravar."
     case .failed: break
     }
   }
@@ -103,14 +109,21 @@ struct FlowChatVoiceButton: View {
     work = Task {
       do {
         let staged = try await stager.stageRecording(at: url)
-        guard !Task.isCancelled, owner == identity, model.inlineVoiceContext == identity else {
+        guard !Task.isCancelled, owner == identity else {
           stager.staging.remove(staged.fileURL)
-          if !Task.isCancelled { cancel() }
+          return
+        }
+        guard model.inlineVoiceContext == identity else {
+          stager.staging.remove(staged.fileURL)
+          interrupt()
           return
         }
         guard (staged.duration ?? 0) >= 0.25 else {
           stager.staging.remove(staged.fileURL)
           cancel()
+          notice = english
+            ? "Hold the microphone while speaking."
+            : "Segure o microfone enquanto fala."
           return
         }
         do { try model.attach(staged, expectedContext: identity) }
@@ -129,6 +142,16 @@ struct FlowChatVoiceButton: View {
     }
   }
 
+  private func interrupt() {
+    guard owner != nil else { return }
+    cancel()
+    if scenePhase == .active {
+      notice = english
+        ? "Recording was interrupted. Hold the microphone to try again."
+        : "A gravação foi interrompida. Segure o microfone para tentar novamente."
+    }
+  }
+
   private func cancel() {
     guard owner != nil else { return }
     work?.cancel()
@@ -141,30 +164,38 @@ struct FlowChatVoiceButton: View {
 
 /// A touch-down, release or cancellation maps to exactly one recording gesture.
 private struct FlowChatVoicePress: UIViewRepresentable {
+  let enabled: Bool
   let begin: () -> Void
   let release: () -> Void
   let cancel: () -> Void
+  let interrupt: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(actions: self) }
 
   func makeUIView(context: Context) -> UIView {
     let view = UIView()
-    let press = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.track))
+    let press = FlowMicrophonePressRecognizer(
+      target: context.coordinator, action: #selector(Coordinator.track))
     press.minimumPressDuration = 0
     press.allowableMovement = .greatestFiniteMagnitude
+    press.isEnabled = enabled
     view.addGestureRecognizer(press)
     return view
   }
 
-  func updateUIView(_ uiView: UIView, context: Context) { context.coordinator.actions = self }
+  func updateUIView(_ uiView: UIView, context: Context) {
+    context.coordinator.actions = self
+    uiView.gestureRecognizers?.first?.isEnabled = enabled
+  }
 
   @MainActor final class Coordinator: NSObject {
     var actions: FlowChatVoicePress
     private var startX: CGFloat?
     init(actions: FlowChatVoicePress) { self.actions = actions }
 
-    @objc func track(_ press: UILongPressGestureRecognizer) {
-      let x = press.location(in: press.view).x
+    @objc func track(_ press: FlowMicrophonePressRecognizer) {
+      // The composer can resize while the keyboard closes or the timer appears.
+      let x = press.location(in: nil).x
       switch press.state {
       case .began:
         startX = x
@@ -172,15 +203,46 @@ private struct FlowChatVoicePress: UIViewRepresentable {
       case .changed where startX.map({ x < $0 - 64 }) == true:
         startX = nil
         actions.cancel()
-      case .ended where startX != nil:
-        let didCancel = startX.map { x < $0 - 64 } ?? false
+      case .ended:
+        guard let origin = startX else { return }
         startX = nil
-        if didCancel { actions.cancel() } else { actions.release() }
+        if let releaseX = press.releaseX, releaseX < origin - 64 {
+          actions.cancel()
+        } else {
+          actions.release()
+        }
       case .cancelled, .failed:
+        guard startX != nil else { return }
         startX = nil
-        actions.cancel()
+        actions.interrupt()
       default: break
       }
     }
+  }
+}
+
+/// A hold on the microphone owns its touch. Scrolls starting anywhere else
+/// are outside the recognizer's hit region.
+final class FlowMicrophonePressRecognizer: UILongPressGestureRecognizer {
+  private(set) var releaseX: CGFloat?
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    releaseX = touches.first?.location(in: nil).x
+    super.touchesEnded(touches, with: event)
+  }
+
+  override func reset() {
+    super.reset()
+    releaseX = nil
+  }
+
+  override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+    if let scroll = preventingGestureRecognizer.view as? UIScrollView,
+      preventingGestureRecognizer === scroll.panGestureRecognizer,
+      view?.isDescendant(of: scroll) == true
+    {
+      return false
+    }
+    return super.canBePrevented(by: preventingGestureRecognizer)
   }
 }

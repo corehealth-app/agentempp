@@ -1,7 +1,23 @@
 import Foundation
 import Testing
+import UIKit
 
 @testable import BodyFlow
+
+@Suite("Flow microphone touch ownership")
+@MainActor
+struct FlowMicrophoneTouchOwnershipTests {
+    @Test("The composer scroll cannot take over a touch that starts on the microphone")
+    func microphoneOwnsTouchInsideComposerScroll() {
+        let composer = UIScrollView()
+        let mic = UIView()
+        composer.addSubview(mic)
+        let press = FlowMicrophonePressRecognizer()
+        mic.addGestureRecognizer(press)
+
+        #expect(!press.canBePrevented(by: composer.panGestureRecognizer))
+    }
+}
 
 @Suite("Meal audio session ownership")
 @MainActor

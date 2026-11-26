@@ -150,7 +150,8 @@ struct FlowConversationJournalV3Presentation {
         if entry.kind != .reply || !text.lines.isEmpty {
           FlowChatBubble {
             if let reply = entry.turnReply {
-              Text(verbatim: reply).accessibilityIdentifier("conversation.turn.reply")
+              Text(FlowChatPresentation.turnReplyText(reply))
+                .accessibilityIdentifier("conversation.turn.reply")
             } else if let feedback {
               ConversationFeedbackPresentationView(
                 feedback: feedback, compact: true, showsPhotoQuestion: showsPhotoQuestion)

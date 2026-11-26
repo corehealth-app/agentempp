@@ -218,7 +218,8 @@ struct FlowNeutralIntakeTranscriptContent: View {
             source(row.input)
             if let reply = model.turnReply(intakeID: row.id) {
               FlowChatBubble {
-                Text(verbatim: reply).accessibilityIdentifier("conversation.turn.reply")
+                Text(FlowChatPresentation.turnReplyText(reply))
+                  .accessibilityIdentifier("conversation.turn.reply")
               }
             } else if row.response.turnReply == nil {
               Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")

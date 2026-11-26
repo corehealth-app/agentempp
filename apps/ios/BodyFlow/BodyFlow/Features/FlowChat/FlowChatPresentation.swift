@@ -1,6 +1,19 @@
 import Foundation
 
 enum FlowChatPresentation {
+    static func turnReplyText(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace
+        )
+        guard var formatted = try? AttributedString(markdown: text, options: options) else {
+            return AttributedString(text)
+        }
+        // Keep conversational emphasis and line breaks without opening destinations
+        // supplied by the language model.
+        formatted.link = nil
+        return formatted
+    }
+
     static func canSubmit(_ text: String, isSending: Bool) -> Bool {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return !value.isEmpty && value.count <= 4_000 && !isSending

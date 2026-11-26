@@ -9,6 +9,37 @@ import Testing
 
   @MainActor @Suite("Cold reopened actual historical content")
   struct FlowConversationJournalV3RenderingTests {
+    @Test
+    func reopenedConversationReplyRendersEmphasisWithoutMarkupOrLinks() throws {
+      var page = try journalV3PendingUnit(publicJournalV3Pages()[0], child: nil, reason: "question")
+      var rows = try #require(page["items"] as? [[String: Any]])
+      rows[0]["outcome"] = [
+        "status": "not_recorded", "feedback": NSNull(), "reason": "question",
+        "turn_reply": [
+          "schema": "conversation.turn-reply.v1",
+          "text": "Caminhada **leve**, com **43 kcal** estimadas.\n\nVeja [o resumo](https://example.invalid).",
+        ],
+      ]
+      page["items"] = rows
+      let decoder = JSONDecoder()
+      ConversationTurnReplySelection.configure(decoder, requested: true, echo: "1")
+      let decoded = try decoder.decode(
+        ConversationJournalV3PageSnapshot.self, from: JSONSerialization.data(withJSONObject: page))
+      let entry = try #require(decoded.items.first)
+      let host = SignUpRenderingProbe.host(
+        FlowConversationJournalV3Content(entry: entry, feedback: nil, english: false),
+        width: 390, height: 800)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      let reply = try #require(nodes.first { $0.identifier == "conversation.turn.reply" })
+      #expect(reply.label == "Caminhada leve, com 43 kcal estimadas.\n\nVeja o resumo.")
+      let formatted = FlowChatPresentation.turnReplyText(try #require(entry.turnReply))
+      #expect(formatted.runs.allSatisfy { $0.link == nil })
+      #expect(formatted.runs.contains {
+        $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+      })
+    }
+
     @Test(arguments: [false, true])
     func reopenedWorkoutRendersCompactReplyWithSixDetailsAndNoWriteActions(_ english: Bool)
       async throws

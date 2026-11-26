@@ -422,8 +422,9 @@ describe('durable neutral intake orchestration over genuine typed service bounda
     let recorded: typeof response | null = null
     const replyPort = {
       read: vi.fn(async () => recorded),
-      answer: vi.fn(async (source, checkScope) => {
+      answer: vi.fn(async (source, reason, checkScope) => {
         expect(source.intake).toEqual(h.command)
+        expect(reason).toBe('question')
         await checkScope()
         recorded = response
         return response

@@ -73,7 +73,8 @@ final class FlowConversationJournalV3Model {
     requestID = id
     isLoading = true
     unavailable = false
-    commentaryCurrent = false
+    // A routine refresh under the same grant keeps the rendered cards until
+    // a current response replaces them or an error withholds commentary.
     defer {
       if requestID == id {
         requestID = nil
@@ -178,7 +179,7 @@ final class FlowConversationJournalV3Model {
         current(incoming.identity), (try? incoming.withCurrentAuthority { true }) == true
       else { return }
       if !(error is CancellationError) { unavailable = true }
-      commentaryCurrent = false
+      clearCommentary()
     }
   }
   func cancel() {
@@ -186,6 +187,8 @@ final class FlowConversationJournalV3Model {
     operation = nil
     requestID = nil
     isLoading = false
+  }
+  private func clearCommentary() {
     commentaryCurrent = false
     commentaryEventIDs.removeAll()
   }
@@ -193,6 +196,7 @@ final class FlowConversationJournalV3Model {
   /// Existing facts and their original receipt identities remain visible.
   func invalidateCommentary(appliedAt: String) {
     cancel()
+    clearCommentary()
     guard let applied = ConversationProtocolInstant(appliedAt) else { return }
     if observedAt.flatMap(ConversationProtocolInstant.init).map({ $0 < applied }) ?? true {
       observedAt = appliedAt
@@ -202,6 +206,7 @@ final class FlowConversationJournalV3Model {
   /// Profile/reevaluation changes do not imply a new conversation epoch.
   func suspend() {
     cancel()
+    clearCommentary()
     context = nil
     entries.removeAll()
     cursor = nil

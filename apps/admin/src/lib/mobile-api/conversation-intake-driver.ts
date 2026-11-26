@@ -315,7 +315,7 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
             try {
               const original = source
               turnReply = await call(() =>
-                turns.answer(original, async () => {
+                turns.answer(original, d.reason, async () => {
                   await current()
                 }),
               )

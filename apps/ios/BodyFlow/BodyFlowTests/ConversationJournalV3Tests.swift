@@ -321,8 +321,18 @@ func journalV3Cursor(page: [String: Any], row: [String: Any]) throws -> String {
     await session.model.loadHistory()
     let row = try #require(session.model.unifiedRows.first)
     #expect(session.model.unifiedHistory.feedback(for: row) != nil)
-    await f.http.stub.respond { _, _ in .failure(503, "conversation_journal_unavailable") }
-    await session.model.loadHistory()
+    session.model.cancelTransientWork()
+    #expect(session.model.unifiedHistory.feedback(for: row) != nil)
+    let refresh = ConversationControllerBarrier()
+    await f.http.stub.respond { _, _ in
+      await refresh.enter()
+      return .failure(503, "conversation_journal_unavailable")
+    }
+    let pending = Task { await session.model.loadHistory() }
+    #expect(await refresh.waitEnteredOrFinished())
+    #expect(session.model.unifiedHistory.feedback(for: row) != nil)
+    await refresh.release()
+    await pending.value
     #expect(session.model.unifiedRows.count == 1 && session.model.unifiedHistoryUnavailable)
     #expect(session.model.unifiedHistory.feedback(for: row) == nil)
     #expect(session.model.savedEffectRevision == 0)

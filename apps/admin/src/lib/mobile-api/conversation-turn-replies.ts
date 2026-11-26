@@ -41,6 +41,7 @@ export function conversationTurnRepliesRequested(
 const textSchema = workoutText(2000)
 const unavailableText =
   'Não consegui responder agora. Se quiser, mande a pergunta de novo daqui a pouco.'
+const explicitDenialText = 'Entendi. Essa mensagem não gerou um registro.'
 
 // The legacy public chat key rejects slashes, so it cannot claim these IDs.
 // The intake and epoch together identify an original, even across a reset.
@@ -128,7 +129,11 @@ export function createConversationTurnReplies(
       )
       return value?.state === 'completed' ? reply(value.content) : null
     },
-    async answer(source: CapturedConversationIntakeSource, checkScope: () => Promise<void>) {
+    async answer(
+      source: CapturedConversationIntakeSource,
+      reason: string,
+      checkScope: () => Promise<void>,
+    ) {
       const binding = source.binding
       const { display, message } = incoming(source)
       const result = await sendFlowMessage(
@@ -138,6 +143,12 @@ export function createConversationTurnReplies(
             async reply(input) {
               if (input.userId !== binding.owner_id) throw new Error('Flow owner changed')
               await checkScope()
+              if (
+                reason === 'explicit_denial' ||
+                reason === 'negacao_de_consumo_sem_relato_positivo'
+              ) {
+                return { text: explicitDenialText, metadata: { stage: 'intake_conversation' } }
+              }
               let text = unavailableText
               try {
                 const generated = await generate({ binding, message })

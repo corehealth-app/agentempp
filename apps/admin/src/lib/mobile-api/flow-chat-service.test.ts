@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
+import { bindConversationIntake } from './conversation-intake-contracts'
+import { createConversationTurnReplies } from './conversation-turn-replies'
 import {
   createSupabaseFlowChatStore,
   createSupabaseFlowDraftLookup,
@@ -450,6 +452,48 @@ class FakeMessagesTable implements FlowChatStore {
 
 const userA = '00000000-0000-4000-8000-00000000000a'
 const userB = '00000000-0000-4000-8000-00000000000b'
+
+it('acknowledges a denied action without guessing context or repeating the turn', async () => {
+  const intakeId = '00000000-0000-4000-8000-000000000090'
+  const intake = bindConversationIntake(userA, `cintake1:${intakeId}`, {
+    intake_protocol: 'conversation.intake.v1',
+    intake_id: intakeId,
+    source: { channel: 'text', text: 'Hoje não comi 100 g de arroz.' },
+  })
+  const binding = {
+    owner_id: userA,
+    intake_id: intakeId,
+    input_hash: intake.inputHash,
+    epoch: '00000000-0000-4000-8000-000000000091',
+    admitted_at: '2026-11-25T20:40:00Z',
+  }
+  const store = new FakeMessagesTable()
+  const generate = vi.fn(async () => 'Você mudou de ideia.')
+  const replies = createConversationTurnReplies(store, generate)
+  const source = {
+    intake,
+    binding,
+    sourceHash: 'a'.repeat(64),
+    context: {
+      schema: 'conversation.intake-source.v1' as const,
+      ...binding,
+      source_input: intake.input,
+      captured_at: binding.admitted_at,
+      time_zone: 'America/Sao_Paulo',
+      local_date: '2026-11-25',
+      media: null,
+    },
+  }
+  const checkScope = vi.fn(async () => undefined)
+
+  const saved = await replies.answer(source, 'explicit_denial', checkScope)
+  expect(saved.text).toBe('Entendi. Essa mensagem não gerou um registro.')
+  expect(await replies.read(binding)).toEqual(saved)
+  expect(await replies.answer(source, 'explicit_denial', checkScope)).toEqual(saved)
+  expect(generate).not.toHaveBeenCalled()
+  expect(checkScope).toHaveBeenCalledOnce()
+  expect(store.rows).toHaveLength(2)
+})
 
 function flowAgent(prefix: string) {
   const reply = vi.fn(async (input: { userId: string; text: string }) => ({

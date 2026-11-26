@@ -67,12 +67,6 @@ struct FlowConversationMealEditorContent: View {
               Text(english ? "Undo the original registration" : "Desfazer o registro original")
             }
           }
-          Text(
-            english
-              ? "The original content is preserved. Check the edit's status to continue."
-              : "O conteúdo original está preservado. Consulte o status da edição para continuar."
-          )
-          .foregroundStyle(BodyFlowColor.secondaryText)
         } else {
           if model.isPhotoAnswerForm {
             Text(english ? "Complete the meal" : "Completar refeição")
@@ -128,7 +122,7 @@ struct FlowConversationMealEditorContent: View {
           }
         }
         if model.isWorking {
-          ProgressView(english ? "Waiting for confirmation…" : "Aguardando confirmação…")
+          FlowWaitingBubble(label: english ? "Saving…" : "Salvando…")
         }
         if let failure = model.failure {
           Text(failureText(failure)).foregroundStyle(BodyFlowColor.secondaryText)
@@ -146,7 +140,7 @@ struct FlowConversationMealEditorContent: View {
           .accessibilityIdentifier("conversation.edit.save")
         }
         if model.canCheckStatus {
-          Button(english ? "Check status" : "Consultar status") { Task { await model.reconcile() } }
+          Button(english ? "Check if it was saved" : "Verificar se salvou") { Task { await model.reconcile() } }
             .accessibilityIdentifier("conversation.edit.reconcile")
         }
         if model.canResubmit {

@@ -507,8 +507,18 @@ import Testing
           \.locale, Locale(identifier: "pt_BR")), width: 390, height: 900)
       defer { host.detach() }
       let nodes = host.nodes()
-      #expect(nodes.contains { $0.label == "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado." })
+      #expect(nodes.contains { $0.label == "Mensagens anteriores para revisar" })
+      #expect(!nodes.contains { $0.label == "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado." })
       #expect(!nodes.contains { $0.label.contains("A entrega está incerta") })
+      let expanded = SignUpRenderingProbe.host(
+        FlowNeutralIntakeTranscriptContent(model: restored, restoredQuestionsExpanded: true)
+          .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 900)
+      defer { expanded.detach() }
+      let expandedNodes = expanded.nodes()
+      #expect(expandedNodes.contains {
+        $0.label == "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado."
+      })
+      #expect(expandedNodes.contains { $0.label == "Ver o que faltou" })
       #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
       await reopened.close()
     }

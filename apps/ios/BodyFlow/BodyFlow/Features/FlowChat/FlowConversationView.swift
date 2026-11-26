@@ -83,6 +83,8 @@ struct FlowConversationView: View {
       )
     ) { presentation in FlowConversationMealEditorView(model: presentation.model) }
     .task {
+      isOpeningConversation = true
+      transcriptPositioning = .init()
       await model.refreshConversation()
       isOpeningConversation = false
     }
@@ -166,12 +168,11 @@ struct FlowConversationView: View {
   }
 
   private var showsOpeningSkeleton: Bool {
-    isOpeningConversation && model.failure == nil
-      && model.unifiedRows.isEmpty && model.journalRows.isEmpty && model.threadRows.isEmpty
-      && model.savedRows.isEmpty && model.pendingRows.isEmpty
-      && model.neutralIntake?.savedRows.isEmpty != false
-      && model.neutralIntake?.pendingRows.isEmpty != false
-      && model.neutralIntake?.terminalRows.isEmpty != false
+    isOpeningConversation && model.failure == nil && model.neutralIntake?.respondingIntakeID == nil
+  }
+
+  private var oldestVisibleHistoryAt: String? {
+    model.hasMoreHistory ? model.unifiedRows.last?.at : nil
   }
 
   private var transcriptScrollView: some View {
@@ -181,285 +182,12 @@ struct FlowConversationView: View {
           .font(BodyFlowTypography.caption)
           .foregroundStyle(BodyFlowColor.secondaryText)
           .frame(maxWidth: .infinity)
-        Group {
-          if showsOpeningSkeleton {
-            FlowHistorySkeleton(
-              label: english ? "Opening conversation…" : "Abrindo conversa…",
-              identifier: "conversation.history-loading")
-              .transition(BodyFlowMotion.stateTransition(reduceMotion: reduceMotion))
-          }
-        }
-        .animation(
-          BodyFlowMotion.animation(.content, reduceMotion: reduceMotion), value: showsOpeningSkeleton)
-        if let replies = model.mealReplies {
-          if replies.pendingIntent != nil {
-            Button(
-              english ? "Review original pending answer" : "Revisar resposta original pendente"
-            ) { replies.presentOriginalIntent() }
-            .accessibilityIdentifier("conversation.reply.review-original")
-          }
-          ForEach(
-            replies.pendingEntries.filter { $0.intent.replyID != replies.pendingIntent?.replyID },
-            id: \.intent.replyID
-          ) { entry in
-            Button(english ? "Review pending linked answer" : "Revisar resposta vinculada pendente")
-            { try? replies.presentPending(replyID: entry.intent.replyID) }
-            .disabled(replies.isWorking || replies.pendingIntent != nil).accessibilityIdentifier(
-              "conversation.reply.restore")
-          }
-          if replies.heldCount > 0 {
-            Text(
-              english
-                ? "A protected answer is preserved for its original account and meal context."
-                : "Uma resposta protegida está preservada para a conta e o contexto originais."
-            )
-            .foregroundStyle(BodyFlowColor.secondaryText)
-          }
-          FlowConversationMealReplyHeldActions(model: replies, english: english)
-          if let row = model.unpublishedLinkedMeal {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-              Text(
-                english
-                  ? "Meal recorded"
-                  : "Refeição registrada"
-              )
-              .font(BodyFlowTypography.headline)
-              linkedCard(row)
-            }.id(
-              FlowTranscriptPositioning.localAnchor(
-                .reply(
-                  parent: row.reference.parentBinding.commandID, reply: row.reference.commandID)))
-          }
-          if let question = replies.nextQuestion, let delivered = replies.lastDelivered,
-            model.terminalQuestion == nil
-          {
-            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-              Text(
-                verbatim: FlowConversationThreadEventPresentation.question(
-                  question, english: english)
-              )
-              Button(english ? "Answer Flow" : "Responder ao Flow") {
-                try? replies.beginNextQuestion()
-              }
-              .disabled(!replies.canBegin).accessibilityIdentifier(
-                "conversation.reply.next-question")
-            }
-            .id(
-              FlowTranscriptPositioning.localAnchor(
-                .reply(
-                  parent: delivered.parentCommandID, reply: delivered.replyID)))
-          }
-        }
-        if let editor = model.mealEditor {
-          if editor.hasPreparedIntent {
-            Button(
-              english ? "Review the original pending edit" : "Revisar edição original pendente"
-            ) {
-              editor.presentOriginalIntent()
-            }.accessibilityIdentifier("conversation.edit.resume")
-          }
-          ForEach(
-            editor.pendingEntries.filter {
-              $0.id != editor.pendingOperation.map { .init(operation: $0) }
-            }, id: \.id
-          ) { entry in
-            Button(english ? "Review pending meal edit" : "Revisar edição de refeição pendente") {
-              try? editor.presentPending(id: entry.id)
-            }.disabled(editor.isWorking || editor.hasPreparedIntent).accessibilityIdentifier(
-              "conversation.edit.restore")
-          }
-          if editor.heldCount > 0 {
-            Text(
-              english
-                ? "A protected edit is preserved for its original account and meal context."
-                : "Uma edição protegida está preservada para a conta e o contexto originais."
-            )
-            .foregroundStyle(BodyFlowColor.secondaryText)
-          }
-          if let result = editor.lastSaved {
-            Label(editNotice(result.receipt.kind), systemImage: "checkmark.circle.fill")
-              .accessibilityIdentifier("conversation.edit.saved")
-          }
-          if editor.historicalNotice != nil {
-            Label(
-              english
-                ? "An earlier edit was found in history."
-                : "Uma edição anterior foi encontrada no histórico.",
-              systemImage: "clock.arrow.circlepath"
-            )
-            .accessibilityIdentifier("conversation.edit.historical-notice")
-          }
-        }
-        if let question = model.terminalQuestion {
-          VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(
-              question.observedQuestion.map {
-                FlowConversationThreadEventPresentation.question($0, english: english)
-              } ?? questionText(question.reason)
-            ).font(BodyFlowTypography.headline)
-            if model.canAnswerLinkedQuestion(parentID: question.commandID) {
-              Button(english ? "Answer Flow" : "Responder ao Flow") {
-                model.beginLinkedReply(parentID: question.commandID)
-              }
-              .accessibilityIdentifier("conversation.reply.answer-question")
-            } else if model.mealReplies == nil || question.observedQuestion == nil {
-              Text(
-                english
-                  ? "A linked reply is unavailable right now. Your original report is preserved and has not recorded a meal."
-                  : "A resposta vinculada está indisponível no momento. Seu relato original está preservado e não registrou uma refeição."
-              )
-            }
-            Button(english ? "Write an independent report" : "Escrever relato independente") {
-              model.beginIndependentReport()
-            }
-          }
-          .padding(BodyFlowSpacing.md)
-          .accessibilityIdentifier("conversation.terminal-question")
-        }
-        if model.hasMoreHistory {
-          Button(english ? "Load earlier reports" : "Carregar relatos anteriores") {
-            Task {
-              isLoadingEarlierHistory = true
-              defer { isLoadingEarlierHistory = false }
-              await model.loadHistory(reset: false)
-            }
-          }
-          .disabled(model.isLoadingHistory || model.isLoadingUnifiedHistory)
-          if isLoadingEarlierHistory {
-            FlowWaitingBubble(
-              label: english ? "Loading earlier messages…" : "Carregando mensagens anteriores…",
-              identifier: "conversation.earlier-loading")
-          }
-        }
-        ForEach(Array(model.unifiedRows.reversed().filter {
-          $0.kind != .replyResult || $0.status != .pending || $0.question != nil
-        }), id: \.eventID) { entry in
-          let feedback = model.unifiedHistory.feedback(for: entry)
-          let review = feedback.map { FlowFeedbackPreview($0.presentation, english: english).pending != nil } ?? false
-          let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID)
-          VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            FlowConversationJournalV3Content(
-              entry: entry, feedback: feedback, english: english,
-              media: model.neutralIntake?.mediaPreview(for: entry.intakeID),
-              showsPhotoQuestion: commandID.flatMap { model.currentGroup(commandID: $0)?.photoReview } == nil)
-            if let commandID {
-              FlowConversationMealControlsContent(
-                model: model, commandID: commandID, needsPhotoReview: review)
-            }
-          }.id(entry.eventID)
-        }
-        ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in
-          journalEntry(entry).id(entry.eventID)
-        }
-        ForEach(Array(model.threadRows.reversed()), id: \.eventID) { entry in
-          VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
-            if let row = model.threadOriginalSavedRow(eventID: entry.eventID) {
-              savedCard(row)
-              if model.hasLocalUnresolved(commandID: row.id) {
-                Button(english ? "Sync confirmation" : "Sincronizar confirmação") {
-                  Task { await model.reconcile(commandID: row.id) }
-                }.disabled(model.isWorking)
-              }
-            } else if let parent = model.threadDescriptor(entry.threadID) {
-              FlowConversationThreadEventView(
-                entry: entry, parent: parent,
-                observedQuestion: model.observedThreadQuestion(eventID: entry.eventID),
-                feedback: model.linkedMealRow(eventID: entry.eventID) == nil
-                  ? model.threadFeedback(eventID: entry.eventID) : nil, english: english,
-                linkedRepliesAvailable: model.mealReplies != nil, linkedMealsAvailable: true)
-              if let row = model.linkedMealRow(eventID: entry.eventID) { linkedCard(row) }
-              if model.observedThreadQuestion(eventID: entry.eventID) != nil,
-                model.canAnswerLinkedQuestion(parentID: entry.threadID)
-              {
-                Button(english ? "Answer Flow" : "Responder ao Flow") {
-                  model.beginLinkedReply(parentID: entry.threadID)
-                }
-                .accessibilityIdentifier("conversation.reply.history-question")
-              }
-            }
-          }.id(entry.eventID)
-        }
-        FlowConversationHistoryRecoveryContent(model: model, english: english)
-        if model.mealQuestionOrigins != nil {
-          FlowConversationMealQuestionOriginsContent(model: model)
-        }
-        ForEach(model.savedRows) { row in
-          savedCard(row).id(FlowTranscriptPositioning.localAnchor(.command(row.id)))
-        }
-        if let neutral = model.neutralIntake {
-          FlowNeutralIntakeTranscriptContent(
-            model: neutral, conversation: model,
-            historicalMealIDs: Set(neutral.savedRows.filter { model.hasJournalChild($0.childID) }.map(\.childID)),
-            historicalSavedIntakeIDs: model.unifiedSavedIntakeIDs,
-            historicalOriginalIntakeIDs: Set(model.unifiedRows.filter { $0.kind == .intake }.compactMap(\.intakeID)),
-            historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs)
-        }
-        ForEach(model.pendingRows) { row in
-          source(row.command.source)
-          VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(pendingText(row)).font(BodyFlowTypography.body)
-            if row.state == .queued && row.hold == nil {
-              Button(english ? "Send report" : "Enviar relato") {
-                Task { await model.sendQueued(commandID: row.id) }
-              }
-            } else if row.hold != .notRecorded && row.hold != .reset && row.hold != .staleEpoch
-              && row.hold != .serverChanged
-            {
-              Button(english ? "Check status" : "Consultar status") {
-                Task { await model.reconcile(commandID: row.id) }
-              }
-              if model.canResubmit(commandID: row.id) {
-                Button(english ? "Resend the same report" : "Reenviar o mesmo relato") {
-                  Task { await model.resubmit(commandID: row.id) }
-                }
-              }
-            }
-            if row.state == .queued {
-              Button(english ? "Discard" : "Descartar", role: .destructive) {
-                discardIsPrepared = false
-                discardID = row.id
-              }
-            }
-          }
-          .disabled(model.isWorking)
-          .padding(BodyFlowSpacing.md)
-          .accessibilityIdentifier("conversation.pending.\(row.id.uuidString.lowercased())")
-        }
-        ForEach(model.heldRows, id: \.commandID) { held in
-          VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-            Text(
-              english
-                ? "A protected report needs your review."
-                : "Um relato protegido precisa da sua revisão.")
-            if held.canDiscardUnsent {
-              Button(
-                english ? "Discard unsent report" : "Descartar relato não enviado",
-                role: .destructive
-              ) {
-                discardIsPrepared = false
-                discardID = held.commandID
-              }
-            }
-          }
-          .accessibilityIdentifier("conversation.held")
-        }
-        ForEach(model.queuedMetadata, id: \.self) { _ in
-          Text(
-            english
-              ? "Report stored on this device. Connection is required to continue."
-              : "Relato guardado neste dispositivo. É necessária conexão para continuar."
-          )
-          .accessibilityIdentifier("conversation.queued-offline")
-        }
-        if model.isWorking {
-          FlowWaitingBubble(
-            label: model.mediaPhase == .uploading
-              ? (english ? "Sending…" : "Enviando…")
-              : (english ? "Waiting for Flow…" : "Aguardando o Flow…"))
-        }
-        if let failure = model.failure {
-          Text(failureText(failure)).foregroundStyle(BodyFlowColor.secondaryText)
-            .accessibilityIdentifier("conversation.failure")
+        if showsOpeningSkeleton {
+          FlowHistorySkeleton(
+            label: english ? "Opening conversation…" : "Abrindo conversa…",
+            identifier: "conversation.history-loading")
+        } else {
+          transcriptRows
         }
         Color.clear.frame(height: 0)
           .id(FlowTranscriptPositioning.latestAnchor)
@@ -467,15 +195,293 @@ struct FlowConversationView: View {
       }
       .padding(BodyFlowSpacing.md)
     }
+    .defaultScrollAnchor(.bottom, for: .initialOffset)
     .refreshable { await model.refreshConversation() }
+  }
+
+  @ViewBuilder private var transcriptRows: some View {
+    if let replies = model.mealReplies {
+      if replies.pendingIntent != nil {
+        Button(
+          english ? "Review original pending answer" : "Revisar resposta original pendente"
+        ) { replies.presentOriginalIntent() }
+        .accessibilityIdentifier("conversation.reply.review-original")
+      }
+      ForEach(
+        replies.pendingEntries.filter { $0.intent.replyID != replies.pendingIntent?.replyID },
+        id: \.intent.replyID
+      ) { entry in
+        Button(english ? "Review pending linked answer" : "Revisar resposta vinculada pendente")
+        { try? replies.presentPending(replyID: entry.intent.replyID) }
+        .disabled(replies.isWorking || replies.pendingIntent != nil).accessibilityIdentifier(
+          "conversation.reply.restore")
+      }
+      if replies.heldCount > 0 {
+        Text(
+          english
+            ? "A protected answer is preserved for its original account and meal context."
+            : "Uma resposta protegida está preservada para a conta e o contexto originais."
+        )
+        .foregroundStyle(BodyFlowColor.secondaryText)
+      }
+      FlowConversationMealReplyHeldActions(model: replies, english: english)
+      if let row = model.unpublishedLinkedMeal {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+          Text(
+            english
+              ? "Meal recorded"
+              : "Refeição registrada"
+          )
+          .font(BodyFlowTypography.headline)
+          linkedCard(row)
+        }.id(
+          FlowTranscriptPositioning.localAnchor(
+            .reply(
+              parent: row.reference.parentBinding.commandID, reply: row.reference.commandID)))
+      }
+      if let question = replies.nextQuestion, let delivered = replies.lastDelivered,
+        model.terminalQuestion == nil
+      {
+        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+          Text(
+            verbatim: FlowConversationThreadEventPresentation.question(
+              question, english: english)
+          )
+          Button(english ? "Answer Flow" : "Responder ao Flow") {
+            try? replies.beginNextQuestion()
+          }
+          .disabled(!replies.canBegin).accessibilityIdentifier(
+            "conversation.reply.next-question")
+        }
+        .id(
+          FlowTranscriptPositioning.localAnchor(
+            .reply(
+              parent: delivered.parentCommandID, reply: delivered.replyID)))
+      }
+    }
+    if let editor = model.mealEditor {
+      if editor.hasPreparedIntent {
+        Button(
+          english ? "Review the original pending edit" : "Revisar edição original pendente"
+        ) {
+          editor.presentOriginalIntent()
+        }.accessibilityIdentifier("conversation.edit.resume")
+      }
+      ForEach(
+        editor.pendingEntries.filter {
+          $0.id != editor.pendingOperation.map { .init(operation: $0) }
+        }, id: \.id
+      ) { entry in
+        Button(english ? "Review pending meal edit" : "Revisar edição de refeição pendente") {
+          try? editor.presentPending(id: entry.id)
+        }.disabled(editor.isWorking || editor.hasPreparedIntent).accessibilityIdentifier(
+          "conversation.edit.restore")
+      }
+      if editor.heldCount > 0 {
+        Text(
+          english
+            ? "A protected edit is preserved for its original account and meal context."
+            : "Uma edição protegida está preservada para a conta e o contexto originais."
+        )
+        .foregroundStyle(BodyFlowColor.secondaryText)
+      }
+      if let result = editor.lastSaved {
+        Label(editNotice(result.receipt.kind), systemImage: "checkmark.circle.fill")
+          .accessibilityIdentifier("conversation.edit.saved")
+      }
+      if editor.historicalNotice != nil {
+        Label(
+          english
+            ? "An earlier edit was found in history."
+            : "Uma edição anterior foi encontrada no histórico.",
+          systemImage: "clock.arrow.circlepath"
+        )
+        .accessibilityIdentifier("conversation.edit.historical-notice")
+      }
+    }
+    if let question = model.terminalQuestion {
+      VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+        Text(
+          question.observedQuestion.map {
+            FlowConversationThreadEventPresentation.question($0, english: english)
+          } ?? questionText(question.reason)
+        ).font(BodyFlowTypography.headline)
+        if model.canAnswerLinkedQuestion(parentID: question.commandID) {
+          Button(english ? "Answer Flow" : "Responder ao Flow") {
+            model.beginLinkedReply(parentID: question.commandID)
+          }
+          .accessibilityIdentifier("conversation.reply.answer-question")
+        } else if model.mealReplies == nil || question.observedQuestion == nil {
+          Text(
+            english
+              ? "A linked reply is unavailable right now. Your original report is preserved and has not recorded a meal."
+              : "A resposta vinculada está indisponível no momento. Seu relato original está preservado e não registrou uma refeição."
+          )
+        }
+        Button(english ? "Write an independent report" : "Escrever relato independente") {
+          model.beginIndependentReport()
+        }
+      }
+      .padding(BodyFlowSpacing.md)
+      .accessibilityIdentifier("conversation.terminal-question")
+    }
+    if model.hasMoreHistory {
+      Button(english ? "Load earlier reports" : "Carregar relatos anteriores") {
+        Task {
+          isLoadingEarlierHistory = true
+          defer { isLoadingEarlierHistory = false }
+          await model.loadHistory(reset: false)
+        }
+      }
+      .disabled(model.isLoadingHistory || model.isLoadingUnifiedHistory)
+      if isLoadingEarlierHistory {
+        FlowWaitingBubble(
+          label: english ? "Loading earlier messages…" : "Carregando mensagens anteriores…",
+          identifier: "conversation.earlier-loading")
+      }
+    }
+    ForEach(Array(model.unifiedRows.reversed().filter {
+      $0.kind != .replyResult || $0.status != .pending || $0.question != nil
+    }), id: \.eventID) { entry in
+      let feedback = model.unifiedHistory.feedback(for: entry)
+      let review = feedback.map { FlowFeedbackPreview($0.presentation, english: english).pending != nil } ?? false
+      let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID)
+      VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+        FlowConversationJournalV3Content(
+          entry: entry, feedback: feedback, english: english,
+          media: model.neutralIntake?.mediaPreview(for: entry.intakeID),
+          showsPhotoQuestion: commandID.flatMap { model.currentGroup(commandID: $0)?.photoReview } == nil)
+        if let commandID {
+          FlowConversationMealControlsContent(
+            model: model, commandID: commandID, needsPhotoReview: review)
+        }
+      }.id(entry.eventID)
+    }
+    ForEach(Array(model.journalRows.reversed()), id: \.eventID) { entry in
+      journalEntry(entry).id(entry.eventID)
+    }
+    ForEach(Array(model.threadRows.reversed()), id: \.eventID) { entry in
+      VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
+        if let row = model.threadOriginalSavedRow(eventID: entry.eventID) {
+          savedCard(row)
+          if model.hasLocalUnresolved(commandID: row.id) {
+            Button(english ? "Sync confirmation" : "Sincronizar confirmação") {
+              Task { await model.reconcile(commandID: row.id) }
+            }.disabled(model.isWorking)
+          }
+        } else if let parent = model.threadDescriptor(entry.threadID) {
+          FlowConversationThreadEventView(
+            entry: entry, parent: parent,
+            observedQuestion: model.observedThreadQuestion(eventID: entry.eventID),
+            feedback: model.linkedMealRow(eventID: entry.eventID) == nil
+              ? model.threadFeedback(eventID: entry.eventID) : nil, english: english,
+            linkedRepliesAvailable: model.mealReplies != nil, linkedMealsAvailable: true)
+          if let row = model.linkedMealRow(eventID: entry.eventID) { linkedCard(row) }
+          if model.observedThreadQuestion(eventID: entry.eventID) != nil,
+            model.canAnswerLinkedQuestion(parentID: entry.threadID)
+          {
+            Button(english ? "Answer Flow" : "Responder ao Flow") {
+              model.beginLinkedReply(parentID: entry.threadID)
+            }
+            .accessibilityIdentifier("conversation.reply.history-question")
+          }
+        }
+      }.id(entry.eventID)
+    }
+    FlowConversationHistoryRecoveryContent(model: model, english: english)
+    if model.mealQuestionOrigins != nil {
+      FlowConversationMealQuestionOriginsContent(model: model)
+    }
+    ForEach(model.savedRows) { row in
+      savedCard(row).id(FlowTranscriptPositioning.localAnchor(.command(row.id)))
+    }
+    if let neutral = model.neutralIntake {
+      FlowNeutralIntakeTranscriptContent(
+        model: neutral, conversation: model,
+        historicalMealIDs: Set(neutral.savedRows.filter { model.hasJournalChild($0.childID) }.map(\.childID)),
+        historicalSavedIntakeIDs: model.unifiedSavedIntakeIDs,
+        historicalOriginalIntakeIDs: Set(model.unifiedRows.filter { $0.kind == .intake }.compactMap(\.intakeID)),
+        historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs,
+        oldestVisibleHistoryAt: oldestVisibleHistoryAt)
+    }
+    ForEach(model.pendingRows) { row in
+      source(row.command.source)
+      VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+        Text(pendingText(row)).font(BodyFlowTypography.body)
+        if row.state == .queued && row.hold == nil {
+          Button(english ? "Send report" : "Enviar relato") {
+            Task { await model.sendQueued(commandID: row.id) }
+          }
+        } else if row.hold != .notRecorded && row.hold != .reset && row.hold != .staleEpoch
+          && row.hold != .serverChanged
+        {
+          Button(english ? "Check status" : "Consultar status") {
+            Task { await model.reconcile(commandID: row.id) }
+          }
+          if model.canResubmit(commandID: row.id) {
+            Button(english ? "Resend the same report" : "Reenviar o mesmo relato") {
+              Task { await model.resubmit(commandID: row.id) }
+            }
+          }
+        }
+        if row.state == .queued {
+          Button(english ? "Discard" : "Descartar", role: .destructive) {
+            discardIsPrepared = false
+            discardID = row.id
+          }
+        }
+      }
+      .disabled(model.isWorking)
+      .padding(BodyFlowSpacing.md)
+      .accessibilityIdentifier("conversation.pending.\(row.id.uuidString.lowercased())")
+    }
+    ForEach(model.heldRows, id: \.commandID) { held in
+      VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+        Text(
+          english
+            ? "A protected report needs your review."
+            : "Um relato protegido precisa da sua revisão.")
+        if held.canDiscardUnsent {
+          Button(
+            english ? "Discard unsent report" : "Descartar relato não enviado",
+            role: .destructive
+          ) {
+            discardIsPrepared = false
+            discardID = held.commandID
+          }
+        }
+      }
+      .accessibilityIdentifier("conversation.held")
+    }
+    ForEach(model.queuedMetadata, id: \.self) { _ in
+      Text(
+        english
+          ? "Report stored on this device. Connection is required to continue."
+          : "Relato guardado neste dispositivo. É necessária conexão para continuar."
+      )
+      .accessibilityIdentifier("conversation.queued-offline")
+    }
+    if model.isWorking {
+      FlowWaitingBubble(
+        label: model.mediaPhase == .uploading
+          ? (english ? "Sending…" : "Enviando…")
+          : (english ? "Waiting for Flow…" : "Aguardando o Flow…"))
+    }
+    if let failure = model.failure {
+      Text(failureText(failure)).foregroundStyle(BodyFlowColor.secondaryText)
+        .accessibilityIdentifier("conversation.failure")
+    }
   }
 
   private var transcriptPositionObservation: FlowTranscriptPositioning.Observation {
     let history = FlowTranscriptPositioning.historicalAnchors(
       unified: model.unifiedRows, journal: model.journalRows, threads: model.threadRows)
-    var results =
-      ((model.neutralIntake?.savedRows.map(\.id) ?? [])
-      + (model.neutralIntake?.terminalRows.map(\.id) ?? []))
+    let olderHistory = oldestVisibleHistoryAt
+    let terminalIDs = model.neutralIntake?.terminalRows.compactMap {
+      FlowTranscriptPositioning.canAppendTerminal(
+        admittedAt: $0.response.intake?.admittedAt, oldestVisibleAt: olderHistory) ? $0.id : nil
+    } ?? []
+    var results = ((model.neutralIntake?.savedRows.map(\.id) ?? []) + terminalIDs)
       .map(FlowTranscriptPositioning.ResultID.intake)
     results += model.acknowledgedMealCommandIDs.map(FlowTranscriptPositioning.ResultID.command)
     if let delivered = model.mealReplies?.lastDelivered {
@@ -493,7 +499,7 @@ struct FlowConversationView: View {
         + model.threadRows.map(\.eventID),
       historyLoading: isOpeningConversation || model.isLoadingUnifiedHistory || model.isLoadingHistory,
       localResultIDs: results, historicalAnchors: history,
-      activeSendID: model.neutralIntake?.respondingIntakeID)
+      activeSendID: model.neutralIntake?.respondingIntakeID, opening: showsOpeningSkeleton)
   }
 
   private func linkedCard(_ row: FlowConversationLinkedMealRow) -> some View {

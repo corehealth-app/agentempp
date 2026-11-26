@@ -14,6 +14,7 @@ struct FlowTranscriptPositioning {
     let localResultIDs: [ResultID]
     var historicalAnchors: [ResultID: String] = [:]
     var activeSendID: UUID? = nil
+    var opening = false
   }
 
   static let latestAnchor = "conversation.latest"
@@ -28,6 +29,14 @@ struct FlowTranscriptPositioning {
 
   static func intakeAnchor(_ id: UUID) -> String {
     "intake/" + id.uuidString.lowercased()
+  }
+
+  static func canAppendTerminal(admittedAt: String?, oldestVisibleAt: String?) -> Bool {
+    guard let admittedAt, let oldestVisibleAt,
+      let admission = ConversationProtocolInstant(admittedAt),
+      let oldest = ConversationProtocolInstant(oldestVisibleAt)
+    else { return true }
+    return admission >= oldest
   }
 
   static func historicalAnchors(
@@ -99,6 +108,7 @@ struct FlowTranscriptPositioning {
 
     let newResults = observation.localResultIDs.filter { !seenLocalResults.contains($0) }
     seenLocalResults.formUnion(observation.localResultIDs)
+    guard !observation.opening else { return nil }
     if let sending = observation.activeSendID {
       guard activeSendID != sending else { return nil }
       activeSendID = sending

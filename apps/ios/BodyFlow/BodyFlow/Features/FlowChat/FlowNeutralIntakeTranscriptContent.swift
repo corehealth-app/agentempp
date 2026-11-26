@@ -177,6 +177,8 @@ struct FlowNeutralIntakeTranscriptContent: View {
   var historicalSavedIntakeIDs: Set<UUID> = []
   var historicalOriginalIntakeIDs: Set<UUID> = []
   var historicalTerminalIntakeIDs: Set<UUID> = []
+  var oldestVisibleHistoryAt: String? = nil
+  @State var restoredQuestionsExpanded = false
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
@@ -199,8 +201,10 @@ struct FlowNeutralIntakeTranscriptContent: View {
       }
       ForEach(
         model.terminalRows.filter {
-          !historicalTerminalIntakeIDs.contains($0.id)
-            || model.mealQuestionChild(intakeID: $0.id) != nil
+          FlowTranscriptPositioning.canAppendTerminal(
+            admittedAt: $0.response.intake?.admittedAt, oldestVisibleAt: oldestVisibleHistoryAt)
+            && (!historicalTerminalIntakeIDs.contains($0.id)
+              || model.mealQuestionChild(intakeID: $0.id) != nil)
         }
       ) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
@@ -234,42 +238,18 @@ struct FlowNeutralIntakeTranscriptContent: View {
               ? "local-terminal/" + row.id.uuidString.lowercased()
               : FlowTranscriptPositioning.intakeAnchor(row.id))
       }
-      ForEach(model.pendingRows, id: \.input.intakeID) { row in
-        VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-          if !historicalOriginalIntakeIDs.contains(row.input.intakeID) {
-            source(row.input, sent: false)
-          }
-          if model.respondingIntakeID != row.input.intakeID {
-            Text(status(row)).accessibilityIdentifier("conversation.neutral.state")
-            if let response = model.state(intakeID: row.input.intakeID) {
-              if let question = response.question { questionContent(question.text) }
-              if case .workout(.state(let state)) = response.result, let question = state.question {
-                questionContent(question.text)
-              }
-            }
-            if row.state == .queued && row.hold == nil {
-              Button(english ? "Send original" : "Enviar original") {
-                Task { await model.sendQueued(intakeID: row.input.intakeID) }
-              }
-              Button(english ? "Discard unsent" : "Descartar não enviado", role: .destructive) {
-                Task { await model.discardUnsent(intakeID: row.input.intakeID) }
-              }
-            } else {
-              Button(reviewButtonLabel(row)) {
-                Task { await model.reconcile(intakeID: row.input.intakeID) }
-              }
-              if model.canContinue(intakeID: row.input.intakeID) {
-                Button(english ? "Continue the same original" : "Continuar o mesmo original") {
-                  Task { await model.continueOriginal(intakeID: row.input.intakeID) }
-                }
-                .accessibilityIdentifier("conversation.neutral.continue")
-              }
-            }
-          }
-        }.disabled(model.isWorking).padding(BodyFlowSpacing.md)
-          .accessibilityElement(children: .contain)
-          .accessibilityIdentifier(
-            "conversation.neutral.pending.\(row.input.intakeID.uuidString.lowercased())")
+      let restored = model.pendingRows.filter(isRestoredQuestion)
+      if !restored.isEmpty {
+        DisclosureGroup(
+          english ? "Earlier messages to review" : "Mensagens anteriores para revisar",
+          isExpanded: $restoredQuestionsExpanded
+        ) {
+          ForEach(restored, id: \.input.intakeID) { pendingRow($0) }
+        }
+        .accessibilityIdentifier("conversation.neutral.restored-questions")
+      }
+      ForEach(model.pendingRows.filter { !isRestoredQuestion($0) }, id: \.input.intakeID) {
+        pendingRow($0)
       }
       if model.isWorking, let id = model.activePreparedIntakeID,
         let attachment = model.attachment,
@@ -309,6 +289,50 @@ struct FlowNeutralIntakeTranscriptContent: View {
         FlowWaitingBubble(label: responseWaitLabel)
       }
     }.accessibilityIdentifier("conversation.neutral.transcript")
+  }
+
+  private func isRestoredQuestion(_ row: ConversationNeutralIntakeOutboxEntry) -> Bool {
+    let id = row.input.intakeID
+    return row.hold == .notRecorded && model.respondingIntakeID != id
+      && model.state(intakeID: id) == nil
+  }
+
+  private func pendingRow(_ row: ConversationNeutralIntakeOutboxEntry) -> some View {
+    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+      if !historicalOriginalIntakeIDs.contains(row.input.intakeID) {
+        source(row.input, sent: false)
+      }
+      if model.respondingIntakeID != row.input.intakeID {
+        Text(status(row)).accessibilityIdentifier("conversation.neutral.state")
+        if let response = model.state(intakeID: row.input.intakeID) {
+          if let question = response.question { questionContent(question.text) }
+          if case .workout(.state(let state)) = response.result, let question = state.question {
+            questionContent(question.text)
+          }
+        }
+        if row.state == .queued && row.hold == nil {
+          Button(english ? "Send original" : "Enviar original") {
+            Task { await model.sendQueued(intakeID: row.input.intakeID) }
+          }
+          Button(english ? "Discard unsent" : "Descartar não enviado", role: .destructive) {
+            Task { await model.discardUnsent(intakeID: row.input.intakeID) }
+          }
+        } else {
+          Button(reviewButtonLabel(row)) {
+            Task { await model.reconcile(intakeID: row.input.intakeID) }
+          }
+          if model.canContinue(intakeID: row.input.intakeID) {
+            Button(english ? "Continue the same original" : "Continuar o mesmo original") {
+              Task { await model.continueOriginal(intakeID: row.input.intakeID) }
+            }
+            .accessibilityIdentifier("conversation.neutral.continue")
+          }
+        }
+      }
+    }.disabled(model.isWorking).padding(BodyFlowSpacing.md)
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier(
+        "conversation.neutral.pending.\(row.input.intakeID.uuidString.lowercased())")
   }
 
   private var responseWaitLabel: String {

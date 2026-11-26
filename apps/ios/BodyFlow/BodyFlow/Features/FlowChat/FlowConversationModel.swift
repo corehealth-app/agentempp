@@ -1679,12 +1679,23 @@ final class FlowConversationModel {
     await refresh()
     if hasCurrentScope {
       if let identity = context?.identity { neutralIntake?.acceptParent(identity) }
-      await neutralIntake?.refresh()
-      await mealEditor?.restore()
-      await mealReplies?.restore()
-      await loadMealQuestionOrigins()
+      if historyVersion == .v3 {
+        // The canonical page uses the newly verified parent scope and does not
+        // depend on replaying or restoring any local intent.
+        async let firstPage: Void = loadHistory()
+        await restoreConversationIntents()
+        await firstPage
+        return
+      }
+      await restoreConversationIntents()
       await loadHistory()
     }
+  }
+  private func restoreConversationIntents() async {
+    await neutralIntake?.refresh()
+    await mealEditor?.restore()
+    await mealReplies?.restore()
+    await loadMealQuestionOrigins()
   }
   func submit() async {
     guard canSubmit, let identity = lastIdentity else { return }

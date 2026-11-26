@@ -66,6 +66,29 @@ struct FlowTranscriptPositioningTests {
     #expect(policy.observe(snapshot(owner, history: ["new", "old"])) == FlowTranscriptPositioning.latestAnchor)
     #expect(policy.observe(snapshot(owner, history: ["new", "old"])) == nil)
   }
+  @Test func reopeningDoesNotFocusAnOlderLocalResultWhileHistoryLoads() {
+    let owner = Owner()
+    var policy = FlowTranscriptPositioning()
+    var opening = snapshot(owner, loading: true)
+    opening.opening = true
+    #expect(policy.observe(opening) == nil)
+    opening = snapshot(owner, loading: true, local: [first])
+    opening.opening = true
+    #expect(policy.observe(opening) == nil)
+    #expect(policy.observe(snapshot(owner, history: ["newest"], local: [first]))
+      == FlowTranscriptPositioning.latestAnchor)
+  }
+  @Test func olderAdmittedTerminalBelongsToAnEarlierPage() {
+    let since = "2026-11-25T23:10:00Z"
+    #expect(!FlowTranscriptPositioning.canAppendTerminal(
+      admittedAt: "2026-11-25T23:00:00Z", oldestVisibleAt: since))
+    #expect(FlowTranscriptPositioning.canAppendTerminal(admittedAt: since, oldestVisibleAt: since))
+    #expect(FlowTranscriptPositioning.canAppendTerminal(
+      admittedAt: "2026-11-25T23:20:00Z", oldestVisibleAt: since))
+    #expect(FlowTranscriptPositioning.canAppendTerminal(admittedAt: nil, oldestVisibleAt: since))
+    #expect(FlowTranscriptPositioning.canAppendTerminal(
+      admittedAt: "2026-11-25T23:00:00Z", oldestVisibleAt: nil))
+  }
   @Test func olderPaginationAndNewRemoteHistoryDoNotMoveTheReader() {
     let owner = Owner()
     var policy = FlowTranscriptPositioning()

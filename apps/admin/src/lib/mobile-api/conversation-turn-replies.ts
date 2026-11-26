@@ -151,7 +151,17 @@ const workoutFollowUp =
   /^(?:e\s+)?(?:(?:qual foi\s+)?(?:[ao]\s+)?(?:duracao|intensidade|distancia|ritmo|gasto(?: de calorias)?)|quanto (?:durou|deu|gastei)|how (?:long|intense) was it)[?!.]?$/u
 const currentDayFoodQuestion =
   /^(?:o que|quais (?:alimentos|refeicoes|comidas))\s+(?:eu\s+)?(?:ja\s+)?(?:comi|consumi|registrei|lancei)\s+hoje[?!.]*$/u
+const currentDayMealQuestion =
+  /^(e )?(?:o |a )?(?:meu|minha) (cafe da manha|almoco|lanche|jantar|ceia)( de hoje)?[?!.]*$/u
+const dayMealDescriptions: Record<string, { label: string; types: readonly string[] }> = {
+  'cafe da manha': { label: 'No café da manhã', types: ['cafe', 'cafe_manha'] },
+  almoco: { label: 'No almoço', types: ['almoco'] },
+  lanche: { label: 'No lanche', types: ['lanche', 'lanche_manha', 'lanche_tarde'] },
+  jantar: { label: 'No jantar', types: ['jantar'] },
+  ceia: { label: 'Na ceia', types: ['ceia'] },
+}
 const maxFoodsInReplyContext = 24
+const maxFoodsInShortMealReply = 6
 
 function normalizedTopic(text: string) {
   return text.trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
@@ -238,7 +248,13 @@ export function createSupabaseConversationTurnReplies(
     if (binding.owner_id !== auth.userId) throw new Error('Flow owner changed')
     const timezone = auth.patient.timezone ?? 'UTC'
     const asksForDaySummary = classifyFlowDayStatusIntent(utterance) !== null
-    const asksForDayFoods = currentDayFoodQuestion.test(normalizedTopic(utterance ?? ''))
+    const question = normalizedTopic(utterance ?? '')
+    const asksForDayFoods = currentDayFoodQuestion.test(question)
+    const namedMealMatch = currentDayMealQuestion.exec(question)
+    const namedMeal =
+      namedMealMatch && (!namedMealMatch[1] || namedMealMatch[3])
+        ? dayMealDescriptions[namedMealMatch[2] ?? '']
+        : undefined
     const history: ConversationTurnContext['history'][number][] = []
     let recentWorkouts: ConversationTurnContext['recent_workouts']
     const day = await facts.todayWithEnergy(
@@ -246,7 +262,12 @@ export function createSupabaseConversationTurnReplies(
       'https://performe.invalid/?clinical_policy=current_clinical_v1&day_energy=field_availability_v1',
       async (owner, current) => {
         if (owner !== binding.owner_id) throw new Error('Flow owner changed')
-        if (asksForDaySummary || asksForDayFoods || guidanceRestricted(current?.clinical_policy))
+        if (
+          asksForDaySummary ||
+          asksForDayFoods ||
+          namedMeal ||
+          guidanceRestricted(current?.clinical_policy)
+        )
           return current
         const { data, error } = await db
           .from('messages')
@@ -299,11 +320,21 @@ export function createSupabaseConversationTurnReplies(
     )
     const policy = day?.clinical_policy
     const restricted = guidanceRestricted(policy)
-    const showDayFoods =
-      asksForDayFoods &&
-      policy &&
-      !policy.pause_weight_loss_guidance &&
-      !Object.values(policy.hide).some(Boolean)
+    const allowFoodRecall =
+      policy && !policy.pause_weight_loss_guidance && !Object.values(policy.hide).some(Boolean)
+    if (namedMeal && day && allowFoodRecall) {
+      const items = day.meals.filter(
+        ({ meal_type }) => meal_type && namedMeal.types.includes(meal_type),
+      )
+      const names = [...new Set(items.map(({ food_name }) => food_name))]
+      if (!names.length)
+        return `${namedMeal.label} de hoje, ainda não encontrei itens no seu diário.`
+      const truncated = names.length > maxFoodsInShortMealReply
+      const listed = new Intl.ListFormat('pt-BR').format(names.slice(-maxFoodsInShortMealReply))
+      return truncated
+        ? `${namedMeal.label} de hoje, os registros mais recentes são ${listed}.`
+        : `${namedMeal.label} de hoje, você registrou ${listed}.`
+    }
     const context: ConversationTurnContext = {
       history,
       ...(recentWorkouts ? { recent_workouts: recentWorkouts } : {}),
@@ -322,7 +353,7 @@ export function createSupabaseConversationTurnReplies(
                   protein_target_g: day.targets.protein_g,
                 }
               : {}),
-            ...(showDayFoods
+            ...(asksForDayFoods && allowFoodRecall
               ? {
                   logged_foods: {
                     items: day.meals

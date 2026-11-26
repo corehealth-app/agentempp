@@ -138,6 +138,7 @@ struct FlowFeedbackPreview {
         let sections: [Section]
         var detailLines: [String] = []
         var showsFoodItems = false
+        var singleFoodName: String?
         var workoutTitle: String?
         let format = FloatingPointFormatStyle<Double>.number
             .precision(.fractionLength(0...1))
@@ -155,6 +156,7 @@ struct FlowFeedbackPreview {
             switch recorded {
             case .meal(let meal):
                 showsFoodItems = true
+                if meal.items.count == 1 { singleFoodName = meal.items.first?.foodName }
                 summary = mealSummary(meal.totals.kcal, meal.totals.proteinG)
                 detailLines.append(mealComposition(meal.totals.carbsG, meal.totals.fatG))
             case .workout(let workout):
@@ -173,6 +175,7 @@ struct FlowFeedbackPreview {
             }
         case let .sections(meal, savedSections):
             showsFoodItems = true
+            if meal.items.count == 1 { singleFoodName = meal.items.first?.foodName }
             sections = savedSections
             summary = mealSummary(meal.totals.kcal, meal.totals.proteinG)
             detailLines.append(mealComposition(meal.totals.carbsG, meal.totals.fatG))
@@ -232,7 +235,18 @@ struct FlowFeedbackPreview {
             sentences.string = content
             let parts = sentences.tokens(for: content.startIndex..<content.endIndex)
             let brief = parts.prefix(2).map { String(content[$0]) }.joined(separator: " ")
-            education = brief.isEmpty ? nil : brief
+            let comparisonPrefixes = [
+                "Entre os itens registrados,",
+                "Among the recorded items,",
+            ]
+            if let singleFoodName, comparisonPrefixes.contains(where: { brief.hasPrefix($0) }) {
+                let name = FoodDisplayLocalization.name(singleFoodName, english: english)
+                education = english
+                    ? "The portion of \(name) affects the energy and nutrients you record for the day."
+                    : "A porção de \(name) faz diferença no total de energia e nutrientes do dia."
+            } else {
+                education = brief.isEmpty ? nil : brief
+            }
             let continuation = parts.dropFirst(2).map { String(content[$0]) }.joined(separator: " ")
             if !continuation.isEmpty { detailLines.append(continuation) }
         } else {

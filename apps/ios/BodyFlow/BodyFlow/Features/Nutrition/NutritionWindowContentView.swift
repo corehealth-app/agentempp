@@ -241,6 +241,7 @@ struct NutritionWindowContentView: View {
   private func mealLabel(_ key: String?) -> String {
     switch key {
     case "cafe": text("Café da manhã", "Breakfast")
+    case MealType.snack.rawValue: text("Lanche", "Snack")
     case "lanche_manha": text("Lanche da manhã", "Morning snack")
     case "almoco": text("Almoço", "Lunch")
     case "lanche_tarde": text("Lanche da tarde", "Afternoon snack")

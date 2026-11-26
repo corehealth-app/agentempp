@@ -86,6 +86,25 @@ import Testing
       #expect(
         monday.label.contains("0 kcal") && monday.label.contains("Metas do dia indisponíveis"))
     }
+    @Test func dayContentUsesTheRecordedSnackLabel() async throws {
+      let fixture = try NutritionWindowFixture()
+      var raw = try fixture.raw()
+      var days = try #require(raw["days"] as? [[String: Any]])
+      var meals = try #require(days[2]["meals"] as? [[String: Any]])
+      meals[0]["meal_type"] = "lanche"
+      days[2]["meals"] = meals
+      raw["days"] = days
+      let snapshot = try fixture.snapshot(raw)
+      let model = NutritionWindowModel(
+        provider: NutritionRenderingProvider(value: snapshot),
+        expectedAuthUserID: snapshot.authUserID)
+      await model.load(revision: 0)
+      let host = SignUpRenderingProbe.host(
+        NutritionWindowContentView(model: model, revision: 0)
+          .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 2400)
+      defer { host.detach() }
+      #expect(host.nodes().contains { $0.label == "Lanche" })
+    }
     @Test func fullRootKeepsTheSameWeekContentInsideARealScrollableViewport() async throws {
       let snapshot = try NutritionWindowFixture().snapshot()
       let model = NutritionWindowModel(

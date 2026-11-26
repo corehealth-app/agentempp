@@ -598,6 +598,30 @@ import Testing
       #expect(preview.details.contains { $0.hasPrefix("Saldo total já consolidado:") })
       #expect(!preview.details.contains { $0.contains("30 min") || $0.contains("A caminhada ajuda") })
     }
+
+    @Test func aSingleFoodDoesNotCompareTheItemToItselfInTheChatComment() throws {
+      let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+        "Fixtures/ConversationFeedbackPresentationV2Fixtures.json")
+      let root = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
+      let fixtures = try #require(root["fixtures"] as? [[String: Any]])
+      let fixture = try #require(fixtures.first { $0["case"] as? String == "pg-original-known_meal-pt" })
+      var wrapper = try #require(fixture["expected"] as? [String: Any])
+      var sections = try #require(wrapper["sections"] as? [[String: String]])
+      let comment = try #require(sections.firstIndex { $0["key"] == "education" })
+      sections[comment]["text"] = """
+        Comentário educativo no momento do registro:
+        Entre os itens registrados, leite integral tem a maior contribuição de energia e leite integral a maior contribuição de proteína. Mudar uma porção afeta a energia e os nutrientes; compare os itens antes de decidir o que ajustar.
+        Se quiser, podemos conversar sobre seu lanche.
+        """
+      wrapper["sections"] = sections
+      let presentation = try ConversationFeedbackPresentationSelection.decoder(selection: .v2)
+        .decode(ConversationFeedbackPresentationSnapshot.self, from: neutralData(wrapper))
+      let preview = FlowFeedbackPreview(presentation, english: false)
+      #expect(preview.education == "A porção de leite integral faz diferença no total de energia e nutrientes do dia.")
+      #expect(preview.details.contains("Se quiser, podemos conversar sobre seu lanche."))
+      #expect(!preview.details.contains { $0.contains("compare os itens") })
+    }
   }
   @MainActor @Observable private final class NeutralCaptureSheetPresentationProbe {
     var isPresented = true

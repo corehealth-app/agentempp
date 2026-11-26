@@ -47,6 +47,7 @@ function providerInput(
   earlierQuestion?: string,
   channel: 'text' | 'audio' = 'text',
   assessment: 'complete' | 'incomplete' = 'complete',
+  additionalMeals: { food_name: string; meal_type: string; kcal: number }[] = [],
 ) {
   const policy = {
     assessment,
@@ -65,6 +66,7 @@ function providerInput(
       meals: [
         { food_name: 'feijão preto cozido', meal_type: 'cafe_manha', kcal: 115.5 },
         { food_name: 'farofa de mandioca temperada', meal_type: 'cafe_manha', kcal: 324.6 },
+        ...additionalMeals,
       ],
     }
     return decorate ? decorate(owner, day) : day
@@ -241,6 +243,55 @@ it('withholds food details when clinical protection is active', async () => {
   await run()
   const payload = JSON.parse(ports.complete.mock.calls[0]?.[0].messages[0].content)
   expect(payload.context.day.guidance_restricted).toBe(true)
+  expect(payload.context.day).not.toHaveProperty('logged_foods')
+})
+
+it.each([
+  ['Meu lanche?', 'text'],
+  ['E o meu lanche de hoje', 'audio'],
+] as const)('answers a short inquiry using only food already logged for that meal: %s', async (text, channel) => {
+  const { run, from } = providerInput(text, false, undefined, channel, 'incomplete', [
+    { food_name: 'banana', meal_type: 'lanche', kcal: 89 },
+  ])
+  const response = await run()
+  expect(response.text).toBe('No lanche de hoje, você registrou banana.')
+  expect(ports.complete).not.toHaveBeenCalled()
+  expect(from).not.toHaveBeenCalled()
+})
+
+it('does not disclose an already logged snack when clinical protection is active', async () => {
+  const { run } = providerInput('Meu lanche?', true, undefined, 'text', 'complete', [
+    { food_name: 'banana', meal_type: 'lanche', kcal: 89 },
+  ])
+  const response = await run()
+  expect(response.text).not.toContain('banana')
+  const payload = JSON.parse(ports.complete.mock.calls[0]?.[0].messages[0].content)
+  expect(payload.context.day).not.toHaveProperty('logged_foods')
+})
+
+it('does not use breakfast food to fill a missing snack', async () => {
+  const { run } = providerInput('Meu lanche?')
+  expect((await run()).text).toBe('No lanche de hoje, ainda não encontrei itens no seu diário.')
+  expect(ports.complete).not.toHaveBeenCalled()
+})
+
+it('does not substitute a current entry for an inquiry about a prior day', async () => {
+  const { run } = providerInput('Meu lanche de ontem?', false, undefined, 'text', 'complete', [
+    { food_name: 'banana', meal_type: 'lanche', kcal: 89 },
+  ])
+  await run()
+  const payload = JSON.parse(ports.complete.mock.calls[0]?.[0].messages[0].content)
+  expect(payload.context.day).not.toHaveProperty('logged_foods')
+})
+
+it('preserves prior conversational context in a follow-up without a date', async () => {
+  const previous = 'Quais foram as minhas refeições de ontem?'
+  const { run } = providerInput('E o meu lanche?', false, previous, 'text', 'complete', [
+    { food_name: 'banana', meal_type: 'lanche', kcal: 89 },
+  ])
+  await run()
+  const payload = JSON.parse(ports.complete.mock.calls[0]?.[0].messages[0].content)
+  expect(payload.context.history[0].content).toBe(previous)
   expect(payload.context.day).not.toHaveProperty('logged_foods')
 })
 

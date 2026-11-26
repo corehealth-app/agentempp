@@ -441,8 +441,8 @@ struct MealAudioLimitTests {
     private let AVFormatIDKeyName = "AVFormatIDKey"
     private let AVNumberOfChannelsKeyName = "AVNumberOfChannelsKey"
 
-    @Test("A recording preserves the full captured duration through upload preparation")
-    func recordingExportsWithFullDuration() async throws {
+    @Test("The upload uses the original PCM recording and measures its audio frames")
+    func stagesPCMRecordingWithFullDuration() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("flow-audio-conversion-\(UUID())", isDirectory: true)
         let storage = MediaStagingStore(temporaryDirectory: directory)
@@ -464,13 +464,12 @@ struct MealAudioLimitTests {
         ]).write(from: buffer)
 
         let staged = try await MealMediaStager(staging: storage).stageRecording(at: raw)
-        #expect(staged.mimeType == "audio/mp4")
+        #expect(staged.mimeType == "audio/wav")
         #expect(staged.channel == .audioRecording)
-        #expect(staged.fileURL.pathExtension == "m4a")
-        #expect(!FileManager.default.fileExists(atPath: raw.path))
-        #expect(abs((staged.duration ?? 0) - 3.5) < 0.12)
-        let audio = try AVAudioFile(forReading: staged.fileURL)
-        #expect(abs(Double(audio.length) / audio.fileFormat.sampleRate - 3.5) < 0.12)
+        #expect(staged.fileURL == raw)
+        #expect(staged.duration == 3.5)
+        #expect(staged.uploadRequest.durationMS == 3_500)
+        #expect(FileManager.default.fileExists(atPath: raw.path))
     }
 
     @Test("Only audio types the server accepts are described")

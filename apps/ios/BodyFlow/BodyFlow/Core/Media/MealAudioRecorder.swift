@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 /// Captures a mono voice note and stops automatically at the time limit.
-/// The Flow composer uses PCM until the recording has finished.
+/// The Flow composer uses a mono PCM WAV at a speech sample rate.
 @MainActor
 @Observable
 final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {

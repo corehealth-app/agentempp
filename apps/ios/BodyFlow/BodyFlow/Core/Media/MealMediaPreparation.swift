@@ -90,6 +90,20 @@ enum MealAudioInspector {
         }
         return Description(mimeType: mimeType, fileExtension: fileExtension, duration: seconds)
     }
+
+    /// Use the audio frames of a local PCM capture, without a container
+    /// estimate or a second encoding pass on release.
+    static func describePCMRecording(_ fileURL: URL) throws -> Description {
+        guard let file = try? AVAudioFile(forReading: fileURL),
+              file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatLinearPCM
+        else { throw MealCaptureFailure.unreadableMedia }
+        let seconds = Double(file.length) / file.fileFormat.sampleRate
+        guard seconds.isFinite, seconds > 0 else { throw MealCaptureFailure.unreadableMedia }
+        guard seconds <= MealMediaLimits.maximumAudioDuration else {
+            throw MealCaptureFailure.audioTooLong
+        }
+        return Description(mimeType: "audio/wav", fileExtension: "wav", duration: seconds)
+    }
 }
 
 /// Stages captures: the only place a photo or a recording becomes a file
@@ -123,39 +137,10 @@ struct MealMediaStager: Sendable {
 
     /// A recording already written inside the staging area.
     func stageRecording(at fileURL: URL) async throws -> StagedMedia {
-        if fileURL.pathExtension == "wav" {
-            return try await compressRecording(at: fileURL)
-        }
         do {
             return try await stagedAudio(at: fileURL, channel: .audioRecording)
         } catch {
             staging.remove(fileURL)
-            throw error
-        }
-    }
-
-    /// Capture speech without AAC timing while the microphone is active.
-    /// Encode after the input file has closed and check that the result plays
-    /// for the same duration before the upload can use it.
-    private func compressRecording(at source: URL) async throws -> StagedMedia {
-        defer { staging.remove(source) }
-        let recording = try await MealAudioInspector.describe(source)
-        let asset = AVURLAsset(url: source, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A)
-        else { throw MealCaptureFailure.unreadableMedia }
-        let output = try staging.makeFileURL(fileExtension: "m4a")
-        do {
-            try await exporter.export(to: output, as: .m4a)
-            try Task.checkCancellation()
-            try FileManager.default.setAttributes(
-                [.protectionKey: FileProtectionType.complete], ofItemAtPath: output.path
-            )
-            let staged = try await stagedAudio(at: output, channel: .audioRecording)
-            guard let duration = staged.duration, abs(duration - recording.duration) < 0.12
-            else { throw MealCaptureFailure.unreadableMedia }
-            return staged
-        } catch {
-            staging.remove(output)
             throw error
         }
     }
@@ -184,11 +169,16 @@ struct MealMediaStager: Sendable {
         at fileURL: URL,
         channel: MealSourceChannel
     ) async throws -> StagedMedia {
-        let description = try await MealAudioInspector.describe(fileURL)
         let size = try Self.fileSize(of: fileURL)
         guard size > 0 else { throw MealCaptureFailure.unreadableMedia }
         guard size <= MealMediaLimits.maximumAudioBytes else {
             throw MealCaptureFailure.fileTooLarge
+        }
+        let description: MealAudioInspector.Description
+        if channel == .audioRecording && fileURL.pathExtension == "wav" {
+            description = try MealAudioInspector.describePCMRecording(fileURL)
+        } else {
+            description = try await MealAudioInspector.describe(fileURL)
         }
         return StagedMedia(
             fileURL: fileURL,

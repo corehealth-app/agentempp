@@ -464,6 +464,22 @@ export async function loadTrends(
   )
 }
 
+export async function loadWorkoutHistory(
+  supabase: ServiceClient,
+  userId: string,
+  query: HistoryQuery,
+) {
+  let workouts = supabase
+    .from('workout_logs')
+    .select('id, workout_type, duration_min, estimated_kcal, intensity, performed_at')
+    .eq('user_id', userId)
+    .order('performed_at', { ascending: false })
+  if (query.before) workouts = workouts.lt('performed_at', query.before)
+  const result = await workouts.limit(query.limit)
+  throwQueryError(result.error, 'Workout history lookup')
+  return result.data ?? []
+}
+
 export async function loadHistory(supabase: ServiceClient, userId: string, query: HistoryQuery) {
   let meals = supabase
     .from('meal_logs')
@@ -471,27 +487,18 @@ export async function loadHistory(supabase: ServiceClient, userId: string, query
     .eq('user_id', userId)
     .order('consumed_at', { ascending: false })
     .limit(query.limit)
-  let workouts = supabase
-    .from('workout_logs')
-    .select('id, workout_type, duration_min, estimated_kcal, intensity, performed_at')
-    .eq('user_id', userId)
-    .order('performed_at', { ascending: false })
-    .limit(query.limit)
-
-  if (query.before) {
-    meals = meals.lt('consumed_at', query.before)
-    workouts = workouts.lt('performed_at', query.before)
-  }
-
-  const [mealResult, workoutResult] = await Promise.all([meals, workouts])
+  if (query.before) meals = meals.lt('consumed_at', query.before)
+  const [mealResult, workouts] = await Promise.all([
+    meals,
+    loadWorkoutHistory(supabase, userId, query),
+  ])
   throwQueryError(mealResult.error, 'Meal history lookup')
-  throwQueryError(workoutResult.error, 'Workout history lookup')
   return {
     meals: (mealResult.data ?? []).map((item) => ({
       ...item,
       ...mobileQuantityFields(item.food_name),
     })),
-    workouts: workoutResult.data ?? [],
+    workouts,
     pagination: { limit: query.limit, before: query.before ?? null },
   }
 }

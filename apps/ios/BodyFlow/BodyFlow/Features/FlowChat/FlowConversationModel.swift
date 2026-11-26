@@ -161,6 +161,7 @@ final class FlowConversationModel {
   private(set) var queuedMetadata: [UUID] = []
   private(set) var failure: FlowConversationFailure?
   private(set) var savedEffectRevision: UInt64 = 0
+  private(set) var authoritySuspensionRevision: UInt64 = 0
   var acceptedIdentity: ConversationCommandContext.Identity? {
     hasCurrentScope ? context?.identity : nil
   }
@@ -1971,6 +1972,7 @@ final class FlowConversationModel {
     guard !isClosed else { return }
     switch event {
     case .scopeSuspended:
+      authoritySuspensionRevision &+= 1
       resetHistoricalOrigins()
       parentQuestionRequests.removeAll()
       parentQuestionReads.removeAll()

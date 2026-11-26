@@ -121,6 +121,32 @@ struct FlowTranscriptPositioningTests {
     #expect(policy.observe(snapshot(owner, loading: true)) == nil)
     #expect(policy.observe(snapshot(owner, history: [intake(first)], local: [first])) == nil)
   }
+  @Test func authorityRefreshReturnsTheLatestReaderToTheMostRecentMessage() {
+    let owner = Owner()
+    var policy = FlowTranscriptPositioning()
+    _ = policy.observe(snapshot(owner, history: ["new", "old"]))
+    let position = policy.positionBeforeAuthorityRefresh(visibleAnchor: "old")
+    _ = policy.observe(snapshot(owner, loading: true))
+    let settled = snapshot(owner, history: ["new", "old"])
+    _ = policy.observe(settled)
+    #expect(policy.positionAfterAuthorityRefresh(position, historyIDs: settled.historyIDs)
+      == FlowTranscriptPositioning.latestAnchor)
+  }
+  @Test func authorityRefreshPreservesTheEarlierMessageAndHonorsSubsequentManualMovement() {
+    let owner = Owner()
+    var policy = FlowTranscriptPositioning()
+    _ = policy.observe(snapshot(owner, history: ["new", "old"]))
+    policy.userScrolled()
+    _ = policy.userScrollSettled(atLatest: false)
+    let position = policy.positionBeforeAuthorityRefresh(visibleAnchor: "old")
+    _ = policy.observe(snapshot(owner, loading: true))
+    let settled = snapshot(owner, history: ["newer", "new", "old"])
+    _ = policy.observe(settled)
+    #expect(policy.positionAfterAuthorityRefresh(position, historyIDs: settled.historyIDs) == "old")
+    #expect(policy.positionAfterAuthorityRefresh(position, historyIDs: ["newer"]) == nil)
+    policy.userScrolled()
+    #expect(policy.positionAfterAuthorityRefresh(position, historyIDs: settled.historyIDs) == nil)
+  }
   @Test func readerCanReturnToTheLatestBeforeFollowingANewOwnResponse() {
     let owner = Owner()
     var policy = FlowTranscriptPositioning()

@@ -99,7 +99,7 @@ struct FlowConversationView: View {
       if busy == false { Task { await model.loadHistory() } }
     }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active { Task { await model.refreshConversation() } }
+      if phase == .active { Task { await refreshPreservingPosition() } }
       if phase == .background { model.neutralIntake?.clearMediaPreview() }
     }
     .alert(
@@ -154,12 +154,32 @@ struct FlowConversationView: View {
       }
       .onChange(of: transcriptPositionObservation, initial: true) { _, observation in
         guard let anchor = transcriptPositioning.observe(observation) else { return }
-        if anchor == FlowTranscriptPositioning.latestAnchor {
-          transcriptScrollPosition.scrollTo(edge: .bottom)
-        } else {
-          transcriptScrollPosition.scrollTo(id: anchor, anchor: .top)
-        }
+        scrollTranscript(to: anchor)
       }
+  }
+
+  private func scrollTranscript(to anchor: String) {
+    if anchor == FlowTranscriptPositioning.latestAnchor {
+      transcriptScrollPosition.scrollTo(edge: .bottom)
+    } else {
+      transcriptScrollPosition.scrollTo(id: anchor, anchor: .top)
+    }
+  }
+
+  private func refreshPreservingPosition() async {
+    let identity = model.acceptedIdentity
+    let suspension = model.authoritySuspensionRevision
+    let position = transcriptPositioning.positionBeforeAuthorityRefresh(
+      visibleAnchor: transcriptScrollPosition.viewID(type: String.self))
+    await model.refreshConversation()
+    // During grant renewal private rows leave the view. Restore the viewport
+    // only when the same conversation has been loaded under a fresh grant.
+    guard let identity, model.acceptedIdentity == identity,
+      model.authoritySuspensionRevision != suspension,
+      let anchor = transcriptPositioning.positionAfterAuthorityRefresh(
+        position, historyIDs: transcriptPositionObservation.historyIDs)
+    else { return }
+    scrollTranscript(to: anchor)
   }
 
   private var showsOpeningSkeleton: Bool {
@@ -191,7 +211,7 @@ struct FlowConversationView: View {
       .padding(BodyFlowSpacing.md)
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
-    .refreshable { await model.refreshConversation() }
+    .refreshable { await refreshPreservingPosition() }
   }
 
   @ViewBuilder private var transcriptRows: some View {

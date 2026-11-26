@@ -2,6 +2,11 @@ import Foundation
 
 /// View-local positioning only; never changes conversation or dispatch state.
 struct FlowTranscriptPositioning {
+  struct AuthorityRefreshPosition {
+    let owner: ObjectIdentifier
+    let movement: UInt64
+    let anchor: String
+  }
   enum ResultID: Hashable {
     case intake(UUID)
     case command(UUID)
@@ -27,7 +32,25 @@ struct FlowTranscriptPositioning {
   private var followedSend = false
   private var readingEarlier = false
   private var userIsMoving = false
+  private var userMovementRevision: UInt64 = 0
   var followsSendingMessage: Bool { activeSendID != nil && followedSend }
+
+  func positionBeforeAuthorityRefresh(visibleAnchor: String?) -> AuthorityRefreshPosition? {
+    guard let owner, initiallyPositioned, !userIsMoving,
+      let anchor = readingEarlier ? visibleAnchor : Self.latestAnchor
+    else { return nil }
+    return .init(owner: owner, movement: userMovementRevision, anchor: anchor)
+  }
+
+  func positionAfterAuthorityRefresh(
+    _ position: AuthorityRefreshPosition?, historyIDs: [String]
+  ) -> String? {
+    guard let position, position.owner == owner, position.movement == userMovementRevision,
+      !historyIDs.isEmpty,
+      position.anchor == Self.latestAnchor || historyIDs.contains(position.anchor)
+    else { return nil }
+    return position.anchor
+  }
 
   static func intakeAnchor(_ id: UUID) -> String {
     "intake/" + id.uuidString.lowercased()
@@ -160,6 +183,7 @@ struct FlowTranscriptPositioning {
   mutating func userScrolled() {
     initiallyPositioned = true
     userIsMoving = true
+    userMovementRevision &+= 1
     readingEarlier = true
     awaitingHistoryResult = nil
     awaitingSendHistory = nil

@@ -143,11 +143,15 @@ export function createConversationTurnReplies(
             async reply(input) {
               if (input.userId !== binding.owner_id) throw new Error('Flow owner changed')
               await checkScope()
+              const metadata = { stage: 'intake_conversation' }
+              if (reason === 'greeting_only') {
+                return { text: 'Oi! Como posso ajudar?', metadata }
+              }
               if (
                 reason === 'explicit_denial' ||
                 reason === 'negacao_de_consumo_sem_relato_positivo'
               ) {
-                return { text: explicitDenialText, metadata: { stage: 'intake_conversation' } }
+                return { text: explicitDenialText, metadata }
               }
               let text = unavailableText
               try {
@@ -160,7 +164,7 @@ export function createConversationTurnReplies(
                 console.warn('[mobile-flow] conversation_turn_reply_unavailable')
               }
               await checkScope()
-              return { text, metadata: { stage: 'intake_conversation' } }
+              return { text, metadata }
             },
           },
         },

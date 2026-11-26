@@ -453,12 +453,15 @@ class FakeMessagesTable implements FlowChatStore {
 const userA = '00000000-0000-4000-8000-00000000000a'
 const userB = '00000000-0000-4000-8000-00000000000b'
 
-it('acknowledges a denied action without guessing context or repeating the turn', async () => {
+it.each([
+  ['explicit_denial', 'Hoje não comi 100 g de arroz.', 'Entendi. Essa mensagem não gerou um registro.'],
+  ['greeting_only', 'Oi.', 'Oi! Como posso ajudar?'],
+])('handles %s without guessing context or repeating the turn', async (reason, messageText, expected) => {
   const intakeId = '00000000-0000-4000-8000-000000000090'
   const intake = bindConversationIntake(userA, `cintake1:${intakeId}`, {
     intake_protocol: 'conversation.intake.v1',
     intake_id: intakeId,
-    source: { channel: 'text', text: 'Hoje não comi 100 g de arroz.' },
+    source: { channel: 'text', text: messageText },
   })
   const binding = {
     owner_id: userA,
@@ -486,10 +489,10 @@ it('acknowledges a denied action without guessing context or repeating the turn'
   }
   const checkScope = vi.fn(async () => undefined)
 
-  const saved = await replies.answer(source, 'explicit_denial', checkScope)
-  expect(saved.text).toBe('Entendi. Essa mensagem não gerou um registro.')
+  const saved = await replies.answer(source, reason, checkScope)
+  expect(saved.text).toBe(expected)
   expect(await replies.read(binding)).toEqual(saved)
-  expect(await replies.answer(source, 'explicit_denial', checkScope)).toEqual(saved)
+  expect(await replies.answer(source, reason, checkScope)).toEqual(saved)
   expect(generate).not.toHaveBeenCalled()
   expect(checkScope).toHaveBeenCalledOnce()
   expect(store.rows).toHaveLength(2)

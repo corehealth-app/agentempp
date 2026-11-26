@@ -173,7 +173,7 @@ const executionTransports = new Map([
 const mealReminderRoute = 'conversation/meal-reminders/[noticeId]/route.ts'
 function withoutFlowMealReminder(records, label) {
   const route = records.find((record) => record.path === mealReminderRoute)
-  if (JSON.stringify(route?.exports) !== JSON.stringify(['GET', 'runtime']))
+  if (JSON.stringify(route?.exports) !== JSON.stringify(['GET', 'POST', 'runtime']))
     fail(`${label}_FLOW_MEAL_REMINDER_EXPORTS`)
   if (
     label === 'WRAPPER' &&

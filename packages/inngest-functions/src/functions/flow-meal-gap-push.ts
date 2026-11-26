@@ -41,6 +41,7 @@ const targets = z
   .max(16)
 type Target = z.infer<typeof targets>[number]
 type SendPush = ReturnType<typeof createFlowMealGapPush>
+type PushEnvironments = ReadonlyMap<'sandbox' | 'production', SendPush>
 
 // Only the new RPCs use the narrow gateway until generated types are refreshed.
 // Tokens and personal facts stay inside the step, never in its log or result.
@@ -63,7 +64,7 @@ async function deliverToTarget(
   db: ServiceClient,
   target: Target,
   topic: string,
-  send: SendPush,
+  send: PushEnvironments,
   instant: Date,
 ) {
   const localHour = getLocalHour(target.timezone, instant)
@@ -128,6 +129,23 @@ async function deliverToTarget(
   })
   if (!decision) return false
 
+  const [identity, device] = await Promise.all([
+    db.from('users').select('auth_user_id').eq('id', target.user_id).single(),
+    db
+      .from('mobile_devices')
+      .select('apns_environment')
+      .eq('id', target.device_id)
+      .eq('user_id', target.user_id)
+      .eq('active', true)
+      .maybeSingle(),
+  ])
+  if (identity.error || device.error) throw new Error('Flow reminder owner is unavailable')
+  // The notification inbox understands Auth accounts. The diary and lease
+  // use the separate patient id, which never leaves the server.
+  const authOwner = identity.data.auth_user_id
+  const environment = claim.shape.environment.safeParse(device.data?.apns_environment)
+  if (!authOwner || !environment.success || !send.has(environment.data)) return false
+
   const leased = await rpc('claim_flow_meal_gap_notice', {
     p_user_id: target.user_id,
     p_device_id: target.device_id,
@@ -138,14 +156,15 @@ async function deliverToTarget(
   })
   if (leased === null) return false
   const notice = claim.parse(leased)
-  const outcome = await send({
-    environment: notice.environment,
-    token: notice.token,
-    id: notice.id,
-    ownerKey: createHash('sha256').update(target.user_id).digest('hex').slice(0, 8),
-    language: target.locale === 'en-US' ? 'en-US' : 'pt-BR',
-    expiresAt: Date.parse(notice.expires_at),
-  })
+  const outcome =
+    (await send.get(notice.environment)?.({
+      environment: notice.environment,
+      token: notice.token,
+      id: notice.id,
+      ownerKey: createHash('sha256').update(authOwner).digest('hex').slice(0, 8),
+      language: target.locale === 'en-US' ? 'en-US' : 'pt-BR',
+      expiresAt: Date.parse(notice.expires_at),
+    })) ?? 'retry'
   const finished = await rpc('finish_flow_meal_gap_notice', {
     p_id: notice.id,
     p_claim_id: notice.claim_id,
@@ -162,11 +181,18 @@ export const flowMealGapPushFn = inngest.createFunction(
     assertClinicalStagingWorkerTarget(process.env, 'media-conversation-staging')
     if (process.env.MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED !== 'true') return { accepted: 0 }
     const topic = process.env.MOBILE_FLOW_APNS_TOPIC
-    const privateKey = process.env.MOBILE_FLOW_APNS_PRIVATE_KEY
     const teamId = process.env.MOBILE_FLOW_APNS_TEAM_ID
-    const keyId = process.env.MOBILE_FLOW_APNS_KEY_ID
-    if (!topic || !privateKey || !teamId || !keyId) throw new Error('Flow push is not configured')
-    const send = createFlowMealGapPush({ topic, privateKey, teamId, keyId })
+    if (!topic || !teamId) throw new Error('Flow push is not configured')
+    const send = new Map<'sandbox' | 'production', SendPush>()
+    for (const environment of ['sandbox', 'production'] as const) {
+      const prefix = `MOBILE_FLOW_APNS_${environment.toUpperCase()}`
+      const keyId = process.env[`${prefix}_KEY_ID`]
+      const privateKey = process.env[`${prefix}_PRIVATE_KEY`]
+      if (keyId && privateKey)
+        send.set(environment, createFlowMealGapPush({ topic, privateKey, teamId, keyId }))
+      else if (keyId || privateKey) throw new Error('Flow push credential is incomplete')
+    }
+    if (send.size === 0) throw new Error('Flow push is not configured')
     let after: string | null = null
     let accepted = 0
     let failed = 0

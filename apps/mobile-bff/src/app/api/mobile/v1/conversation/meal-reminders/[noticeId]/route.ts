@@ -1,1 +1,5 @@
-export { GET, runtime } from '@/app/api/mobile/v1/conversation/meal-reminders/[noticeId]/route'
+export {
+  GET,
+  POST,
+  runtime,
+} from '@/app/api/mobile/v1/conversation/meal-reminders/[noticeId]/route'

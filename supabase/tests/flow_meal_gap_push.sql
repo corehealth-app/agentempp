@@ -7,6 +7,7 @@ DECLARE
   owner_id constant uuid := '19000000-0000-4000-8000-000000001001';
   other_id constant uuid := '19000000-0000-4000-8000-000000001002';
   device_id uuid;
+  notice_id uuid;
   topic constant text := 'com.example.performe.gap-test';
   zone text;
   local_day date;
@@ -59,6 +60,20 @@ BEGIN
   IF public.claim_flow_meal_gap_notice(owner_id, device_id, topic, local_day, 'before_close','jantar') IS NOT NULL
     OR public.read_flow_meal_gap_activity(owner_id, local_day)->'blocked' IS DISTINCT FROM 'true'::jsonb
     THEN RAISE EXCEPTION 'An intake in progress must suppress reminders'; END IF;
+  UPDATE private.conversation_intake_ids SET invalidated_at = now_at
+    WHERE user_id = owner_id AND intake_id = '19000000-0000-4000-8000-000000001011';
+  notice_id := (public.claim_flow_meal_gap_notice(
+    owner_id, device_id, topic, local_day, 'before_close','jantar'
+  )->>'id')::uuid;
+  IF notice_id IS NULL OR public.skip_flow_meal_gap_notice(other_id, notice_id) IS NOT NULL
+    THEN RAISE EXCEPTION 'A skip answer requires an owned reminder'; END IF;
+  IF public.skip_flow_meal_gap_notice(owner_id, notice_id)->>'state' IS DISTINCT FROM 'resolved'
+    THEN RAISE EXCEPTION 'An explicit skip should resolve the pending reminder'; END IF;
+  IF public.skip_flow_meal_gap_notice(owner_id, notice_id)->>'state' IS DISTINCT FROM 'resolved'
+    THEN RAISE EXCEPTION 'A repeated explicit skip should observe the resolved reminder'; END IF;
+  IF (SELECT count(*) FROM public.product_events e WHERE e.user_id = owner_id
+    AND e.event = 'meal.user_skipped' AND e.properties->>'flow_notice_id' = notice_id::text) <> 1
+    THEN RAISE EXCEPTION 'Only its owner can dismiss a reminder with exactly one skipped-meal event'; END IF;
   RAISE NOTICE 'flow reminder opt-in, timezone, recorded meal, skip, quiet hours and in-flight suppression passed';
 END $test$;
 
@@ -116,6 +131,7 @@ BEGIN
   IF has_function_privilege('authenticated', 'public.claim_flow_meal_gap_notice(uuid,uuid,text,date,text,public.meal_type_enum)', 'EXECUTE')
     OR has_function_privilege('anon', 'public.list_flow_meal_gap_targets(text,uuid,integer)', 'EXECUTE')
     OR has_function_privilege('authenticated', 'public.read_flow_meal_gap_notice(uuid,uuid)', 'EXECUTE')
+    OR has_function_privilege('authenticated', 'public.skip_flow_meal_gap_notice(uuid,uuid)', 'EXECUTE')
     OR has_table_privilege('authenticated', 'private.flow_meal_gap_notices', 'SELECT')
     THEN RAISE EXCEPTION 'The reminders gateway must not expose device or notice data to clients'; END IF;
 END $acl$;

@@ -3,13 +3,11 @@ import type { MobileRouteContext } from '@/lib/mobile-api/route'
 
 type RouteParams = { params: Promise<{ noticeId: string }> }
 type Handler = (context: MobileRouteContext, params: RouteParams) => Promise<Response>
-const boundary = vi.hoisted(() => ({ handler: null as Handler | null }))
 vi.mock('@/lib/mobile-api/route', () => ({
-  createMobileRouteWithContext: (handler: Handler) => {
-    boundary.handler = handler
-  },
+  createMobileRouteWithContext: (handler: Handler) => handler,
 }))
-import './route'
+
+import { GET, POST } from './route'
 
 const id = '19000000-0000-4000-8000-000000001110'
 const owner = '19000000-0000-4000-8000-000000001100'
@@ -21,10 +19,17 @@ const fixture = {
 }
 const rpc = vi.fn()
 
-function getNotice(noticeId = id) {
+function getNotice(noticeId = id, action?: unknown) {
+  const options: RequestInit = {
+    headers: { 'X-Conversation-Owner': 'user-supplied-owner', 'Content-Type': 'application/json' },
+  }
+  if (action !== undefined) {
+    options.method = 'POST'
+    options.body = JSON.stringify(action)
+  }
   const request = new Request(
     `https://example.test/api/mobile/v1/conversation/meal-reminders/${noticeId}`,
-    { headers: { 'X-Conversation-Owner': 'user-supplied-owner' } },
+    options,
   )
   const context = {
     request,
@@ -32,8 +37,8 @@ function getNotice(noticeId = id) {
     auth: { userId: owner },
     supabase: { rpc },
   } as unknown as MobileRouteContext
-  if (!boundary.handler) throw new Error('Meal reminder route did not register')
-  return boundary.handler(context, { params: Promise.resolve({ noticeId }) })
+  const handler = (action === undefined ? GET : POST) as unknown as Handler
+  return handler(context, { params: Promise.resolve({ noticeId }) })
 }
 
 describe('Flow meal reminder read', () => {
@@ -58,6 +63,18 @@ describe('Flow meal reminder read', () => {
   it('treats absent and foreign notices the same', async () => {
     rpc.mockResolvedValue({ data: null, error: null })
     await expect(getNotice()).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('accepts only an explicit skip without any client supplied meal or owner', async () => {
+    rpc.mockResolvedValue({ data: { ...fixture, state: 'resolved' }, error: null })
+    await expect(getNotice(id, { action: 'skipped', meal_type: 'cafe' })).rejects.toThrow()
+    expect(rpc).not.toHaveBeenCalled()
+    const response = await getNotice(id, { action: 'skipped' })
+    expect((await response.json()).data.state).toBe('resolved')
+    expect(rpc).toHaveBeenCalledWith('skip_flow_meal_gap_notice', {
+      p_user_id: owner,
+      p_notice_id: id,
+    })
   })
 
   it('rejects a result for a different notice', async () => {

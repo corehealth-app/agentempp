@@ -7,6 +7,7 @@ import SwiftUI
 struct FlowConversationView: View {
   let model: FlowConversationModel
   var capture: FlowConversationCaptureCapability? = nil
+  var mealReminder: FlowMealReminderModel? = nil
   @State private var capturePresentation: FlowConversationCapturePresentation?
   @Environment(\.locale) private var locale
   @Environment(\.scenePhase) private var scenePhase
@@ -86,6 +87,21 @@ struct FlowConversationView: View {
     .task {
       await model.resumeConversationView()
       isOpeningConversation = false
+    }
+    .task(id: mealReminder?.id) { await mealReminder?.refresh() }
+    .onChange(of: mealReminder?.id, initial: true) { _, id in
+      guard id != nil else { return }
+      transcriptPositioning.followLatest()
+      scrollTranscript(to: FlowTranscriptPositioning.latestAnchor)
+    }
+    .onChange(of: mealReminder?.answerMeal) { previous, answer in
+      if let previous, answer == nil, model.neutralIntake?.mealTypeHint == previous {
+        model.neutralIntake?.mealTypeHint = nil
+      }
+    }
+    .onChange(of: model.savedEffectRevision) {
+      guard mealReminder?.answerMeal != nil else { return }
+      Task { await mealReminder?.refresh() }
     }
     .onDisappear { model.cancelTransientWork() }
     .onChange(of: model.isWorking) { _, busy in if !busy { Task { await model.loadHistory() } } }
@@ -218,6 +234,18 @@ struct FlowConversationView: View {
             identifier: "conversation.history-loading")
         } else {
           transcriptRows
+        }
+        if let mealReminder, mealReminder.id != nil {
+          FlowMealReminderCard(
+            model: mealReminder, english: english,
+            canAnswer: model.neutralIntake?.isComposerLocked == false
+              && model.neutralIntake?.isWorking == false
+              && model.mealReplies?.presentation == nil,
+            reply: {
+              mealReminder.beginAnswer()
+              model.neutralIntake?.mealTypeHint = mealReminder.answerMeal
+            },
+            dismiss: { mealReminder.dismiss() })
         }
       }
       .scrollTargetLayout()

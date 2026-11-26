@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 struct FlowConversationRootView: View {
   let coordinator: FlowConversationShellCoordinator
+  var mealReminder: FlowMealReminderModel? = nil
   @Environment(\.locale) private var locale
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   private var capture: FlowConversationCaptureCapability? {
@@ -12,7 +13,7 @@ struct FlowConversationRootView: View {
   var body: some View {
     Group {
       if let model = coordinator.model {
-        FlowConversationView(model: model, capture: capture)
+        FlowConversationView(model: model, capture: capture, mealReminder: mealReminder)
       } else if coordinator.phase == .idle || coordinator.phase == .loading {
         FlowHistorySkeleton(
           label: english ? "Opening conversation…" : "Abrindo conversa…",

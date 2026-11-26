@@ -10,6 +10,7 @@ import SwiftUI
 @main
 @MainActor
 struct BodyFlowApp: App {
+    @UIApplicationDelegateAdaptor(FlowMealPushAppDelegate.self) private var flowMealPushDelegate
     private let configuration: AppLaunchConfiguration
     private let dependencies: AppDependencies
     private let mealRecordLifetime: MealRecordAuthenticationLifetime?

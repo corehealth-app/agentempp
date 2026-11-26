@@ -7,6 +7,7 @@ import UIKit
 @MainActor
 struct LocalRemindersView: View {
     let model: LocalReminderModel
+    var flowMealPush: FlowMealPushModel? = nil
     @Environment(\.locale) private var locale
     @Environment(\.openURL) private var openURL
 
@@ -28,6 +29,8 @@ struct LocalRemindersView: View {
                 actions
             }
             .bodyFlowListRow()
+
+            if let flowMealPush { mealReminderPreferences(flowMealPush) }
 
             if !skippedRows.isEmpty {
                 Section {
@@ -59,6 +62,50 @@ struct LocalRemindersView: View {
         .bodyFlowScreenChrome(title: copy("reminders.screen.title"))
         .accessibilityIdentifier("screen.local-reminders")
         .task { await model.refresh() }
+    }
+
+    private func mealReminderPreferences(_ flow: FlowMealPushModel) -> some View {
+        let english = language == .englishUnitedStates
+        return Section {
+            Toggle(english ? "Check for missing meals at night" : "Lembrar refeições pendentes à noite",
+                   isOn: Binding(get: { flow.enabled }, set: { value in
+                       Task { await flow.setEnabled(value) }
+                   }))
+            .accessibilityIdentifier("reminders.flow.enable")
+            .disabled(flow.status == .updating)
+            if flow.enabled {
+                Toggle(english ? "Remind me during the day too" : "Lembrar durante o dia também",
+                       isOn: Binding(get: { flow.daytime }, set: { value in
+                           Task { await flow.setDaytime(value) }
+                       }))
+                .accessibilityIdentifier("reminders.flow.daytime")
+                .disabled(flow.status == .updating)
+            }
+            switch flow.status {
+            case .off:
+                EmptyView()
+            case .updating:
+                Text(english ? "Updating…" : "Atualizando…")
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+            case .active:
+                Text(english ? "Reminders are on for this iPhone." : "Lembretes ativados neste iPhone.")
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+            case .permissionDenied:
+                Button(english ? "Open iPhone settings" : "Abrir ajustes do iPhone") {
+                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                }
+            case .preferencesOff:
+                Text(english ? "Notifications are off for this account." : "As notificações estão desativadas nesta conta.")
+                    .foregroundStyle(BodyFlowColor.secondaryText)
+            case .unavailable:
+                Button(english ? "Retry reminder settings" : "Tentar atualizar lembretes") {
+                    Task { await flow.refresh(requestPermission: flow.enabled) }
+                }
+            }
+        } header: {
+            Text(english ? "Flow meal reminders" : "Lembretes de refeições do Flow")
+        }
+        .bodyFlowListRow()
     }
 
     @ViewBuilder

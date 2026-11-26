@@ -69,6 +69,7 @@ struct AppDependencies: Sendable {
     /// Explicit bundled candidate only; absence preserves the release shell.
     /// This inert source performs its own actual Auth/session bind on open.
     var flowConversationSessions: FlowConversationSessionSource? = nil
+    var flowMealReminders: FlowMealReminderSource? = nil
     /// Separate writer capability; current-clinical readers remain read only.
     var trainingExecutionSessions: TrainingExecutionSessionSource? = nil
     /// Remains absent until social privacy/deletion/moderation are qualified.
@@ -819,6 +820,14 @@ struct AppDependencies: Sendable {
             workoutRegistrationSessionSource: workoutRegistrationSessionSource,
             billingSessionSource: billingSessionSource,
             flowConversationSessions: flowConversationSessions,
+            flowMealReminders: (flowConversationRuntime == .neutralIntakeV1 && flowConversationSessions != nil)
+                ? (apiClient as? MobileAPITransport).flatMap { transport in
+                    releaseLifecycle.map {
+                        FlowMealReminderSource(transport: transport, lifecycle: $0,
+                            pushEnvironment: Bundle.main.object(forInfoDictionaryKey: FlowMealPushEnvironment.infoKey)
+                                .flatMap { ($0 as? String).flatMap(FlowMealPushEnvironment.init(rawValue:)) })
+                    }
+                } : nil,
             trainingExecutionSessions: trainingExecutionSessions
         )
     }

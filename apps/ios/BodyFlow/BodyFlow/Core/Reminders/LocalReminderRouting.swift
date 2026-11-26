@@ -5,25 +5,39 @@ import UserNotifications
 /// A tapped reminder: which session owns it and where it points. Built from
 /// identifiers only; nothing here performs an action or a mutation.
 struct LocalReminderTap: Equatable, Sendable {
-    let ownerKey: String
-    let destination: LocalReminderDestination
+    enum Destination: Equatable, Sendable {
+        case routineItem(kind: RoutineItemKind, itemID: String)
+        case today
+        case flowMealGap(noticeID: UUID)
+    }
 
-    init(ownerKey: String, destination: LocalReminderDestination) {
+    let ownerKey: String
+    let destination: Destination
+
+    init(ownerKey: String, destination: Destination) {
         self.ownerKey = ownerKey
         self.destination = destination
     }
 
     init?(userInfo: [AnyHashable: Any]) {
+        if let rawID = userInfo["flow_meal_gap"] {
+            guard let identifier = rawID as? String, identifier.count == 36,
+                  let id = UUID(uuidString: identifier),
+                  let owner = userInfo["owner"] as? String,
+                  owner.range(of: "^[0-9a-f]{8}$", options: .regularExpression) != nil
+            else { return nil }
+            self.init(ownerKey: owner, destination: .flowMealGap(noticeID: id))
+            return
+        }
         guard let owner = userInfo[LocalReminderUserInfo.owner] as? String,
               Self.isIdentifier(owner) else { return nil }
-        ownerKey = owner
         if let rawKind = userInfo[LocalReminderUserInfo.kind] as? String,
            let kind = RoutineItemKind(rawValue: rawKind),
            let item = userInfo[LocalReminderUserInfo.item] as? String,
            Self.isIdentifier(item) {
-            destination = .routineItem(kind: kind, itemID: item)
+            self.init(ownerKey: owner, destination: .routineItem(kind: kind, itemID: item))
         } else {
-            destination = .today
+            self.init(ownerKey: owner, destination: .today)
         }
     }
 
@@ -54,12 +68,15 @@ final class LocalReminderRouteInbox {
     /// The pending tap, only for the session that owns it and only while it
     /// is recent. A tap of another session (a previous account on this
     /// iPhone) or an old one is discarded unopened.
-    func take(ownerKey: String, now: Date = Date()) -> LocalReminderTap? {
+    func take(ownerKey: String, flowOwnerKey: String? = nil, now: Date = Date()) -> LocalReminderTap? {
         guard let tap = pending else { return nil }
         let received = receivedAt ?? now
         pending = nil
         receivedAt = nil
         guard now.timeIntervalSince(received) <= Self.validity else { return nil }
+        if case .flowMealGap = tap.destination {
+            return tap.ownerKey == flowOwnerKey ? tap : nil
+        }
         return tap.ownerKey == ownerKey ? tap : nil
     }
 }

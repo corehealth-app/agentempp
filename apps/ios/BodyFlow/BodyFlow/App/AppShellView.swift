@@ -20,6 +20,8 @@ struct AppShellView: View {
     @State private var flowChatModel: FlowChatModel
     @State private var contentCoverEnvironment: ContentCoverEnvironment
     @State private var localReminders: LocalReminderModel?
+    @State private var flowMealReminder: FlowMealReminderModel?
+    @State private var flowMealPush: FlowMealPushModel?
     @State private var planDraftsModel: PlanDraftsModel?
     @State private var currentObjectiveModel: CurrentObjectiveModel?
     @State private var clinicalFullModel: ClinicalFullModel?
@@ -166,6 +168,21 @@ struct AppShellView: View {
             ClinicalFullModel(userID:userID,provider:$0,keyProvider:dependencies.idempotencyKeyProvider,photoCapability:dependencies.reevaluationPhotoCapture)
         })
         let timeZoneStore = dependencies.patientTimeZoneStore
+        _flowMealReminder = State(initialValue: dependencies.flowMealReminders.map { source in
+            FlowMealReminderModel {
+                let transport = try await source.scopedTransport(expectedUserID: userID)
+                return MobileFlowMealReminderRepository(transport: transport)
+            }
+        })
+        _flowMealPush = State(initialValue: dependencies.flowMealReminders.flatMap { source in
+            source.pushEnvironment.map { environment in
+                FlowMealPushModel(ownerKey: LocalReminderPlanner.ownerKey(for: userID.lowercased()),
+                                  environment: environment) {
+                    let transport = try await source.scopedTransport(expectedUserID: userID)
+                    return MobileFlowMealPushRepository(transport: transport)
+                }
+            }
+        })
         _localReminders = State(initialValue: dependencies.localReminders.map { capability in
             LocalReminderModel(
                 userID: userID,
@@ -228,6 +245,7 @@ struct AppShellView: View {
             await sessionOwner.awaitPatientTimeZoneResolution()
             await localReminders.refresh()
         }
+        .task { await flowMealPush?.refresh() }
         .task(id: originalMealRecordContext?.activation) {
             guard !Task.isCancelled else { return }
             mealRecordSessions.synchronize(context: originalMealRecordContext, owner: originalMealRecordOwner)
@@ -235,6 +253,7 @@ struct AppShellView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             routePendingReminderTap()
+            Task { await flowMealPush?.refresh() }
             guard let localReminders else { return }
             Task {
                 // Settles a zone `/me` could not answer offline and follows a
@@ -283,6 +302,8 @@ struct AppShellView: View {
             tour?.updateFacts(tutorialFacts, ownerKey: tutorialOwnerKey)
         }
         .onDisappear {
+            flowMealReminder?.dismiss()
+            flowMealPush?.endSession()
             mealRecordSessions.endSession()
             router.reset()
             flowChatModel.invalidate()
@@ -396,9 +417,13 @@ struct AppShellView: View {
     /// another account is discarded unopened, and nothing is recorded.
     @discardableResult
     private func routePendingReminderTap() -> Bool {
+        let flowOwnerKey = flowMealReminder != nil
+            ? UUID(uuidString: userID).map { LocalReminderPlanner.ownerKey(for: $0.uuidString.lowercased()) }
+            : nil
         guard !sessionOwner.isInvalidated,
               let tap = LocalReminderRouteInbox.shared.take(
-                  ownerKey: LocalReminderPlanner.ownerKey(for: userID)
+                  ownerKey: LocalReminderPlanner.ownerKey(for: userID),
+                  flowOwnerKey: flowOwnerKey
               ) else { return false }
         // The reminder's screen wins over the tour, which only closes; it is
         // not the user's answer, so it is offered again next time.
@@ -410,11 +435,16 @@ struct AppShellView: View {
         }
         selectedTab = .today
         router.popToRoot(in: .today)
-        if case let .routineItem(kind, itemID) = tap.destination {
+        switch tap.destination {
+        case let .routineItem(kind, itemID):
             router.navigate(
                 to: .routine(RoutineRoute(kind: kind, itemID: itemID, destination: .detail)),
                 in: .today
             )
+        case let .flowMealGap(noticeID):
+            flowMealReminder?.open(noticeID)
+        case .today:
+            break
         }
         return true
     }
@@ -670,7 +700,7 @@ struct AppShellView: View {
         case .today:
             if let conversationModel { FlowConversationView(model: conversationModel, capture: conversationCapture) }
             else if let coordinator = sessionOwner.flowConversation {
-                FlowConversationRootView(coordinator: coordinator)
+                FlowConversationRootView(coordinator: coordinator, mealReminder: flowMealReminder)
             }
             else { FlowChatView(model: flowChatModel, allowsSending: false) }
         case .plan:
@@ -732,6 +762,17 @@ struct AppShellView: View {
         return { presentTutorialFromProfile() }
     }
 
+    private var signOutWithReminderCleanup: (@MainActor () async -> Void)? {
+        guard let signOut else { return nil }
+        return {
+            await flowMealPush?.prepareSignOut()
+            await signOut()
+            if !sessionOwner.isInvalidated {
+                await flowMealPush?.resumeAfterSignOutAttempt()
+            }
+        }
+    }
+
     @ViewBuilder
     private func legacyRootView(for tab: AppTab, isSecondary: Bool = false) -> some View {
         // Secondary roots retain their logical read lifecycle even when hosted
@@ -779,7 +820,7 @@ struct AppShellView: View {
                 showTutorial: legacyProfileTutorialAction,
                 showsCurrentObjective: currentObjectiveModel != nil,
                 showsBilling: dependencies.billingSessionSource != nil,
-                signOut: signOut
+                signOut: signOutWithReminderCleanup
             )
         }
     }
@@ -911,7 +952,7 @@ struct AppShellView: View {
             }
         case .localReminders:
             if let localReminders {
-                LocalRemindersView(model: localReminders)
+                LocalRemindersView(model: localReminders, flowMealPush: flowMealPush)
             } else {
                 ScreenStateView(state: .unavailable, retryAction: {})
             }

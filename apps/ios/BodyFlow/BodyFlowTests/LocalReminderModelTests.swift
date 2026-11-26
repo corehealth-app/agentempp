@@ -318,6 +318,29 @@ struct LocalReminderModelTests {
 
 @Suite("Local reminder tap routing")
 struct LocalReminderRoutingTests {
+    @Test("a Flow push accepts only an opaque reminder id and an account tag")
+    func parsesFlowPush() throws {
+        let id = try #require(UUID(uuidString: "19000000-0000-4000-8000-000000001110"))
+        let owner = "123abcde"
+        #expect(LocalReminderTap(userInfo: ["owner": owner, "flow_meal_gap": id.uuidString])
+            == LocalReminderTap(ownerKey: owner, destination: .flowMealGap(noticeID: id)))
+        #expect(LocalReminderTap(userInfo: ["owner": owner, "flow_meal_gap": "../other"]) == nil)
+        #expect(LocalReminderTap(userInfo: ["owner": "one-account", "flow_meal_gap": id.uuidString]) == nil)
+        #expect(LocalReminderTap(userInfo: ["pai.owner": owner, "flow_meal_gap": id.uuidString]) == nil)
+    }
+
+    @MainActor
+    @Test("a Flow push uses the canonical Auth identifier without changing local reminder ownership")
+    func takesFlowPushForCanonicalOwner() throws {
+        let id = try #require(UUID(uuidString: "19000000-0000-4000-8000-000000001110"))
+        let tap = LocalReminderTap(ownerKey: "a123bcde", destination: .flowMealGap(noticeID: id))
+        let inbox = LocalReminderRouteInbox()
+        inbox.receive(tap)
+        #expect(inbox.take(ownerKey: "other", flowOwnerKey: "bad") == nil)
+        inbox.receive(tap)
+        #expect(inbox.take(ownerKey: "other", flowOwnerKey: "a123bcde") == tap)
+    }
+
     @Test("a tap carries the owner and, for a routine item, its kind and id — nothing else")
     func parsesTap() {
         let owner = LocalReminderPlanner.ownerKey(for: "user-a")

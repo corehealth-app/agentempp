@@ -55,6 +55,17 @@ struct ConversationJournalV3Tests {
     #expect(english.lines.contains { $0.contains("food name") })
     #expect(!portuguese.lines.contains { $0.contains("unqualified_whole_name") })
   }
+  @Test func aConcreteQuestionTakesThePlaceOfAGenericFailure() throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+      "Fixtures/ConversationJournalV3FoodNameFixture.json")
+    let page = try JSONDecoder().decode(
+      ConversationJournalV3PageSnapshot.self, from: Data(contentsOf: url))
+    let entry = try #require(page.items.first { $0.question != nil })
+    let presentation = FlowConversationJournalV3Presentation(entry: entry, english: false)
+    #expect(presentation.lines.count == 1)
+    #expect(presentation.lines[0].contains("?"))
+  }
+
   @Test func actualPublicServicePagesDecodeWithoutPrivateSchemaOrWriteProofs() throws {
     let pages = try publicJournalV3Pages()
     #expect(pages.count == 10)

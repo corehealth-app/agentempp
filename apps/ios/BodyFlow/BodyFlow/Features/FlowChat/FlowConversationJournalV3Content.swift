@@ -38,7 +38,7 @@ struct FlowConversationJournalV3Presentation {
     case nil: source = nil
     }
     var facts: [String] = []
-    if entry.status == .notRecorded,
+    if entry.status == .notRecorded, entry.question == nil,
       let explanation = Self.notRecordedReason(entry.reason, english: english)
     {
       facts.append(explanation)
@@ -129,6 +129,7 @@ struct FlowConversationJournalV3Presentation {
     let english: Bool
     var media: FlowChatMediaPreview? = nil
     var showsPhotoQuestion = true
+    var answerQuestion: (() -> Void)? = nil
 
     var body: some View {
       let text = FlowConversationJournalV3Presentation(entry: entry, english: english)
@@ -163,6 +164,10 @@ struct FlowConversationJournalV3Presentation {
                 }
                 ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in
                   Text(verbatim: line)
+                }
+                if let answerQuestion {
+                  Button(english ? "Reply" : "Responder", action: answerQuestion)
+                    .accessibilityIdentifier("conversation.neutral.answer-meal")
                 }
               }
             }

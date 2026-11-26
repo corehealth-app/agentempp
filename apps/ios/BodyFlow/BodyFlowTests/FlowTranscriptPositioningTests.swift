@@ -68,6 +68,21 @@ struct FlowTranscriptPositioningTests {
     #expect(policy.shouldPinLayoutToLatest(positionedAtBottom: false))
   }
 
+  @Test func newReplyOffersReturnWithoutMovingAnEarlierReader() {
+    let owner = Owner()
+    var policy = FlowTranscriptPositioning()
+    _ = policy.observe(snapshot(owner, history: ["recent", "old"]))
+    policy.userScrolled()
+    _ = policy.userScrollSettled(atLatest: false)
+    #expect(policy.observe(snapshot(owner, history: ["recent", "old", "older"])) == nil)
+    #expect(!policy.hasNewMessage)
+    #expect(policy.observe(snapshot(owner, history: ["recent", "old", "older"], local: [first])) == nil)
+    #expect(policy.hasNewMessage)
+    policy.followLatest()
+    #expect(!policy.hasNewMessage)
+    #expect(policy.shouldPinLayoutToLatest(positionedAtBottom: true))
+  }
+
   @Test func initialHistoryPositionsNewestOnlyAfterItsPageSettles() {
     let owner = Owner()
     var policy = FlowTranscriptPositioning()

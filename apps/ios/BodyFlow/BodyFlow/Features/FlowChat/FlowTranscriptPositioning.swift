@@ -24,6 +24,8 @@ struct FlowTranscriptPositioning {
 
   static let latestAnchor = "conversation.latest"
   private var owner: ObjectIdentifier?
+  private var latestHistoryID: String?
+  private(set) var hasNewMessage = false
   private var initiallyPositioned = false
   private var seenLocalResults: Set<ResultID> = []
   private var awaitingHistoryResult: ResultID?
@@ -135,11 +137,22 @@ struct FlowTranscriptPositioning {
       followedSend = false
       readingEarlier = false
       userIsMoving = false
+      latestHistoryID = nil
+      hasNewMessage = false
     }
 
     let newResults = observation.localResultIDs.filter { !seenLocalResults.contains($0) }
     seenLocalResults.formUnion(observation.localResultIDs)
     guard !observation.opening else { return nil }
+    if readingEarlier && !newResults.isEmpty { hasNewMessage = true }
+    if let latest = observation.historyIDs.first {
+      if readingEarlier, let previous = latestHistoryID, latest != previous,
+        observation.historyIDs.contains(previous)
+      {
+        hasNewMessage = true
+      }
+      latestHistoryID = latest
+    }
     if let sending = observation.activeSendID {
       guard activeSendID != sending else { return nil }
       activeSendID = sending
@@ -198,8 +211,14 @@ struct FlowTranscriptPositioning {
   mutating func userScrollSettled(atLatest: Bool) -> Bool {
     guard userIsMoving else { return false }
     userIsMoving = false
-    readingEarlier = !atLatest
-    if atLatest && activeSendID != nil { followedSend = true }
+    if atLatest { followLatest() }
     return atLatest
+  }
+
+  mutating func followLatest() {
+    readingEarlier = false
+    userMovementRevision &+= 1
+    hasNewMessage = false
+    if activeSendID != nil { followedSend = true }
   }
 }

@@ -492,6 +492,107 @@ describe('actual command interpretation materialization', () => {
       0, 1,
     ])
   })
+  it.each([
+    {
+      name: 'pastel frito',
+      grams: 150,
+      canonical: 'Pastel, de carne, frito',
+      referenceId: 56,
+      kcalPer100g: 388.37,
+      expectedKcal: 582.6,
+      macros: { protein_g: 10.1, carbs_g: 43.77, fat_g: 20.14, fiber_g: 0.99 },
+    },
+    {
+      name: 'cuscuz nordestino',
+      grams: 100,
+      canonical: 'Cuscuz, de milho, cozido com sal',
+      referenceId: 533,
+      kcalPer100g: 113.46,
+      expectedKcal: 113.5,
+      macros: { protein_g: 2.16, carbs_g: 25.28, fat_g: 0.68, fiber_g: 2.05 },
+    },
+  ])('calculates an editable estimate for $name from a verified comparable', async (scenario) => {
+    const item = { name: scenario.name, quantity_g_estimate: scenario.grams, confidence: 0.9 }
+    const f = visualFixture([item])
+    const media = f.capture.context.media
+    if (!media) throw new Error('Missing photo fixture')
+    media.processing_result = { items: [item] }
+    const reference = {
+      ...row(scenario.canonical, scenario.referenceId),
+      kcal_per_100g: scenario.kcalPer100g,
+      ...scenario.macros,
+    }
+    const state = calculationDb([reference])
+    const searchKey = (value: string) => value.toLowerCase().replaceAll(',', '')
+    state.rpc.mockImplementation(async (_name, params) => ({
+      data:
+        searchKey(String(params.search_term)) === searchKey(scenario.canonical) ? [reference] : [],
+      error: null,
+    }))
+    const result = prepared(await materialize(f, state))
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((input) => input.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        preparationAnnotations: 'consumed.preparation.v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items).toMatchObject([
+      {
+        food_name: scenario.name,
+        matched_taco_id: scenario.referenceId,
+        quantity_g: scenario.grams,
+        kcal: scenario.expectedKcal,
+        source: 'llm_estimate',
+      },
+    ])
+    expect(mapConversationMealCalculationSources(result, calc)[0]?.quantity_basis).toBe(
+      'visual_estimate',
+    )
+  })
+
+  it('recognizes a catalogue preparation when the photo describes its qualifiers in a different order', async () => {
+    const name = 'pastel frito de queijo'
+    const f = visualFixture([{ name, quantity_g_estimate: 120, confidence: 0.91 }])
+    const reference = {
+      ...row('Pastel, de queijo, frito', 58),
+      kcal_per_100g: 422.11,
+      protein_g: 8.71,
+      carbs_g: 48.13,
+      fat_g: 22.67,
+    }
+    const state = calculationDb([reference])
+    state.rpc.mockImplementation(async (_name, params) => ({
+      data: params.search_term === name ? [reference] : [],
+      error: null,
+    }))
+    const result = prepared(await materialize(f, state))
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((item) => item.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        preparationAnnotations: 'consumed.preparation.v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items).toMatchObject([
+      {
+        food_name: name,
+        matched_taco_id: 58,
+        quantity_g: 120,
+        kcal: 506.5,
+      },
+    ])
+  })
   it('uses the exact Portuguese catalogue alias for a bread photo when residence is US', async () => {
     const f = visualFixture([{ name: 'pão francês', quantity_g_estimate: 50, confidence: 0.9 }]),
       state = db()

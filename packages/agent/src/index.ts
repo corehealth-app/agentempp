@@ -59,7 +59,11 @@ export * from './onboarding-button.js'
 export * from './pending-meal-edit.js'
 export * from './pending-registration-store.js'
 export * from './pending-response-detector.js'
-export { resolveGlobalMealTypeByHour } from './personal-meal-windows.js'
+export {
+  getPersonalMealWindows,
+  resolveGlobalMealTypeByHour,
+  resolveUnambiguousMealTypeByHour,
+} from './personal-meal-windows.js'
 export * from './pipeline.js'
 export * from './plan-document-extractor.js'
 export * from './plan-draft.js'

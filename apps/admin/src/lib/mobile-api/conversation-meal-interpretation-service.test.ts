@@ -127,9 +127,13 @@ function run(d: ReturnType<typeof dependencies>, raw: unknown = candidateCommand
 
 describe('actual durable meal interpretation composition', () => {
   it.each([
-    null,
-    'Só queria saber o que tem na foto',
-  ])('uses only explicit, captionless photo intent locally (%s)', async (caption) => {
+    { caption: null, missingPortion: false },
+    { caption: null, missingPortion: true },
+    { caption: 'Só queria saber o que tem na foto', missingPortion: false },
+  ])('uses only explicit, captionless photo intent locally (%o)', async ({
+    caption,
+    missingPortion,
+  }) => {
     const base = candidateCommand()
     const assetId = '10000000-0000-4000-8000-000000000011'
     const origin = {
@@ -141,6 +145,8 @@ describe('actual durable meal interpretation composition', () => {
       decision_hash: 'f'.repeat(64),
       epoch: candidateEpoch,
     }
+    const observations = [{ name: 'pão francês', quantity_g_estimate: 50, confidence: 0.95 }]
+    if (missingPortion) observations.push({ name: 'salada', quantity_g_estimate: 0, confidence: 0 })
     const media = {
       asset_id: assetId,
       owner_id: candidateOwner,
@@ -156,7 +162,7 @@ describe('actual durable meal interpretation composition', () => {
         classification: 'meal',
         analysis: {
           type: 'meal',
-          items: [{ name: 'pão francês', quantity_g_estimate: 50, confidence: 0.95 }],
+          items: observations,
         },
       },
     }
@@ -228,7 +234,13 @@ describe('actual durable meal interpretation composition', () => {
       expect(outcome.interpretation).toMatchObject({
         decision: 'reported_meal',
         reason: 'explicit_media_action',
-        foods: [{ index: 0, name: null, quantity: null, unit: null, visual_index: 0 }],
+        foods: observations.map((_, index) => ({
+          index,
+          name: null,
+          quantity: null,
+          unit: null,
+          visual_index: index,
+        })),
         provider_metadata: { prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 },
       })
     }

@@ -202,8 +202,22 @@ describe('actual source-to-factual meal registration composition', () => {
     'bebida quente com chocolate em pó',
     'café com leite com chocolate em pó',
     'queijo ralado',
-  ])('registers qualified visual items when the fourth observation is %s', async (lastObservation) => {
-    const partial = lastObservation === 'queijo ralado'
+    'queijo ralado (rotina ambígua)',
+    'café com leite com chocolate em pó (rotina pessoal)',
+    'café com leite com chocolate em pó (rotina ambígua)',
+    'bebida achocolatada (sem cálculo)',
+    'bebida achocolatada (sem cálculo e itens combinados)',
+  ])('registers qualified visual items when the fourth observation is %s', async (scenario) => {
+    const personal = scenario.endsWith('(rotina pessoal)')
+    const ambiguous = scenario.endsWith('(rotina ambígua)')
+    const calculationMiss = scenario.includes('(sem cálculo')
+    const mergedInputs = scenario.endsWith('itens combinados)')
+    const lastObservation = scenario.replace(
+      / \((?:rotina (?:pessoal|ambígua)|sem cálculo(?: e itens combinados)?)\)$/u,
+      '',
+    )
+    const expectedMeal = personal ? 'almoco' : 'cafe'
+    const partial = lastObservation === 'queijo ralado' || calculationMiss
     const d = dependencies()
     const original = writerCommand()
     const binding = writerBinding()
@@ -225,7 +239,11 @@ describe('actual source-to-factual meal registration composition', () => {
     })
     const observations = [
       { name: 'pão francês', quantity_g_estimate: 50, confidence: 0.95 },
-      { name: 'ovo mexido', quantity_g_estimate: 100, confidence: 0.9 },
+      {
+        name: mergedInputs ? 'pão francês' : 'ovo mexido',
+        quantity_g_estimate: 100,
+        confidence: 0.9,
+      },
       { name: 'geleia de morango', quantity_g_estimate: 30, confidence: 0.9 },
       { name: lastObservation, quantity_g_estimate: 200, confidence: 0.85 },
     ]
@@ -297,9 +315,9 @@ describe('actual source-to-factual meal registration composition', () => {
     const receipt = {
       ...writerReceipt(),
       input_hash: action.inputHash,
-      meal_type: 'cafe',
+      meal_type: expectedMeal,
       log_ids: observations
-        .slice(0, partial ? 3 : 4)
+        .slice(0, mergedInputs ? 2 : partial ? 3 : 4)
         .map((_, index) => `10000000-0000-4000-8000-00000000002${index}`),
     }
     d.writer.commit.mockResolvedValue({ action: 'committed', receipt })
@@ -310,8 +328,30 @@ describe('actual source-to-factual meal registration composition', () => {
       or: () => read,
       neq: () => read,
       gte: () => read,
+      lt: () => read,
+      not: () => read,
       order: () => read,
       limit: () => read,
+    })
+    const history = Promise.resolve({
+      data: Array.from({ length: 5 }, (_, index) =>
+        (ambiguous ? ['almoco', 'lanche'] : ['almoco']).map((meal_type) => ({
+          meal_type,
+          consumed_at: `2026-10-${20 + index}T12:${meal_type === 'lanche' ? '30' : '00'}:00Z`,
+          raw_provider_message_id: null,
+          food_name: 'arroz',
+        })),
+      ).flat(),
+      error: null,
+    })
+    Object.assign(history, {
+      select: () => history,
+      eq: () => history,
+      gte: () => history,
+      lt: () => history,
+      not: () => history,
+      order: () => history,
+      limit: () => history,
     })
     const catalog = [
       {
@@ -361,7 +401,9 @@ describe('actual source-to-factual meal registration composition', () => {
         .normalize('NFD')
         .replace(/\p{M}|,/gu, '')
     const client = {
-      from: vi.fn(() => read),
+      from: vi.fn((table: string) =>
+        table === 'meal_logs' && (personal || ambiguous) ? history : read,
+      ),
       rpc: vi.fn(async (_name: string, { search_term }: { search_term: string }) => ({
         data: catalog
           .filter((row) => searchKey(row.name_pt) === searchKey(search_term))
@@ -374,18 +416,75 @@ describe('actual source-to-factual meal registration composition', () => {
       candidateAuth,
       `cmsg1:${action.commandId}`,
       action.command,
-      { ...d, materialize: materializeConversationMealInterpretation, calculate: calcMealMacros },
+      {
+        ...d,
+        materialize: materializeConversationMealInterpretation,
+        calculate: async (...args) => {
+          const result = await calcMealMacros(...args)
+          if (!calculationMiss) return result
+          const items = result.items.map((item, index) =>
+            index !== 3
+              ? item
+              : {
+                  ...item,
+                  source: 'no_match' as const,
+                  matched_taco_id: null,
+                  kcal: 0,
+                  protein_g: 0,
+                  carbs_g: 0,
+                  fat_g: 0,
+                  fiber_g: 0,
+                },
+          )
+          if (!mergedInputs) return { ...result, items }
+          const [first, second, jelly, pending] = items
+          if (!first || !second || !jelly || !pending) throw new Error('Missing calculator fixture')
+          return {
+            ...result,
+            items: [
+              {
+                ...first,
+                quantity_g: first.quantity_g + second.quantity_g,
+                kcal: first.kcal + second.kcal,
+                protein_g: first.protein_g + second.protein_g,
+                carbs_g: first.carbs_g + second.carbs_g,
+                fat_g: first.fat_g + second.fat_g,
+                fiber_g: first.fiber_g + second.fiber_g,
+              },
+              jelly,
+              pending,
+            ],
+            input_indexes: [[0, 1], [2], [3]],
+          }
+        },
+      },
     )
+    if (ambiguous && !partial) {
+      expect(result).toMatchObject({ status: 'not_recorded', reason: 'meal_type_required' })
+      expect(d.writer.prepare).not.toHaveBeenCalled()
+      return
+    }
     expect(result, JSON.stringify(result)).toMatchObject({ status: 'saved', receipt })
     const resolved = d.writer.prepare.mock.calls[0]?.[0].resolved
     // Noon UTC is 09:00 at the account's civil time zone.
     expect(resolved).toMatchObject({
-      meal_type: 'cafe',
-      totals: { kcal: partial ? 382.4 : 548 },
+      meal_type: expectedMeal,
+      totals: { kcal: mergedInputs ? 533.4 : partial ? 382.4 : 548 },
       ...(partial ? { photo_review: [3] } : {}),
       items: [
-        { quantity_g: 50, quantity_basis: 'visual_estimate', kcal: 150 },
-        { quantity_g: 100, quantity_basis: 'visual_estimate', kcal: 149 },
+        ...(mergedInputs
+          ? [
+              {
+                quantity_g: 150,
+                quantity_basis: 'visual_estimate',
+                kcal: 450,
+                input_indexes: [0, 1],
+              },
+            ]
+          : [
+              { quantity_g: 50, quantity_basis: 'visual_estimate', kcal: 150 },
+              { quantity_g: 100, quantity_basis: 'visual_estimate', kcal: 149 },
+            ]),
         { quantity_g: 30, quantity_basis: 'visual_estimate', kcal: 83.4 },
         ...(partial
           ? []

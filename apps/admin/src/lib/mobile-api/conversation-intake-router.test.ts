@@ -569,6 +569,31 @@ describe('ordinary photos retain their validated classification and literal disc
     expect(f.complete).toHaveBeenCalledOnce()
   })
 
+  it('routes a mixed photo locally when just one item is missing its portion', async () => {
+    const f = setup()
+    const photo = mediaSource(
+      'conversation_photo',
+      {
+        ...mealWithPortion,
+        analysis: {
+          ...mealWithPortion.analysis,
+          items: [
+            ...mealWithPortion.analysis.items,
+            { name: 'salada', quantity_g_estimate: 0, confidence: 0 },
+          ],
+        },
+      },
+      null,
+      null,
+      2,
+    )
+    expect(await f.router.route(photo)).toEqual({
+      ...decision,
+      reason: 'visual_meal_identification',
+    })
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+
   it('keeps the normal routing when a bound meal photo lacks a portion', async () => {
     const f = setup()
     const photo = mediaSource(
@@ -685,7 +710,7 @@ describe('ordinary photos retain their validated classification and literal disc
     expect(result).toMatchObject({
       kind: 'clarification_required',
       reason: 'image_not_supported_for_conversation',
-      question: { field: 'description' },
+      question: { field: 'description', text: expect.stringContaining('Pode enviar outra') },
     })
     expect(f.complete).not.toHaveBeenCalled()
   })

@@ -83,7 +83,6 @@ struct FlowNeutralIntakeComposerContent: View {
                 choose(.audioFile)
               }
             }
-            mealContextPicker
           } label: {
             Image(systemName: "plus").frame(width: 44, height: 44)
           }
@@ -145,7 +144,7 @@ struct FlowNeutralIntakeComposerContent: View {
   }
   private var attachmentMenuLabel: String {
     if model.captureContext != nil { return english ? "Attach photo or audio" : "Anexar foto ou áudio" }
-    return english ? "Meal options" : "Opções da refeição"
+    return english ? "Attachments unavailable" : "Anexos indisponíveis"
   }
   private var mealContextPicker: some View {
     @Bindable var model = model
@@ -183,6 +182,7 @@ struct FlowNeutralIntakeTranscriptContent: View {
   var historicalSavedIntakeIDs: Set<UUID> = []
   var historicalOriginalIntakeIDs: Set<UUID> = []
   var historicalTerminalIntakeIDs: Set<UUID> = []
+  var historicalQuestionIntakeIDs: Set<UUID> = []
   var oldestVisibleHistoryAt: String? = nil
   @State var restoredQuestionsExpanded = false
   @Environment(\.locale) private var locale
@@ -210,7 +210,8 @@ struct FlowNeutralIntakeTranscriptContent: View {
           FlowTranscriptPositioning.canAppendTerminal(
             admittedAt: $0.response.intake?.admittedAt, oldestVisibleAt: oldestVisibleHistoryAt)
             && (!historicalTerminalIntakeIDs.contains($0.id)
-              || model.mealQuestionChild(intakeID: $0.id) != nil)
+              || (model.mealQuestionChild(intakeID: $0.id) != nil
+                && !historicalQuestionIntakeIDs.contains($0.id)))
         }
       ) { row in
         VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
@@ -225,7 +226,8 @@ struct FlowNeutralIntakeTranscriptContent: View {
               Text(status(row.response)).accessibilityIdentifier("conversation.neutral.closed")
             }
           }
-          if model.mealQuestionChild(intakeID: row.id) != nil, let conversation,
+          if !historicalQuestionIntakeIDs.contains(row.id),
+            model.mealQuestionChild(intakeID: row.id) != nil, let conversation,
             !conversation.isMealQuestionClosed(intakeID: row.id)
           {
             if let question = conversation.neutralMealQuestion(intakeID: row.id) {
@@ -240,10 +242,9 @@ struct FlowNeutralIntakeTranscriptContent: View {
             .accessibilityIdentifier("conversation.neutral.answer-meal")
           }
         }.padding(BodyFlowSpacing.md).accessibilityElement(children: .contain)
-          .id(
-            historicalTerminalIntakeIDs.contains(row.id)
-              ? "local-terminal/" + row.id.uuidString.lowercased()
-              : FlowTranscriptPositioning.intakeAnchor(row.id))
+          .id(historicalTerminalIntakeIDs.contains(row.id)
+            ? "local-terminal/" + row.id.uuidString.lowercased()
+            : FlowTranscriptPositioning.intakeAnchor(row.id))
       }
       let restored = model.pendingRows.filter(isRestoredQuestion)
       if !restored.isEmpty {
@@ -255,7 +256,10 @@ struct FlowNeutralIntakeTranscriptContent: View {
         }
         .accessibilityIdentifier("conversation.neutral.restored-questions")
       }
-      ForEach(model.pendingRows.filter { !isRestoredQuestion($0) }, id: \.input.intakeID) {
+      ForEach(model.pendingRows.filter {
+        !isRestoredQuestion($0)
+          && ($0.hold != .notRecorded || !historicalQuestionIntakeIDs.contains($0.input.intakeID))
+      }, id: \.input.intakeID) {
         pendingRow($0)
       }
       if model.isWorking, let id = model.activePreparedIntakeID,
@@ -300,8 +304,8 @@ struct FlowNeutralIntakeTranscriptContent: View {
 
   private func isRestoredQuestion(_ row: ConversationNeutralIntakeOutboxEntry) -> Bool {
     let id = row.input.intakeID
-    return row.hold == .notRecorded && model.respondingIntakeID != id
-      && model.state(intakeID: id) == nil
+    return row.hold == .notRecorded && !historicalQuestionIntakeIDs.contains(id)
+      && model.respondingIntakeID != id && model.state(intakeID: id) == nil
   }
 
   private func pendingRow(_ row: ConversationNeutralIntakeOutboxEntry) -> some View {
@@ -310,12 +314,10 @@ struct FlowNeutralIntakeTranscriptContent: View {
         source(row.input, sent: false)
       }
       if model.respondingIntakeID != row.input.intakeID {
-        Text(status(row)).accessibilityIdentifier("conversation.neutral.state")
-        if let response = model.state(intakeID: row.input.intakeID) {
-          if let question = response.question { questionContent(question.text) }
-          if case .workout(.state(let state)) = response.result, let question = state.question {
-            questionContent(question.text)
-          }
+        if let question = pendingQuestion(for: row) {
+          FlowChatBubble { Text(verbatim: question) }
+        } else if !isRestoredQuestion(row) {
+          Text(status(row)).accessibilityIdentifier("conversation.neutral.state")
         }
         if row.state == .queued && row.hold == nil {
           Button(english ? "Send original" : "Enviar original") {
@@ -361,16 +363,11 @@ struct FlowNeutralIntakeTranscriptContent: View {
       }
     }
   }
-  private func questionContent(_ text: String) -> some View {
-    VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-      Text(verbatim: text).font(BodyFlowTypography.headline)
-      Text(
-        english
-          ? "Send a new report with this information."
-          : "Envie um novo relato com essa informação."
-      )
-      .font(BodyFlowTypography.caption)
-    }
+  private func pendingQuestion(for row: ConversationNeutralIntakeOutboxEntry) -> String? {
+    guard let response = model.state(intakeID: row.input.intakeID) else { return nil }
+    if let question = response.question { return question.text }
+    if case .workout(.state(let state)) = response.result { return state.question?.text }
+    return nil
   }
   private func status(_ row: ConversationNeutralIntakeOutboxEntry) -> String {
     if let value = model.state(intakeID: row.input.intakeID) { return status(value) }
@@ -383,11 +380,11 @@ struct FlowNeutralIntakeTranscriptContent: View {
   }
   private var clarificationStatus: String {
     english
-      ? "Flow needs clarification. No registration was confirmed."
-      : "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado."
+      ? "Tell me a little more about this message."
+      : "Pode me contar um pouco mais sobre essa mensagem?"
   }
   private func reviewButtonLabel(_ row: ConversationNeutralIntakeOutboxEntry) -> String {
-    if row.hold == .notRecorded { return english ? "See what is missing" : "Ver o que faltou" }
+    if row.hold == .notRecorded { return english ? "Resume message" : "Retomar mensagem" }
     return english ? "Check original status" : "Consultar status original"
   }
   private func status(_ value: FlowNeutralIntakeResponseSnapshot) -> String {

@@ -152,6 +152,19 @@ struct FlowConversationView: View {
           }
         }
       }
+      .overlay(alignment: .bottomTrailing) {
+        if transcriptPositioning.hasNewMessage {
+          Button {
+            transcriptPositioning.followLatest()
+            scrollTranscript(to: FlowTranscriptPositioning.latestAnchor)
+          } label: {
+            Label(english ? "New message" : "Nova mensagem", systemImage: "arrow.down")
+          }
+          .buttonStyle(BodyFlowButtonStyle(role: .primary, isCompact: true))
+          .padding(BodyFlowSpacing.md)
+          .accessibilityIdentifier("conversation.jump-to-latest")
+        }
+      }
       .onChange(of: transcriptPositionObservation, initial: true) { _, observation in
         guard let anchor = transcriptPositioning.observe(observation) else { return }
         scrollTranscript(to: anchor)
@@ -372,7 +385,8 @@ struct FlowConversationView: View {
         FlowConversationJournalV3Content(
           entry: entry, feedback: feedback, english: english,
           media: model.neutralIntake?.mediaPreview(for: entry.intakeID),
-          showsPhotoQuestion: commandID.flatMap { model.currentGroup(commandID: $0)?.photoReview } == nil)
+          showsPhotoQuestion: commandID.flatMap { model.currentGroup(commandID: $0)?.photoReview } == nil,
+          answerQuestion: answerAction(for: entry))
         if let commandID {
           FlowConversationMealControlsContent(
             model: model, commandID: commandID, needsPhotoReview: review)
@@ -424,6 +438,12 @@ struct FlowConversationView: View {
         historicalSavedIntakeIDs: model.unifiedSavedIntakeIDs,
         historicalOriginalIntakeIDs: Set(model.unifiedRows.filter { $0.kind == .intake }.compactMap(\.intakeID)),
         historicalTerminalIntakeIDs: model.unifiedTerminalIntakeIDs,
+        historicalQuestionIntakeIDs: Set(model.unifiedRows.compactMap { entry in
+          guard entry.kind == .intake, entry.question != nil, let id = entry.intakeID,
+            model.hasLinkedNeutralMealQuestion(intakeID: id) || model.isMealQuestionClosed(intakeID: id)
+          else { return nil }
+          return id
+        }),
         oldestVisibleHistoryAt: oldestVisibleHistoryAt)
     }
     ForEach(model.pendingRows) { row in
@@ -493,6 +513,13 @@ struct FlowConversationView: View {
       Text(failureText(failure)).foregroundStyle(BodyFlowColor.secondaryText)
         .accessibilityIdentifier("conversation.failure")
     }
+  }
+
+  private func answerAction(for entry: ConversationJournalV3PageSnapshot.Entry) -> (() -> Void)? {
+    guard entry.kind == .intake, entry.question != nil, let id = entry.intakeID,
+      model.canReadNeutralMealQuestion(intakeID: id)
+    else { return nil }
+    return { Task { await model.beginNeutralMealReply(intakeID: id) } }
   }
 
   private var transcriptPositionObservation: FlowTranscriptPositioning.Observation {

@@ -695,6 +695,16 @@ function normalizeFoodText(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
 }
 
+/** Compare a full spoken food identity to catalogue wording. Keep all
+ * qualifiers, moving only the preparation of a single named food. */
+export function consumedCatalogueWording(name: string): string {
+  const words = normalizeFoodText(name.replace(/(?<=\p{L}),\s*(?=\p{L})/gu, ' '))
+  const preparation =
+    /^(\p{L}+) ((?:frit|assad|cozid|grelhad)[oa]s?) (de \p{L}+(?: \p{L}+)*)$/u.exec(words)
+  if (!preparation || /\b(?:sem|ou|com|e|nao)\b/u.test(words)) return words
+  return `${preparation[1]} ${preparation[3]} ${preparation[2]}`
+}
+
 /** Reviewed whole-ingredient aliases only. Explicit qualifiers remain intact.
  * This same reference is used when vision returns an ingredient on its own
  * or inside a composition. Nutrients still come from the verified catalogue.
@@ -714,6 +724,11 @@ export function consumedIngredientReference(name: string): string | null {
 export function consumedMealEstimateReference(name: string): string | null {
   const whole = normalizeFoodText(name)
   if (/^bananas?(?: cruas?)?$/u.test(whole)) return 'Bananas, raw'
+  // TACO's fried preparation is a comparable for an unspecified filling.
+  // Keep the original description and report the calculation as estimated.
+  if (/^(?:pastel(?: frito)?|pasteis(?: fritos)?)(?: de feira)?$/u.test(whole))
+    return 'Pastel, de carne, frito'
+  if (/^cuscuz (?:nordestino|de milho)$/u.test(whole)) return 'Cuscuz, de milho, cozido com sal'
   return /^(?:bebidas? achocolatadas?|(?:bebidas?(?: (?:quentes?|frias?))?|cafe com leite) com (?:chocolate|achocolatado) em po)$/u.test(
     whole,
   )
@@ -1473,6 +1488,7 @@ async function matchFood(
   supabase: ServiceClient,
   name: string,
   country: string = 'BR',
+  preferConsumedWording = false,
 ): Promise<{
   id: number | null
   name_pt: string | null
@@ -1627,7 +1643,13 @@ async function matchFood(
     return idA - idB
   })
 
-  const top = sorted[0]
+  const top =
+    (preferConsumedWording
+      ? (sorted.find((row) => normalizeFoodText(row.name_pt ?? '') === requestedName) ??
+        sorted.find(
+          (row) => consumedCatalogueWording(row.name_pt ?? '') === consumedCatalogueWording(name),
+        ))
+      : undefined) ?? sorted[0]
   if (!top) return empty
   return {
     id: top.id ?? null,
@@ -2371,12 +2393,21 @@ export async function calcMealMacros(
     // histórico. Isso impede que um override antigo contaminado (por exemplo,
     // arroz de 70 kcal) seja reciclado indefinidamente. Matches apenas fuzzy
     // ainda podem se beneficiar do histórico pessoal compatível.
-    let prefetchedMatch = await matchFood(supabase, it.food_name, country)
+    const wording =
+      captured.consumptionPolicy === 'consumed-meal-v1'
+        ? consumedCatalogueWording
+        : normalizeFoodText
+    let prefetchedMatch = await matchFood(
+      supabase,
+      it.food_name,
+      country,
+      wording === consumedCatalogueWording,
+    )
     let referenceName = it.food_name
     let usedEstimateReference = false
     if (
       captured.consumptionPolicy === 'consumed-meal-v1' &&
-      normalizeFoodText(prefetchedMatch.name_pt ?? '') !== normalizeFoodText(it.food_name)
+      wording(prefetchedMatch.name_pt ?? '') !== wording(it.food_name)
     ) {
       const estimateReference = consumedMealEstimateReference(it.food_name)
       const reference = consumedIngredientReference(it.food_name) ?? estimateReference
@@ -2396,7 +2427,7 @@ export async function calcMealMacros(
     const hasExactCanonicalMatch =
       prefetchedMatch.id != null &&
       prefetchedMatch.kcal_per_100g != null &&
-      normalizeFoodText(prefetchedMatch.name_pt ?? '') === normalizeFoodText(referenceName)
+      wording(prefetchedMatch.name_pt ?? '') === wording(referenceName)
 
     // ── PREPARO AMBÍGUO (device gate 2026-09-27; decisão Eduardo 2026-09-28) ─
     // Sem preparo no pedido e com o mesmo alimento em preparos de energia muito

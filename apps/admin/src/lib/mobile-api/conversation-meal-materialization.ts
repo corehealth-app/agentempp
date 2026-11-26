@@ -3,6 +3,7 @@
 
 import { isDeepStrictEqual } from 'node:util'
 import {
+  consumedCatalogueWording,
   consumedCompositionParts,
   consumedFoodDefault,
   consumedIngredientReference,
@@ -714,7 +715,9 @@ async function materializeConversationMealCore(
       const raw = structuredClone(result.data),
         rows = z.array(catalogRow).max(5).parse(raw)
       if (!isDeepStrictEqual(raw, rows)) unavailable()
-      let found = rows.some((row) => catalogueWording(row.name_pt) === catalogueTerm)
+      let found = rows.some(
+        (row) => consumedCatalogueWording(row.name_pt) === consumedCatalogueWording(catalogueTerm),
+      )
       // A named composition need not exist as one catalogue row. Reuse the
       // calculator's exact component resolution, preserving the original name,
       // source positions and total mass. No unknown/partial ingredient passes.
@@ -743,27 +746,30 @@ async function materializeConversationMealCore(
       | 'unqualified_whole_name'
       | 'personal_correction_unproven'
       | 'ambiguous_source_group'
-    const qualified = new Map<string, Qualification>()
+    const qualified = new Map<string, Promise<Qualification>>()
     const qualify = async (name: string): Promise<Qualification> => {
       // Use the actual unchanged input spelling the calculator will receive.
       const candidate = freshCandidate({ name }, 0)
       if (!candidate) return 'ambiguous_source_group'
-      const key = candidate.name,
-        previous = qualified.get(key)
-      if (previous !== undefined) return previous
-      const correction = await correctionFor(key)
-      let answer: Qualification
-      if (correction.status === 'active')
-        answer =
-          correction.customNutrition || (await qualifyWhole(correction.row.corrected_to))
-            ? 'qualified'
-            : 'personal_correction_unproven'
-      else if (correction.status === 'unproven') answer = 'personal_correction_unproven'
-      else if (correction.status === 'learning')
-        answer = (await qualifyWhole(name)) ? 'qualified' : 'personal_correction_unproven'
-      else answer = (await qualifyWhole(name)) ? 'qualified' : 'unqualified_whole_name'
-      qualified.set(key, answer)
-      return answer
+      const key = candidate.name
+      let resolution = qualified.get(key)
+      if (resolution === undefined) {
+        resolution = (async () => {
+          const correction = await correctionFor(key)
+          if (correction.status === 'active') {
+            return correction.customNutrition || (await qualifyWhole(correction.row.corrected_to))
+              ? 'qualified'
+              : 'personal_correction_unproven'
+          }
+          if (correction.status === 'unproven') return 'personal_correction_unproven'
+          if (await qualifyWhole(name)) return 'qualified'
+          return correction.status === 'learning'
+            ? 'personal_correction_unproven'
+            : 'unqualified_whole_name'
+        })()
+        qualified.set(key, resolution)
+      }
+      return resolution
     }
     const media = record(context.media)
     const imageResult = record(media?.processing_result)
@@ -776,6 +782,19 @@ async function materializeConversationMealCore(
       source.media_binding?.kind === 'conversation_photo' &&
       source.media_binding.catalog_version === 2 &&
       imageResult?.classification === 'meal'
+    if (allowPhotoReview) {
+      // Independent photo items can resolve together. Keep publication and
+      // errors in source order and bound the concurrent catalogue reads.
+      const observations = byUnit.get('vision_items')?.visual_items ?? []
+      for (let offset = 0; offset < observations.length; offset += 4) {
+        await Promise.allSettled(
+          observations.slice(offset, offset + 4).map(async (raw) => {
+            const item = draftFromVisionItems([raw], threshold)[0]
+            if (item) await qualify(item.name)
+          }),
+        )
+      }
+    }
     const photoReview: number[] = []
     let firstExcluded: ConversationMealMaterialization | undefined
     const deferPhotoItem = (

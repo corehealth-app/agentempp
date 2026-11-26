@@ -340,6 +340,9 @@ final class FlowConversationModel {
       mealReplies?.hasFulfilledParent(origin.selection.child.commandID) != true else { return nil }
     return .init(child: origin.selection.child, routingHash: origin.selection.decisionHash, originPin: origin.pin)
   }
+  func hasLinkedNeutralMealQuestion(intakeID: UUID) -> Bool {
+    mealReplies != nil && parentQuestionRepository != nil && mealQuestionReference(intakeID: intakeID) != nil
+  }
   func canReadNeutralMealQuestion(intakeID: UUID) -> Bool {
     hasCurrentScope && mealReplies?.canBegin == true && parentQuestionRepository != nil
       && mealQuestionReference(intakeID: intakeID) != nil && parentQuestionRequests.isEmpty

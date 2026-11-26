@@ -9,8 +9,14 @@ struct FlowConversationMealQuestionOriginsContent: View {
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
   var body: some View {
     if let origins = model.mealQuestionOrigins {
+      let visibleQuestions = Set<UUID>(model.unifiedRows.compactMap { entry in
+        guard entry.kind == .intake, entry.question != nil, let id = entry.intakeID,
+          model.hasLinkedNeutralMealQuestion(intakeID: id)
+        else { return nil }
+        return id
+      })
       VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-        ForEach(model.recoveredMealQuestionOrigins) { origin in
+        ForEach(model.recoveredMealQuestionOrigins.filter { !visibleQuestions.contains($0.id) }) { origin in
           VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
             switch origin.source {
             case .text(let text): Text(verbatim: text)
@@ -18,7 +24,7 @@ struct FlowConversationMealQuestionOriginsContent: View {
               Text(english ? "Report with an attachment" : "Relato com anexo")
               if let caption { Text(verbatim: caption) }
             }
-            Button(english ? "Check the current question" : "Consultar pergunta atual") {
+            Button(english ? "Resume this message" : "Retomar esta mensagem") {
               Task { await model.beginNeutralMealReply(intakeID: origin.id) }
             }
             .disabled(!model.canReadNeutralMealQuestion(intakeID: origin.id))

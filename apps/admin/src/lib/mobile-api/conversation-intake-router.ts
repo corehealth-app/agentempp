@@ -358,7 +358,7 @@ export function createOpenRouterConversationIntakeRouter(
               reason: 'image_not_supported_for_conversation',
               question: {
                 field: 'description',
-                text: 'Descreva o alimento e a quantidade consumida ou a atividade que realizou; esta imagem não permite identificar esse registro.',
+                text: 'Não consegui identificar a refeição nessa foto. Pode enviar outra ou me contar o que comeu e quanto?',
               },
             })
           if (
@@ -395,7 +395,7 @@ export function createOpenRouterConversationIntakeRouter(
               reason: 'image_description_required',
               question: {
                 field: 'description',
-                text: 'Não consegui identificar os alimentos na foto. O que você consumiu e em qual quantidade?',
+                text: 'Não consegui identificar os alimentos. Pode enviar outra foto ou me contar o que comeu e quanto?',
               },
             })
           const input = source.intake.input.source
@@ -409,7 +409,9 @@ export function createOpenRouterConversationIntakeRouter(
             input.user_action === 'report_actual_record' &&
             input.caption === undefined &&
             image.analysis.items.length > 0 &&
-            image.analysis.items.every((item) => item.quantity_g_estimate > 0)
+            image.analysis.items.some(
+              (item) => item.quantity_g_estimate > 0 && item.quantity_g_estimate <= 9999,
+            )
           ) {
             // The bound send supplies the intent. The meal service still validates
             // the visual observations and resolves each item before saving.

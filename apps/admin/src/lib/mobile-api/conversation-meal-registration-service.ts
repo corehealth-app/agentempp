@@ -6,9 +6,11 @@ import {
   calcMealMacros,
   detectExplicitMealType,
   getLocalHour,
+  getPersonalMealWindows,
   isUnresolvedNutritionSource,
   type MealCalcResult,
   resolveGlobalMealTypeByHour,
+  resolveUnambiguousMealTypeByHour,
 } from '@mpp/agent'
 import type { ServiceClient } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
@@ -260,18 +262,104 @@ function materialBinding(
       unavailable()
   }
 }
-function unresolved(calculation: MealCalcResult): boolean {
+function unresolvedItem(item: MealCalcResult['items'][number]): boolean {
   return (
-    !calculation.items.length ||
-    calculation.items.some(
-      (i) =>
-        isUnresolvedNutritionSource(i.source) ||
-        i.source === 'canonical_composite_partial' ||
-        i.source === 'pending_approved' ||
-        !!i.preparation_options?.length,
-    )
+    isUnresolvedNutritionSource(item.source) ||
+    item.source === 'canonical_composite_partial' ||
+    item.source === 'pending_approved' ||
+    !!item.preparation_options?.length
   )
 }
+
+function keepCalculatedPhotoItems(
+  s: CapturedConversationMealSource,
+  material: MaterializedConversationMeal,
+  calc: MealCalcResult,
+): { material: MaterializedConversationMeal; calc: MealCalcResult } | null {
+  // The writer's photo-review contract binds one authoritative input to
+  // each visual item, including when the calculator merges equivalent inputs.
+  const source = s.context.source_input
+  const media = s.context.media
+  if (
+    s.context.schema !== 'conversation.meal-source.v2' ||
+    !('intake_origin' in source) ||
+    source.source.channel !== 'media' ||
+    source.source.caption !== undefined ||
+    !isDeepStrictEqual(s.context.source_units, ['vision_items']) ||
+    media?.kind !== 'conversation_photo' ||
+    media.catalog_version !== 2
+  )
+    return null
+
+  if (!calc.items.length) return null
+  const mapping = mapConversationMealCalculationSources(material, calc)
+  if (
+    material.source_groups.some(
+      (group) =>
+        group.source_positions.length !== 1 ||
+        group.input_indexes.length !== 1 ||
+        group.source_positions[0]?.visual_index == null,
+    )
+  )
+    return null
+
+  const inputs: MaterializedConversationMeal['inputs'][number][] = []
+  const groups: MaterializedConversationMeal['source_groups'][number][] = []
+  const items: MealCalcResult['items'] = []
+  const lineInputIndexes: number[][] = []
+  const photoReview = [...(material.photo_review ?? [])]
+  const reindexed = new Map<number, number>()
+  for (const [line, item] of calc.items.entries()) {
+    const sourceLine = mapping[line] ?? unavailable()
+    const pending = unresolvedItem(item)
+    const indexes: number[] = []
+    for (const inputIndex of sourceLine.input_indexes) {
+      const input = material.inputs[inputIndex] ?? unavailable()
+      const group = material.source_groups[input.source_group_index] ?? unavailable()
+      if (pending) {
+        photoReview.push(group.source_positions[0]?.visual_index ?? unavailable())
+        continue
+      }
+      const index = inputs.length
+      reindexed.set(inputIndex, index)
+      inputs.push({ ...input, input_index: index, source_group_index: index })
+      groups.push({ ...group, group_index: index, input_indexes: [index] })
+      indexes.push(index)
+    }
+    if (!pending) {
+      items.push(item)
+      lineInputIndexes.push(indexes)
+    }
+  }
+  if (!items.length) return null
+  const totals = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 }
+  for (const field of ['kcal', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g'] as const) {
+    totals[field] = +items.reduce((total, item) => total + item[field], 0).toFixed(1)
+  }
+  const annotations = (calc.preparation_annotations ?? []).flatMap((annotation) => {
+    const indexes = annotation.input_indexes
+      .map((index) => reindexed.get(index))
+      .filter((index): index is number => index !== undefined)
+    if (indexes.length !== annotation.input_indexes.length) return []
+    return [{ ...annotation, input_indexes: indexes }]
+  })
+  return {
+    material: {
+      ...material,
+      inputs,
+      source_groups: groups,
+      photo_review: photoReview.sort((a, b) => a - b),
+    },
+    calc: {
+      ...calc,
+      items,
+      totals,
+      input_indexes: lineInputIndexes,
+      preparation_annotations: annotations,
+    },
+  }
+}
+
 function resolvedPayload(
   command: BoundConversationMealCommand,
   s: CapturedConversationMealSource,
@@ -525,35 +613,50 @@ export async function registerPersistedConversationMeal(
       sourceReader: s.sourceReader,
       auditSink: s.auditSink,
     })
-    const calc = applyMobilePreparedDishEstimate(
+    const calculation = applyMobilePreparedDishEstimate(
       structuredClone(initial),
       inputs,
       'mobile_app',
       typeof s.context.owner.locale === 'string' ? s.context.owner.locale : null,
     )
-    if (unresolved(calc))
+    const hasUnresolved = !calculation.items.length || calculation.items.some(unresolvedItem)
+    const result = hasUnresolved
+      ? keepCalculatedPhotoItems(s, m, calculation)
+      : { material: m, calc: calculation }
+    if (!result)
       return notRecorded(
         command,
         'nutrition_unresolved',
         i.foods.map((food) => food.index),
       )
-    // Keep explicit choices first. A photo-only report uses the account's
-    // civil hour at admission, so retries cannot move a meal across windows.
+    if (hasUnresolved) materialBinding(result.material, i, command, s)
+    // Compare the saved routine with the account's civil time at admission.
+    // Older or conflicting temporal claims are handled by interpretation first.
     const text = evidence.sources
       .filter((source) => source.unit !== 'vision_items')
       .map((source) => source.text ?? '')
       .join('\n')
-    const photoOnly = isDeepStrictEqual(evidence.source_units, ['vision_items'])
-    const mealType =
-      command.command.meal_type ??
-      detectExplicitMealType(text) ??
-      (photoOnly && typeof s.context.owner.timezone === 'string'
-        ? resolveGlobalMealTypeByHour(
-            getLocalHour(s.context.owner.timezone, new Date(b.admitted_at)),
-          )
-        : null)
+    let mealType = command.command.meal_type ?? detectExplicitMealType(text)
+    const timezone = s.context.owner.timezone
+    if (
+      !mealType &&
+      evidence.source_units.includes('vision_items') &&
+      typeof timezone === 'string'
+    ) {
+      const admittedAt = new Date(b.admitted_at)
+      const routine = await getPersonalMealWindows(db, owner, timezone, admittedAt, {
+        excludeAtOrAfterReference: true,
+      })
+      const localHour = getLocalHour(timezone, admittedAt)
+      mealType = resolveUnambiguousMealTypeByHour(localHour, routine)
+      // The older linked-answer writer requires a complete meal. Keep the
+      // existing civil slot for partial photos so that known items are saved.
+      if (!mealType && result.material.photo_review?.length) {
+        mealType = resolveGlobalMealTypeByHour(localHour)
+      }
+    }
     if (!mealType) return notRecorded(command, 'meal_type_required')
-    const resolved = resolvedPayload(command, s, m, calc, mealType)
+    const resolved = resolvedPayload(command, s, result.material, result.calc, mealType)
     let prepared: Awaited<ReturnType<ConversationMealWriter['prepare']>>
     try {
       prepared = await writer.prepare({ command, source: s, resolved })

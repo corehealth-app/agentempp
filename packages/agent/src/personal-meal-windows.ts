@@ -204,20 +204,27 @@ export async function getPersonalMealWindows(
   userId: string,
   tz: string,
   referenceTimestamp: Date = new Date(),
+  options: { excludeAtOrAfterReference?: boolean } = {},
 ): Promise<PersonalMealWindows> {
   const cutoffDate = getLocalDateMinusDays(tz, LOOKBACK_DAYS, referenceTimestamp)
   // Query SIMPLES: user_id + consumed_at >= cutoff (data local convertida em
   // limite frouxo — não precisa offset porque queremos margem). Limit alto
   // pra cobrir ~150 logs típicos sem cap.
   // biome-ignore lint/suspicious/noExplicitAny: ServiceClient sem types estritos aqui
-  const { data, error } = await (supabase as any)
+  const query = (supabase as any)
     .from('meal_logs')
     .select('meal_type, consumed_at, raw_provider_message_id, food_name')
     .eq('user_id', userId)
     .gte('consumed_at', `${cutoffDate}T00:00:00Z`)
     .not('meal_type', 'is', null)
     .not('consumed_at', 'is', null)
-    .limit(500)
+  const bounded = options.excludeAtOrAfterReference
+    ? query
+        .lt('consumed_at', referenceTimestamp.toISOString())
+        .order('consumed_at', { ascending: false })
+        .order('id', { ascending: false })
+    : query
+  const { data, error } = await bounded.limit(500)
   if (error) throw new Error(error.message ?? 'personal meal window lookup failed')
   const rows = (data ?? []) as MealLogWindowRow[]
 
@@ -261,6 +268,18 @@ export function resolveMealTypeByHour(
     if (first) return { expected: first.meal_type, source: 'personal' }
   }
   return { expected: resolveGlobalMealTypeByHour(localHour), source: 'global' }
+}
+
+/** The app can ask the person when two established meal windows overlap. */
+export function resolveUnambiguousMealTypeByHour(
+  hour: number,
+  personal: PersonalMealWindows,
+): MealType | null {
+  const matches = [...personal.windows.values()].filter((window) =>
+    hourFallsInWindow(hour, window.p10, window.p90),
+  )
+  if (matches.length > 1) return null
+  return matches[0]?.meal_type ?? resolveGlobalMealTypeByHour(hour)
 }
 
 function hourFallsInWindow(hour: number, start: number, end: number): boolean {

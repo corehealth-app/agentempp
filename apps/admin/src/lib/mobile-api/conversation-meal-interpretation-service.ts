@@ -126,14 +126,14 @@ function interpretCaptionlessMealPhoto(
   )
     return null
 
-  // A nutrition label is represented by a missing-portion sentinel. It must
-  // still pass through the existing interpretation/confirmation flow.
-  const hasPortions = observation.visual_items.every((item) => {
+  // At least one portion distinguishes a partial meal from the single
+  // missing-portion sentinel used for a nutrition label.
+  const hasPortion = observation.visual_items.some((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return false
     const grams = item.quantity_g_estimate
-    return typeof grams === 'number' && grams > 0
+    return typeof grams === 'number' && grams > 0 && grams <= 9999
   })
-  if (!hasPortions) return null
+  if (!hasPortion) return null
 
   const indexes = observation.visual_items.map((_, index) => index)
   const result = validateConversationMealInterpretationModel(

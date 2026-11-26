@@ -15,6 +15,7 @@ struct FlowConversationView: View {
   @State private var discardID: UUID?
   @State private var discardIsPrepared = false
   @State private var transcriptPositioning = FlowTranscriptPositioning()
+  @State private var transcriptScrollPosition = ScrollPosition(idType: String.self, edge: .bottom)
   @State private var isOpeningConversation = true
   @State private var isLoadingEarlierHistory = false
   private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
@@ -83,9 +84,7 @@ struct FlowConversationView: View {
       )
     ) { presentation in FlowConversationMealEditorView(model: presentation.model) }
     .task {
-      isOpeningConversation = true
-      transcriptPositioning = .init()
-      await model.refreshConversation()
+      await model.resumeConversationView()
       isOpeningConversation = false
     }
     .onDisappear { model.cancelTransientWork() }
@@ -141,34 +140,32 @@ struct FlowConversationView: View {
   }
 
   private var transcript: some View {
-    ScrollViewReader { reader in
-      transcriptScrollView
-        .onScrollPhaseChange { _, phase in
-          if phase == .interacting { transcriptPositioning.userScrolled() }
-        }
-        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { _, _ in
-          if transcriptPositioning.followsSendingMessage {
-            scroll(to: FlowTranscriptPositioning.latestAnchor, in: reader)
+    transcriptScrollView
+      .scrollPosition($transcriptScrollPosition, anchor: .top)
+      .onScrollPhaseChange { _, phase, context in
+        if phase == .interacting { transcriptPositioning.userScrolled() }
+        if phase == .idle {
+          let geometry = context.geometry
+          let remaining = geometry.contentSize.height - geometry.visibleRect.maxY
+          if transcriptPositioning.userScrollSettled(atLatest: remaining <= 12) {
+            transcriptScrollPosition.scrollTo(edge: .bottom)
           }
         }
-        .onChange(of: transcriptPositionObservation, initial: true) { _, observation in
-          if let anchor = transcriptPositioning.observe(observation) {
-            scroll(to: anchor, in: reader)
-          }
+      }
+      .onChange(of: transcriptPositionObservation, initial: true) { _, observation in
+        guard let anchor = transcriptPositioning.observe(observation) else { return }
+        if anchor == FlowTranscriptPositioning.latestAnchor {
+          transcriptScrollPosition.scrollTo(edge: .bottom)
+        } else {
+          transcriptScrollPosition.scrollTo(id: anchor, anchor: .top)
         }
-    }
-  }
-
-  private func scroll(to anchor: String, in reader: ScrollViewProxy) {
-    if anchor == FlowTranscriptPositioning.latestAnchor {
-      reader.scrollTo(anchor, anchor: .bottom)
-    } else {
-      reader.scrollTo(anchor, anchor: .top)
-    }
+      }
   }
 
   private var showsOpeningSkeleton: Bool {
-    isOpeningConversation && model.failure == nil && model.neutralIntake?.respondingIntakeID == nil
+    isOpeningConversation && model.unifiedRows.isEmpty && model.journalRows.isEmpty
+      && model.threadRows.isEmpty
+      && model.failure == nil && model.neutralIntake?.respondingIntakeID == nil
   }
 
   private var oldestVisibleHistoryAt: String? {
@@ -189,10 +186,8 @@ struct FlowConversationView: View {
         } else {
           transcriptRows
         }
-        Color.clear.frame(height: 0)
-          .id(FlowTranscriptPositioning.latestAnchor)
-          .accessibilityHidden(true)
       }
+      .scrollTargetLayout()
       .padding(BodyFlowSpacing.md)
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)

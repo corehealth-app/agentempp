@@ -79,7 +79,7 @@ struct FlowConversationJournalV3RuntimeTests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let source = FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true)
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true)
     let session = try await source.open(expectedUserID: lease.userID)
     await session.model.loadHistory()
     let requests = await f.http.stub.requests
@@ -105,6 +105,7 @@ struct JournalV3HTTPFixture {
   let http: ConversationHTTPFixture
   let disk: OutboxDiskFixture
   let vault: ConversationOutboxKeyVault
+  let editing: FlowConversationMealEditingDependencies
   let page: Data
   let mealSession: ConversationHTTPReply
   let intakeSession: ConversationHTTPReply
@@ -136,6 +137,10 @@ func journalV3HTTPFixture(pageIndex: Int = 3) async throws -> JournalV3HTTPFixtu
   return .init(
     http: http, disk: disk,
     vault: .init(service: "journal-v3-unit", security: OutboxKeychainFake()),
+    editing: .init(
+      store: .init(directory: disk.directory),
+      keyVault: .init(
+        service: ConversationMealEditOutboxSession.keychainService, security: OutboxKeychainFake())),
     page: try JSONSerialization.data(withJSONObject: page), mealSession: mealReply,
     intakeSession: intakeReply)
 }
@@ -281,7 +286,7 @@ func journalV3Cursor(page: [String: Any], row: [String: Any]) throws -> String {
     let lease = await f.http.lifecycle.leaseForRequest()
     let source = FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true)
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true)
     let session = try await source.open(expectedUserID: lease.userID)
     await session.model.loadHistory()
     #expect(session.model.unifiedRows.count == 1)
@@ -311,7 +316,7 @@ func journalV3Cursor(page: [String: Any], row: [String: Any]) throws -> String {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     await session.model.loadHistory()
     let row = try #require(session.model.unifiedRows.first)
@@ -415,7 +420,7 @@ extension ConversationJournalV3Tests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     var first = try JSONSerialization.jsonObject(with: f.page) as! [String: Any]
     var second = first
@@ -429,7 +434,10 @@ extension ConversationJournalV3Tests {
     second["next_cursor"] = NSNull()
     let a = try neutralHTTP(first)
     let b = try neutralHTTP(second)
+    let mealSessionPath = "/api/mobile/v1/conversation/session"
     await f.http.stub.respond { request, _ in
+      if request.url?.path == mealSessionPath { return f.mealSession }
+      if request.url?.path == "/api/mobile/v1/conversation/intakes/session" { return f.intakeSession }
       let next = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first
       { $0.name == "cursor" }?.value
       return next == cursor ? b : a
@@ -441,6 +449,11 @@ extension ConversationJournalV3Tests {
       session.model.unifiedRows.count == 10 && !session.model.hasMoreHistory
         && !session.model.unifiedHistoryUnavailable)
     #expect(session.model.unifiedRows.map(\.eventID) == rows.map { $0["event_id"] as! String })
+    let sessionReads = await f.http.stub.requests.filter { $0.url?.path == mealSessionPath }.count
+    await session.model.resumeConversationView()
+    #expect(session.model.unifiedRows.map(\.eventID) == rows.map { $0["event_id"] as! String })
+    #expect(!session.model.hasMoreHistory && !session.model.unifiedHistoryUnavailable)
+    #expect(await f.http.stub.requests.filter { $0.url?.path == mealSessionPath }.count == sessionReads)
     #expect(session.model.savedEffectRevision == 0)
     await session.close()
   }
@@ -473,7 +486,7 @@ extension ConversationJournalV3Tests {
     }
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     let before = try Data(contentsOf: f.disk.store.fileURL(owner: owner))
     await session.model.loadHistory()
@@ -500,7 +513,7 @@ extension ConversationJournalV3Tests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     var page = try JSONSerialization.jsonObject(with: f.page) as! [String: Any]
     page[attack] =
@@ -519,7 +532,7 @@ extension ConversationJournalV3Tests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     let response = try neutralHTTP(JSONSerialization.jsonObject(with: f.page))
     let barrier = ConversationControllerBarrier()
@@ -690,7 +703,7 @@ extension ConversationJournalV3Tests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     await session.model.loadHistory()
     let old = try #require(session.model.unifiedRows.first)
@@ -850,7 +863,7 @@ extension ConversationJournalV3Tests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     let original = try JSONSerialization.jsonObject(with: f.page) as! [String: Any]
     let row = (original["items"] as! [[String: Any]])[0]
@@ -903,7 +916,7 @@ extension ConversationJournalV3Tests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     var page = try JSONSerialization.jsonObject(with: f.page) as! [String: Any]
     let all = page["items"] as! [[String: Any]]
@@ -943,7 +956,7 @@ extension ConversationJournalV3Tests {
     let lease = await f.http.lifecycle.leaseForRequest()
     let session = try await FlowConversationSessionSource(
       transport: f.http.transport, lifecycle: f.http.lifecycle, media: nil, store: f.disk.store,
-      keyVault: f.vault, neutralIntakeEnabled: true
+      keyVault: f.vault, editing: f.editing, neutralIntakeEnabled: true
     ).open(expectedUserID: lease.userID)
     var first = try JSONSerialization.jsonObject(with: f.page) as! [String: Any]
     var original = (first["items"] as! [[String: Any]])[0]

@@ -54,7 +54,13 @@ struct FlowTranscriptPositioningTests {
 
     var next = snapshot(owner, history: [intake(first), "old"])
     next.activeSendID = second
-    #expect(policy.observe(next) == FlowTranscriptPositioning.latestAnchor)
+    let keptEarlierPosition = policy.userScrollSettled(atLatest: false)
+    #expect(!keptEarlierPosition)
+    #expect(policy.observe(next) == nil)
+    #expect(!policy.followsSendingMessage)
+    policy.userScrolled()
+    let returnedToLatest = policy.userScrollSettled(atLatest: true)
+    #expect(returnedToLatest)
     #expect(policy.followsSendingMessage)
   }
 
@@ -115,13 +121,15 @@ struct FlowTranscriptPositioningTests {
     #expect(policy.observe(snapshot(owner, loading: true)) == nil)
     #expect(policy.observe(snapshot(owner, history: [intake(first)], local: [first])) == nil)
   }
-  @Test func userReadingCancelsDelayedMigrationButANewOwnResponseStillFocuses() {
+  @Test func readerCanReturnToTheLatestBeforeFollowingANewOwnResponse() {
     let owner = Owner()
     var policy = FlowTranscriptPositioning()
     _ = policy.observe(snapshot(owner, history: ["old"]))
     _ = policy.observe(snapshot(owner, history: ["old"], local: [first]))
     policy.userScrolled()
     #expect(policy.observe(snapshot(owner, history: [intake(first)], local: [first])) == nil)
+    let returnedToLatest = policy.userScrollSettled(atLatest: true)
+    #expect(returnedToLatest)
     #expect(
       policy.observe(snapshot(owner, history: [intake(first)], local: [first, second]))
         == intake(second))

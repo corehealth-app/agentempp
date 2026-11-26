@@ -1679,14 +1679,24 @@ final class FlowConversationModel {
     await refresh()
     if hasCurrentScope {
       if let identity = context?.identity { neutralIntake?.acceptParent(identity) }
-      if historyVersion == .v3 {
-        // The canonical page uses the newly verified parent scope and does not
-        // depend on replaying or restoring any local intent.
-        async let firstPage: Void = loadHistory()
-        await restoreConversationIntents()
-        await firstPage
-        return
-      }
+      await loadConversationContent()
+    }
+  }
+  func resumeConversationView() async {
+    // Returning from another tab does not invalidate the authenticated scope.
+    // Keep it while refreshing the transcript so existing rows stay visible.
+    guard historyVersion == .v3, hasCurrentScope, neutralIntake?.isWorking != true else {
+      await refreshConversation()
+      return
+    }
+    await loadConversationContent()
+  }
+  private func loadConversationContent() async {
+    if historyVersion == .v3 {
+      async let firstPage: Void = loadHistory()
+      await restoreConversationIntents()
+      await firstPage
+    } else {
       await restoreConversationIntents()
       await loadHistory()
     }

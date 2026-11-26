@@ -14,12 +14,13 @@ final class FlowConversationJournalV3Model {
   private let lifecycle: any SessionLifecycleProviding
   private var context: ConversationCommandContext?
   private var pinnedIdentity: ConversationCommandContext.Identity?
-  private var operation: Task<ConversationJournalV3Read, any Error>?
+  private var operation: Task<[ConversationJournalV3PageSnapshot], any Error>?
   private var entries: [ConversationJournalV3PageSnapshot.Entry] = []
   private var pins: [String: Pin] = [:]
   private var observedAt: String?
   private var cursor: String?
   private var more = false
+  private var loadedPages = 0
   private var requestID: UUID?
   private var closed = false
   private var commentaryCurrent = false
@@ -66,6 +67,8 @@ final class FlowConversationJournalV3Model {
     context = incoming
     let id = UUID()
     let requestedCursor = reset ? nil : cursor
+    let oldestLoaded = reset && loadedPages > 1 ? entries.last : nil
+    let pageBudget = oldestLoaded == nil ? 1 : loadedPages + 1
     operation?.cancel()
     requestID = id
     isLoading = true
@@ -81,13 +84,42 @@ final class FlowConversationJournalV3Model {
     do {
       let history = self.history
       let task = Task {
-        try await history.unifiedJournal(cursor: requestedCursor, limit: limit, context: incoming)
+        var pages: [ConversationJournalV3PageSnapshot] = []
+        var next = requestedCursor
+        for _ in 0..<pageBudget {
+          let page = try await history.unifiedJournal(cursor: next, limit: limit, context: incoming).page
+          if let previous = pages.last {
+            guard let previousAt = ConversationProtocolInstant(previous.observedAt),
+              let currentAt = ConversationProtocolInstant(page.observedAt), currentAt >= previousAt
+            else { throw MobileAPITransportError.invalidResponse }
+            if let last = previous.items.last, let first = page.items.first {
+              guard ConversationJournalV3PageSnapshot.precedes(last, first) else {
+                throw MobileAPITransportError.invalidResponse
+              }
+            }
+          }
+          pages.append(page)
+          guard let oldestLoaded, let cursor = page.nextCursor, let last = page.items.last,
+            ConversationJournalV3PageSnapshot.precedes(last, oldestLoaded)
+          else { return pages }
+          next = cursor
+        }
+        // Preserve the current range if the new head cannot reach it within
+        // the number of pages already loaded plus one page for new messages.
+        throw MobileAPITransportError.invalidResponse
       }
       operation = task
-      let read = try await withTaskCancellationHandler {
+      let pages = try await withTaskCancellationHandler {
         try await task.value
       } onCancel: {
         task.cancel()
+      }
+      guard let recentPage = pages.last, let firstPage = pages.first else {
+        throw MobileAPITransportError.invalidResponse
+      }
+      let items = pages.flatMap(\.items)
+      guard Set(items.map(\.eventID)).count == items.count else {
+        throw MobileAPITransportError.invalidResponse
       }
       try await lifecycle.performVisiblePatientStateOperation(lease: lease) {
         try Task.checkCancellation()
@@ -97,21 +129,21 @@ final class FlowConversationJournalV3Model {
           else { throw ConversationOutboxError.staleObservation }
           if let old = self.observedAt {
             guard let a = ConversationProtocolInstant(old),
-              let b = ConversationProtocolInstant(read.page.observedAt), b >= a
+              let b = ConversationProtocolInstant(firstPage.observedAt), b >= a
             else { throw MobileAPITransportError.invalidResponse }
           }
           if !reset {
             guard self.cursor == requestedCursor,
-              Set(self.entries.map(\.eventID)).isDisjoint(with: Set(read.page.items.map(\.eventID)))
+              Set(self.entries.map(\.eventID)).isDisjoint(with: Set(items.map(\.eventID)))
             else { throw MobileAPITransportError.invalidResponse }
-            if let last = self.entries.last, let first = read.page.items.first {
+            if let last = self.entries.last, let first = items.first {
               guard ConversationJournalV3PageSnapshot.precedes(last, first) else {
                 throw MobileAPITransportError.invalidResponse
               }
             }
           }
           var nextPins = self.pins
-          for entry in read.page.items {
+          for entry in items {
             if let known = nextPins[entry.eventID] {
               let childUnchanged = known.commandID == entry.commandID
               let childAssigned =
@@ -128,15 +160,16 @@ final class FlowConversationJournalV3Model {
               immutable: entry.immutablePin, outcome: entry.outcomePin, status: entry.status,
               commandID: entry.commandID)
           }
-          self.entries = reset ? read.page.items : self.entries + read.page.items
+          self.entries = reset ? items : self.entries + items
           self.pins = nextPins
-          self.cursor = read.page.nextCursor
-          self.more = read.page.hasMore
-          self.observedAt = read.page.observedAt
+          self.cursor = recentPage.nextCursor
+          self.more = recentPage.hasMore
+          self.observedAt = recentPage.observedAt
+          self.loadedPages = reset ? pages.count : self.loadedPages + 1
           // A read validates the wrappers on THIS page only. A profile or
           // reevaluation can change policy without changing the epoch, so an
           // older page retains facts but cannot regain clinical commentary.
-          self.commentaryEventIDs = Set(read.page.items.map(\.eventID))
+          self.commentaryEventIDs = Set(recentPage.items.map(\.eventID))
           self.commentaryCurrent = true
         }
       }
@@ -173,6 +206,7 @@ final class FlowConversationJournalV3Model {
     entries.removeAll()
     cursor = nil
     more = false
+    loadedPages = 0
     unavailable = false
   }
   func clear() {

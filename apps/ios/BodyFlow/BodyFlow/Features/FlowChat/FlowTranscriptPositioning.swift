@@ -25,6 +25,8 @@ struct FlowTranscriptPositioning {
   private var awaitingSendHistory: ResultID?
   private var activeSendID: UUID?
   private var followedSend = false
+  private var readingEarlier = false
+  private var userIsMoving = false
   var followsSendingMessage: Bool { activeSendID != nil && followedSend }
 
   static func intakeAnchor(_ id: UUID) -> String {
@@ -104,6 +106,8 @@ struct FlowTranscriptPositioning {
       awaitingSendHistory = nil
       activeSendID = nil
       followedSend = false
+      readingEarlier = false
+      userIsMoving = false
     }
 
     let newResults = observation.localResultIDs.filter { !seenLocalResults.contains($0) }
@@ -112,11 +116,11 @@ struct FlowTranscriptPositioning {
     if let sending = observation.activeSendID {
       guard activeSendID != sending else { return nil }
       activeSendID = sending
-      followedSend = true
+      followedSend = !readingEarlier
       initiallyPositioned = true
       awaitingHistoryResult = nil
       awaitingSendHistory = nil
-      return Self.latestAnchor
+      return followedSend ? Self.latestAnchor : nil
     }
     if let sent = activeSendID {
       activeSendID = nil
@@ -131,7 +135,7 @@ struct FlowTranscriptPositioning {
       awaitingSendHistory = nil
       return Self.latestAnchor
     }
-    if let latest = newResults.last {
+    if !readingEarlier, let latest = newResults.last {
       initiallyPositioned = true
       let historical = historicalAnchor(latest, in: observation)
       awaitingHistoryResult = historical == nil ? latest : nil
@@ -155,8 +159,19 @@ struct FlowTranscriptPositioning {
 
   mutating func userScrolled() {
     initiallyPositioned = true
+    userIsMoving = true
+    readingEarlier = true
     awaitingHistoryResult = nil
     awaitingSendHistory = nil
     followedSend = false
+  }
+
+  /// Only a completed manual move can opt back into following the newest turn.
+  mutating func userScrollSettled(atLatest: Bool) -> Bool {
+    guard userIsMoving else { return false }
+    userIsMoving = false
+    readingEarlier = !atLatest
+    if atLatest && activeSendID != nil { followedSend = true }
+    return atLatest
   }
 }

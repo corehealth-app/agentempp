@@ -70,23 +70,25 @@ struct FlowNeutralIntakeComposerContent: View {
         .accessibilityIdentifier("conversation.neutral.attachment")
       }
       HStack(alignment: .bottom, spacing: BodyFlowSpacing.xs) {
-        if let capture, model.captureContext != nil {
+        if let capture {
           Menu {
-            if capture.camera.isAvailable() {
-              Button(english ? "Take photo" : "Tirar foto", systemImage: "camera") {
-                choose(.camera)
+            if model.captureContext != nil {
+              if capture.camera.isAvailable() {
+                Button(english ? "Take photo" : "Tirar foto", systemImage: "camera") {
+                  choose(.camera)
+                }
               }
-            }
-            Button(english ? "Photo library" : "Galeria", systemImage: "photo") { choose(.gallery) }
-            Button(english ? "Choose audio" : "Selecionar áudio", systemImage: "waveform") {
-              choose(.audioFile)
+              Button(english ? "Photo library" : "Galeria", systemImage: "photo") { choose(.gallery) }
+              Button(english ? "Choose audio" : "Selecionar áudio", systemImage: "waveform") {
+                choose(.audioFile)
+              }
             }
             mealContextPicker
           } label: {
             Image(systemName: "plus").frame(width: 44, height: 44)
           }
           .disabled(model.isWorking || model.isComposerLocked || recordingCaption != nil)
-          .accessibilityLabel(english ? "Attach photo or audio" : "Anexar foto ou áudio")
+          .accessibilityLabel(attachmentMenuLabel)
           .accessibilityIdentifier("conversation.neutral.attach")
         }
         if let recordingCaption {
@@ -131,7 +133,7 @@ struct FlowNeutralIntakeComposerContent: View {
           .accessibilityIdentifier("conversation.neutral.send")
         }
       }
-      if capture == nil || model.captureContext == nil {
+      if capture == nil {
         mealContextPicker.pickerStyle(.menu)
       } else if let hint = model.mealTypeHint {
         Text(mealName(hint)).font(BodyFlowTypography.caption)
@@ -140,6 +142,10 @@ struct FlowNeutralIntakeComposerContent: View {
     }.padding(BodyFlowSpacing.md)
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("conversation.neutral.composer-content")
+  }
+  private var attachmentMenuLabel: String {
+    if model.captureContext != nil { return english ? "Attach photo or audio" : "Anexar foto ou áudio" }
+    return english ? "Meal options" : "Opções da refeição"
   }
   private var mealContextPicker: some View {
     @Bindable var model = model

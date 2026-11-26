@@ -275,6 +275,18 @@ import Testing
           $0.label.contains(
             "Fotos, áudio e respostas vinculadas de atividade ainda não estão disponíveis")
         })
+      let neutral = try #require(model.neutralIntake)
+      neutral.suspendVisibility()
+      #expect(neutral.captureContext == nil)
+      for _ in 0..<25 {
+        if host.nodes().contains(where: { $0.label == "Opções da refeição" }) { break }
+        try await Task.sleep(for: .milliseconds(20))
+      }
+      #expect(
+        host.nodes().contains {
+          $0.identifier == "conversation.neutral.attach" && $0.label == "Opções da refeição"
+        })
+      #expect(!host.nodes().contains { $0.label.contains("Sem indicação de refeição") })
       await model.close()
     }
     @Test(arguments: [false, true])

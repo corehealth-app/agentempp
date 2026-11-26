@@ -441,27 +441,29 @@ struct MealAudioLimitTests {
     private let AVFormatIDKeyName = "AVFormatIDKey"
     private let AVNumberOfChannelsKeyName = "AVNumberOfChannelsKey"
 
-    @Test("The upload uses the original PCM recording and measures its audio frames")
+    @Test("Captured audio buffers reach the upload file with their signal and duration intact")
     func stagesPCMRecordingWithFullDuration() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("flow-audio-conversion-\(UUID())", isDirectory: true)
         let storage = MediaStagingStore(temporaryDirectory: directory)
         defer { try? FileManager.default.removeItem(at: directory) }
         let raw = try storage.makeFileURL(fileExtension: "wav")
-        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
-        let frameCount: AVAudioFrameCount = 56_000
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let writer = try FlowVoicePCMFile(url: raw, inputFormat: format, maximumDuration: 3.5)
+        let frameCount: AVAudioFrameCount = 1_200
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
         buffer.frameLength = frameCount
         let samples = try #require(buffer.floatChannelData?[0])
         for frame in 0..<Int(frameCount) {
             samples[frame] = sin(Float(frame) * 0.13) * 0.3
         }
-        try AVAudioFile(forWriting: raw, settings: [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 16_000,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-        ]).write(from: buffer)
+        #expect(writer.progress.seconds == 0)
+        for _ in 0..<144 {
+            writer.append(buffer)
+        }
+        #expect(writer.progress.shouldStop)
+        #expect(writer.close())
+        writer.append(buffer)
 
         let staged = try await MealMediaStager(staging: storage).stageRecording(at: raw)
         #expect(staged.mimeType == "audio/wav")
@@ -470,6 +472,11 @@ struct MealAudioLimitTests {
         #expect(staged.duration == 3.5)
         #expect(staged.uploadRequest.durationMS == 3_500)
         #expect(FileManager.default.fileExists(atPath: raw.path))
+        let captured = try AVAudioFile(forReading: staged.fileURL)
+        let decoded = try #require(AVAudioPCMBuffer(pcmFormat: captured.processingFormat, frameCapacity: 2_000))
+        try captured.read(into: decoded)
+        let output = try #require(decoded.floatChannelData?[0])
+        #expect((0..<Int(decoded.frameLength)).contains { abs(output[$0]) > 0.1 })
     }
 
     @Test("Only audio types the server accepts are described")

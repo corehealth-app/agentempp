@@ -26,11 +26,24 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
         let deactivate: @MainActor () throws -> Void
     }
 
+    private struct EngineCapture {
+        let engine: AVAudioEngine
+        let file: FlowVoicePCMFile
+        let url: URL
+
+        func stop() -> Bool {
+            engine.stop()
+            engine.inputNode.removeTap(onBus: 0)
+            return file.close()
+        }
+    }
+
     private let staging: MediaStagingStore
     private let captureFormat: CaptureFormat
     private let sessionAccess: SessionAccess
     private var ownsAudioSession = false
     private var recorder: AVAudioRecorder?
+    private var engineCapture: EngineCapture?
     private var ticker: Task<Void, Never>?
 
     private(set) var state = State.idle
@@ -76,15 +89,6 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
         AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
     ]
 
-    private static let linearPCMSettings: [String: Any] = [
-        AVFormatIDKey: Int(kAudioFormatLinearPCM),
-        AVSampleRateKey: 16_000,
-        AVNumberOfChannelsKey: 1,
-        AVLinearPCMBitDepthKey: 16,
-        AVLinearPCMIsFloatKey: false,
-        AVLinearPCMIsBigEndianKey: false,
-    ]
-
     func start() async {
         guard state != .recording, !isStarting else { return }
         isStarting = true
@@ -106,14 +110,20 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
             ownsAudioSession = true
             let pcm = captureFormat == .linearPCM
             let url = try staging.makeFileURL(fileExtension: pcm ? "wav" : "m4a")
-            let settings = pcm ? Self.linearPCMSettings : Self.settings
-            let recorder = try AVAudioRecorder(url: url, settings: settings)
-            recorder.delegate = self
-            guard recorder.record(forDuration: Self.recordingLimit) else {
+            do {
+                if pcm {
+                    engineCapture = try startEngineCapture(at: url)
+                } else {
+                    let recorder = try AVAudioRecorder(url: url, settings: Self.settings)
+                    recorder.delegate = self
+                    guard recorder.record(forDuration: Self.recordingLimit)
+                    else { throw MealCaptureFailure.captureUnavailable }
+                    self.recorder = recorder
+                }
+            } catch {
                 staging.remove(url)
-                throw MealCaptureFailure.captureUnavailable
+                throw error
             }
-            self.recorder = recorder
             elapsed = 0
             state = .recording
             startTicker()
@@ -124,8 +134,32 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func stop() {
-        guard state == .recording, let recorder else { return }
-        recorder.stop()
+        guard state == .recording else { return }
+        if let capture = engineCapture {
+            finish(url: capture.url, successfully: capture.stop())
+        } else {
+            recorder?.stop()
+        }
+    }
+
+    private func startEngineCapture(at url: URL) throws -> EngineCapture {
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        let file = try FlowVoicePCMFile(
+            url: url, inputFormat: format, maximumDuration: Self.recordingLimit
+        )
+        input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { @Sendable buffer, _ in
+            file.append(buffer)
+        }
+        let capture = EngineCapture(engine: engine, file: file, url: url)
+        do {
+            try engine.start()
+            return capture
+        } catch {
+            _ = capture.stop()
+            throw error
+        }
     }
 
     /// Drops the recording in hand, whatever its state.
@@ -137,6 +171,11 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
             recorder.delegate = nil
             recorder.stop()
             staging.remove(recorder.url)
+        }
+        if let capture = engineCapture {
+            _ = capture.stop()
+            staging.remove(capture.url)
+            engineCapture = nil
         }
         if case let .finished(url) = state {
             staging.remove(url)
@@ -177,10 +216,11 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     private func finish(url: URL, successfully: Bool) {
-        guard recorder?.url == url else { return }
+        guard recorder?.url == url || engineCapture?.url == url else { return }
         ticker?.cancel()
         ticker = nil
         recorder = nil
+        engineCapture = nil
         releaseSession()
         if successfully {
             state = .finished(url)
@@ -193,15 +233,21 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     private func startTicker() {
         ticker?.cancel()
         ticker = Task { [weak self] in
+            let started = ContinuousClock.now
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
-                guard let self, let recorder = self.recorder, recorder.isRecording else {
-                    return
+                guard let self, !Task.isCancelled else { return }
+                if let capture = self.engineCapture {
+                    let progress = capture.file.progress
+                    self.elapsed = progress.seconds
+                    if progress.shouldStop || started.duration(to: .now) >= .seconds(Self.recordingLimit) {
+                        self.stop()
+                        return
+                    }
+                } else {
+                    guard let recorder = self.recorder, recorder.isRecording else { return }
+                    self.elapsed = min(recorder.currentTime, MealMediaLimits.maximumAudioDuration)
                 }
-                self.elapsed = min(
-                    recorder.currentTime,
-                    MealMediaLimits.maximumAudioDuration
-                )
             }
         }
     }

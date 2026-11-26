@@ -46,9 +46,10 @@ function providerInput(
   restricted = false,
   earlierQuestion?: string,
   channel: 'text' | 'audio' = 'text',
+  assessment: 'complete' | 'incomplete' = 'complete',
 ) {
   const policy = {
-    assessment: 'complete',
+    assessment,
     pause_weight_loss_guidance: restricted,
     hide: { calories: restricted },
   }
@@ -61,6 +62,10 @@ function providerInput(
       remaining_food_kcal: null,
       block_7700: { enabled: false },
       workouts: [],
+      meals: [
+        { food_name: 'feijão preto cozido', meal_type: 'cafe_manha', kcal: 115.5 },
+        { food_name: 'farofa de mandioca temperada', meal_type: 'cafe_manha', kcal: 324.6 },
+      ],
     }
     return decorate ? decorate(owner, day) : day
   })
@@ -203,6 +208,40 @@ it.each([
   expect(payload.context.history).toEqual([])
   expect(from).not.toHaveBeenCalledWith('messages')
   expect(from).not.toHaveBeenCalledWith('workout_logs')
+  expect(payload.context.day).not.toHaveProperty('logged_foods')
+})
+
+it.each([
+  ['O que comi hoje?', 'text', 'incomplete'],
+  ['Quais alimentos eu registrei hoje?', 'audio', 'complete'],
+] as const)('includes only official food names and meal types for a current-day food inquiry: %s', async (text, channel, assessment) => {
+  const { run, from } = providerInput(
+    text,
+    false,
+    'Hoje não comi 100 g de arroz.',
+    channel,
+    assessment,
+  )
+  await run()
+  const payload = JSON.parse(ports.complete.mock.calls[0]?.[0].messages[0].content)
+  expect(payload.context.day.logged_foods).toEqual({
+    items: [
+      { food_name: 'feijão preto cozido', meal_type: 'cafe_manha' },
+      { food_name: 'farofa de mandioca temperada', meal_type: 'cafe_manha' },
+    ],
+    truncated: false,
+  })
+  expect(payload.context.day.guidance_restricted).toBe(assessment === 'incomplete')
+  expect(payload.context.history).toEqual([])
+  expect(from).not.toHaveBeenCalled()
+})
+
+it('withholds food details when clinical protection is active', async () => {
+  const { run } = providerInput('O que comi hoje?', true)
+  await run()
+  const payload = JSON.parse(ports.complete.mock.calls[0]?.[0].messages[0].content)
+  expect(payload.context.day.guidance_restricted).toBe(true)
+  expect(payload.context.day).not.toHaveProperty('logged_foods')
 })
 
 it.each([

@@ -431,6 +431,7 @@ export const mobileDeviceInputSchema = z
       .regex(/^[0-9A-Fa-f]+$/)
       .refine((value) => value.length % 2 === 0, 'APNs token must have an even length')
       .transform((value) => value.toLowerCase()),
+    flow_meal_gap: z.object({ daytime_enabled: z.boolean() }).strict().optional(),
   })
   .strict()
 

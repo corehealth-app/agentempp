@@ -28,15 +28,21 @@ describe('plan document upload', () => {
   it('accepts what the document reader handles and nothing else', () => {
     for (const mime of ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']) {
       expect(
-        mediaUploadInputSchema.safeParse({ kind: 'plan_document', mime_type: mime, size_bytes: 1024 })
-          .success,
+        mediaUploadInputSchema.safeParse({
+          kind: 'plan_document',
+          mime_type: mime,
+          size_bytes: 1024,
+        }).success,
         mime,
       ).toBe(true)
     }
     for (const mime of ['image/heic', 'image/heif', 'text/html', 'audio/mp4']) {
       expect(
-        mediaUploadInputSchema.safeParse({ kind: 'plan_document', mime_type: mime, size_bytes: 1024 })
-          .success,
+        mediaUploadInputSchema.safeParse({
+          kind: 'plan_document',
+          mime_type: mime,
+          size_bytes: 1024,
+        }).success,
         mime,
       ).toBe(false)
     }
@@ -539,6 +545,26 @@ describe('mobile API v1 contracts', () => {
         user_id: 'forbidden',
       }),
     ).toThrow()
+  })
+
+  it('accepts meal-gap opt-in without letting the client set its push topic', () => {
+    const device = {
+      installation_id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9d',
+      apns_environment: 'sandbox',
+      apns_token: 'a'.repeat(64),
+    }
+    expect(
+      mobileDeviceInputSchema.parse({
+        ...device,
+        flow_meal_gap: { daytime_enabled: false },
+      }).flow_meal_gap,
+    ).toEqual({ daytime_enabled: false })
+    expect(
+      mobileDeviceInputSchema.safeParse({
+        ...device,
+        flow_meal_gap: { daytime_enabled: true, topic: 'com.example.other' },
+      }).success,
+    ).toBe(false)
   })
 
   it('treats quiet hours as one atomic preference', () => {

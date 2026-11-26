@@ -163,12 +163,30 @@ function createRepository(supabase: ServiceClient): RoutineRepository {
       return (data ?? []).map(parseDevice)
     },
     async upsertDevice(input) {
-      const { data: deviceId, error: rpcError } = await supabase.rpc('upsert_mobile_device', {
+      const args = {
         p_user_id: input.userId,
         p_installation_id: input.installationId,
         p_apns_environment: input.apnsEnvironment,
         p_apns_token: input.apnsToken,
-      })
+      }
+      const extension = input.flowMealGap
+      const { data: deviceId, error: rpcError } = extension
+        ? await (
+            supabase as unknown as {
+              rpc(
+                name: 'register_flow_meal_gap_device',
+                params: typeof args & {
+                  p_topic: string
+                  p_daytime_enabled: boolean
+                },
+              ): Promise<{ data: string | null; error: { code?: string; message: string } | null }>
+            }
+          ).rpc('register_flow_meal_gap_device', {
+            ...args,
+            p_topic: extension.topic,
+            p_daytime_enabled: extension.daytimeEnabled,
+          })
+        : await supabase.rpc('upsert_mobile_device', args)
       if (rpcError?.code === '23505') {
         throw new MobileApiError(
           409,

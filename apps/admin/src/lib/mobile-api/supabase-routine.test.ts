@@ -50,7 +50,10 @@ describe('Supabase routine adapter', () => {
     expect(recoveryQuery.eq).toHaveBeenCalledWith('weekdays', [1, 2, 3, 4, 5])
   })
 
-  it('never selects the APNs token after device registration', async () => {
+  it.each([
+    false,
+    true,
+  ])('keeps the APNs token out of the response for meal-gap opt-in %s', async (optIn) => {
     const device = {
       id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9d',
       installation_id: '018f2c34-7c0a-7b1f-9db3-2e5f6a7b8c9e',
@@ -77,7 +80,19 @@ describe('Supabase routine adapter', () => {
       installationId: device.installation_id,
       apnsEnvironment: 'sandbox',
       apnsToken: 'a'.repeat(64),
+      ...(optIn ? { flowMealGap: { topic: 'com.example.performe', daytimeEnabled: false } } : {}),
     })
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      optIn ? 'register_flow_meal_gap_device' : 'upsert_mobile_device',
+      expect.objectContaining(
+        optIn
+          ? { p_topic: 'com.example.performe', p_daytime_enabled: false }
+          : {
+              p_installation_id: device.installation_id,
+            },
+      ),
+    )
 
     const selection = String(query.select.mock.calls[0]?.[0])
     expect(selection).not.toContain('apns_token')

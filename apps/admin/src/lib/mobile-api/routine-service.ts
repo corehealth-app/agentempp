@@ -62,6 +62,7 @@ interface UpsertDeviceInput {
   installationId: string
   apnsEnvironment: 'sandbox' | 'production'
   apnsToken: string
+  flowMealGap?: { topic: string; daytimeEnabled: boolean }
 }
 
 interface CreateReminderRepositoryInput extends CreateReminderInput {
@@ -209,13 +210,29 @@ export async function registerMobileDevice(
   deps: RoutineServiceDependencies,
   userId: string,
   input: MobileDeviceInput,
+  trustedTopic?: string,
 ) {
+  if (input.flow_meal_gap && !trustedTopic) {
+    throw new MobileApiError(
+      503,
+      'flow_meal_gap_unavailable',
+      'Flow meal reminders are unavailable',
+    )
+  }
   return deviceDto(
     await deps.repository.upsertDevice({
       userId,
       installationId: input.installation_id,
       apnsEnvironment: input.apns_environment,
       apnsToken: input.apns_token,
+      ...(input.flow_meal_gap && trustedTopic
+        ? {
+            flowMealGap: {
+              topic: trustedTopic,
+              daytimeEnabled: input.flow_meal_gap.daytime_enabled,
+            },
+          }
+        : {}),
     }),
   )
 }

@@ -41,6 +41,22 @@ describe('functionsForSet', () => {
     ])
   })
 
+  it('serves the meal reminder only for explicitly enabled conversational staging', () => {
+    const name = 'media-conversation-staging'
+    const reminder = 'performe-flow-meal-gap-push'
+    vi.stubEnv('INNGEST_FUNCTION_SET', name)
+    vi.stubEnv('SUPABASE_URL', 'https://xitugspwfxkcluxvrdeg.supabase.co')
+    vi.stubEnv('MOBILE_CONVERSATION_MAINTENANCE_BRIDGE_ENABLED', 'true')
+    vi.stubEnv('MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED', 'false')
+    expect(ids(functionsForSet(name))).not.toContain(reminder)
+    vi.stubEnv('MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED', 'true')
+    expect(ids(functionsForSet(name))).toContain(reminder)
+    expect(ids(functionsForSet('media-staging'))).not.toContain(reminder)
+    expect(ids(functionsForSet(undefined))).not.toContain(reminder)
+    vi.stubEnv('SUPABASE_URL', 'https://xuxehkhdvjivitduarvb.supabase.co')
+    expect(() => functionsForSet(name)).toThrow('Clinical staging worker target unavailable')
+  })
+
   it('serves every function when no set is named (production behaviour unchanged)', () => {
     expect(functionsForSet(undefined)).toBe(allFunctions)
     expect(functionsForSet('')).toBe(allFunctions)

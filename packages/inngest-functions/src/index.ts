@@ -9,6 +9,7 @@ import { dailyAuditFn } from './functions/daily-audit.js'
 import { dailyCloserFn } from './functions/daily-closer.js'
 import { dailyGapCheckerFn } from './functions/daily-gap-checker.js'
 import { engagementSenderFn } from './functions/engagement-sender.js'
+import { flowMealGapPushFn } from './functions/flow-meal-gap-push.js'
 import { foodDbGapsReportFn } from './functions/food-db-gaps-report.js'
 import { interactiveButtonHandlerFn } from './functions/interactive-handler.js'
 import { mealGapReminderFn } from './functions/meal-gap-reminder.js'
@@ -90,6 +91,7 @@ const FUNCTION_SETS = {
 
 type ServedFunction =
   | (typeof allFunctions)[number]
+  | typeof flowMealGapPushFn
   | typeof reevaluationPhotoDispositionCleanupFn
   | typeof conversationMediaRetentionCleanupFn
   | typeof conversationUserDeletionPurgerFn
@@ -103,13 +105,18 @@ export function functionsForSet(name: string | undefined): readonly ServedFuncti
   if (name === 'media-clinical-staging' || name === 'media-conversation-staging')
     assertClinicalStagingWorkerTarget(process.env, name)
   if (name !== 'media-conversation-staging') return selected
+  const push = process.env.MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED === 'true' ? [flowMealGapPushFn] : []
   const cleanup = privateConversationMediaCleanupEnabled()
   const processing = privateConversationMediaWorkerEnabled()
   // Opt in only after the independent SQL/Edge dispatcher is qualified and
   // scheduled. Old/OFF and every other roster retain their original callbacks.
   if (process.env.MOBILE_CONVERSATION_MAINTENANCE_BRIDGE_ENABLED === 'true')
-    return [mediaAssetProcessingFn, ...(processing ? [privateConversationMediaProcessingFn] : [])]
-  if (!cleanup && !processing) return selected
+    return [
+      mediaAssetProcessingFn,
+      ...(processing ? [privateConversationMediaProcessingFn] : []),
+      ...push,
+    ]
+  if (!cleanup && !processing) return push.length ? [...selected, ...push] : selected
   return [
     ...selected.map((fn) =>
       cleanup && fn === conversationUserDeletionPurgerFn
@@ -118,6 +125,7 @@ export function functionsForSet(name: string | undefined): readonly ServedFuncti
     ),
     ...(cleanup ? [privateConversationMediaRetentionCleanupFn] : []),
     ...(processing ? [privateConversationMediaProcessingFn] : []),
+    ...push,
   ]
 }
 

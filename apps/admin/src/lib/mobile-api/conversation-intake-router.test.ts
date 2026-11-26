@@ -113,6 +113,34 @@ function mediaSource(
   })
 }
 describe('neutral provider routing without performed or nutrition authority', () => {
+  it.each([
+    'E como foi meu dia de treino?',
+    'E quantos foram mesmo?',
+  ])('sends the standalone question to conversation without guessing a record: %s', async (text) => {
+    const f = setup()
+    expect(await f.router.route(source(text))).toMatchObject({
+      kind: 'not_reported',
+      reason: 'question',
+    })
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+  it('handles the same standalone question when spoken', async () => {
+    const f = setup()
+    expect(
+      await f.router.route(
+        mediaSource('audio_note', { text: 'E como foi meu dia de treino?' }, null, null),
+      ),
+    ).toMatchObject({ kind: 'not_reported', reason: 'question' })
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+  it.each([
+    'Como arroz com feijão todo dia',
+    'Como foi meu dia? Bebi 200 mL de leite.',
+  ])('preserves whole-discourse classification when the intent differs: %s', async (text) => {
+    const f = setup()
+    await f.router.route(source(text))
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
   it('constructs a pure factory and invokes a provider only on route', async () => {
     const f = setup()
     expect(f.complete).not.toHaveBeenCalled()

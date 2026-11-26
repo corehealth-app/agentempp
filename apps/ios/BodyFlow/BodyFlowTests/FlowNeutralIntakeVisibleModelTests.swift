@@ -240,6 +240,34 @@ struct FlowNeutralIntakeVisibleModelTests {
     await first.close()
     await second.close()
   }
+  @Test func returningRestoresAnInterruptedIntakeSession() async throws {
+    let f = try await neutralVisibleFixture()
+    defer { f.disk.remove() }
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: f.vault, historyVersion: .v3, neutralIntakeEnabled: true)
+    let neutral = try #require(model.neutralIntake)
+    #expect(!neutral.needsRestoreOnReturn)
+    let barrier = ConversationControllerBarrier()
+    await f.http.stub.respond { request, _ in
+      if request.url?.path == "/api/mobile/v1/conversation/intakes/session" {
+        await barrier.enter()
+      }
+      return try await f.server.reply(request)
+    }
+    let refreshing = Task { await neutral.refresh() }
+    #expect(await barrier.waitEnteredOrFinished())
+    model.cancelTransientWork()
+    await barrier.release()
+    await refreshing.value
+    #expect(neutral.needsRestoreOnReturn)
+    await f.http.stub.respond { request, _ in try await f.server.reply(request) }
+    await model.resumeConversationView()
+    #expect(neutral.isVisible && !neutral.needsRestoreOnReturn)
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    await model.close()
+  }
+
   @Test(arguments: ["upload", "processing"])
   func foregroundRefreshDuringMediaRestoresOriginalControlsWithoutDuplicateDispatch(_ stage: String)
     async throws

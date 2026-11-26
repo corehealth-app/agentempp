@@ -1689,20 +1689,20 @@ final class FlowConversationModel {
       await refreshConversation()
       return
     }
-    await loadConversationContent()
+    await loadConversationContent(restoreNeutral: neutralIntake?.needsRestoreOnReturn == true)
   }
-  private func loadConversationContent() async {
+  private func loadConversationContent(restoreNeutral: Bool = true) async {
     if historyVersion == .v3 {
       async let firstPage: Void = loadHistory()
-      await restoreConversationIntents()
+      await restoreConversationIntents(restoreNeutral: restoreNeutral)
       await firstPage
     } else {
       await restoreConversationIntents()
       await loadHistory()
     }
   }
-  private func restoreConversationIntents() async {
-    await neutralIntake?.refresh()
+  private func restoreConversationIntents(restoreNeutral: Bool = true) async {
+    if restoreNeutral { await neutralIntake?.refresh() }
     await mealEditor?.restore()
     await mealReplies?.restore()
     await loadMealQuestionOrigins()

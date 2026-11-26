@@ -445,9 +445,10 @@ extension ConversationJournalV3Tests {
     let a = try neutralHTTP(first)
     let b = try neutralHTTP(second)
     let mealSessionPath = "/api/mobile/v1/conversation/session"
+    let intakeSessionPath = "/api/mobile/v1/conversation/intakes/session"
     await f.http.stub.respond { request, _ in
       if request.url?.path == mealSessionPath { return f.mealSession }
-      if request.url?.path == "/api/mobile/v1/conversation/intakes/session" { return f.intakeSession }
+      if request.url?.path == intakeSessionPath { return f.intakeSession }
       let next = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first
       { $0.name == "cursor" }?.value
       return next == cursor ? b : a
@@ -459,11 +460,16 @@ extension ConversationJournalV3Tests {
       session.model.unifiedRows.count == 10 && !session.model.hasMoreHistory
         && !session.model.unifiedHistoryUnavailable)
     #expect(session.model.unifiedRows.map(\.eventID) == rows.map { $0["event_id"] as! String })
-    let sessionReads = await f.http.stub.requests.filter { $0.url?.path == mealSessionPath }.count
+    let sessionPaths = [mealSessionPath, intakeSessionPath]
+    let sessionReads = await f.http.stub.requests.filter {
+      $0.url.map { sessionPaths.contains($0.path) } == true
+    }.count
     await session.model.resumeConversationView()
     #expect(session.model.unifiedRows.map(\.eventID) == rows.map { $0["event_id"] as! String })
     #expect(!session.model.hasMoreHistory && !session.model.unifiedHistoryUnavailable)
-    #expect(await f.http.stub.requests.filter { $0.url?.path == mealSessionPath }.count == sessionReads)
+    #expect(await f.http.stub.requests.filter {
+      $0.url.map { sessionPaths.contains($0.path) } == true
+    }.count == sessionReads)
     #expect(session.model.savedEffectRevision == 0)
     await session.close()
   }

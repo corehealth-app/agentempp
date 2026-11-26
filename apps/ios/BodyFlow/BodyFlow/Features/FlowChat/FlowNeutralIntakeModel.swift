@@ -60,6 +60,7 @@ final class FlowNeutralIntakeModel {
   private var durableOriginal: ConversationMediaOriginal?
   private var draft = ""
   private var revision: UInt64 = 0
+  private var interruptedWork = false
   private var hint: ConversationMealCommand.MealType?
   private var entries: [ConversationNeutralIntakeOutboxEntry] = []
   private var records: [FlowNeutralIntakeSavedRow] = []
@@ -274,7 +275,8 @@ final class FlowNeutralIntakeModel {
     else { return nil }
     return selection.child
   }
-  var offlineQueuedCount: Int { isVisible ? 0 : queuedIDs.count }
+  var offlineQueuedCount: Int { isVisible || isWorking ? 0 : queuedIDs.count }
+  var needsRestoreOnReturn: Bool { !isVisible || interruptedWork }
   func state(intakeID: UUID) -> FlowNeutralIntakeResponseSnapshot? {
     isVisible ? states[intakeID] : nil
   }
@@ -299,6 +301,7 @@ final class FlowNeutralIntakeModel {
     pendingNotifications.removeAll()
     queuedIDs.removeAll()
     heldIntakeCount = 0
+    interruptedWork = false
   }
   func suspendVisibility() {
     context = nil
@@ -319,6 +322,8 @@ final class FlowNeutralIntakeModel {
       let publish = self.publisher(id)
       try await self.controller.refreshSession(publish)
       try await self.restoreOriginal()
+      try Task.checkCancellation()
+      self.interruptedWork = false
     }
   }
   func submit() async {
@@ -531,7 +536,10 @@ final class FlowNeutralIntakeModel {
       }
     }
   }
-  func cancelTransientWork() { task?.cancel() }
+  func cancelTransientWork() {
+    if task != nil { interruptedWork = true }
+    task?.cancel()
+  }
   func invalidateSynchronously() {
     closed = true
     operationID = UUID()

@@ -2592,6 +2592,27 @@ describe('finished chocolate beverage estimate', () => {
   })
 })
 
+describe('generic fresh banana estimate', () => {
+  it.each([
+    ['banana', { display_qty: 1, display_unit: 'banana' }],
+    ['bananas', { display_qty: 100, display_unit: 'g' }],
+    ['banana crua', { display_qty: 1, display_unit: 'banana' }],
+    ['bananas cruas', { display_qty: 100, display_unit: 'g' }],
+  ])('uses the generic raw reference and preserves the existing display unit for %s', (name, display) => {
+    expect(consumedMealEstimateReference(name)).toBe('Bananas, raw')
+    expect(naturalUnit(name, 100)).toEqual(display)
+  })
+
+  it.each([
+    'banana da terra',
+    'banana prata',
+    'banana frita',
+    'banana com aveia',
+  ])('keeps explicit qualifiers for %s', (name) => {
+    expect(consumedMealEstimateReference(name)).toBeNull()
+  })
+})
+
 describe('consumed composition identity and mass', () => {
   it('only aliases complete reviewed individual ingredient names', () => {
     expect(consumedIngredientReference('pão francês aberto')).toBe('Pão, trigo, francês')

@@ -309,6 +309,62 @@ function prepared<T extends { status: string }>(value: T): Extract<T, { status: 
 }
 
 describe('actual command interpretation materialization', () => {
+  it('preserves the reported name and grams for the actual generic banana snack', async () => {
+    const f = fixture('Comi 100 g de banana no lanche', [
+      { name: 'banana', quantity: '100', unit: 'g' },
+    ])
+    const spans = at(f.interpretation.sources).spans
+    spans.splice(
+      -1,
+      1,
+      { start: 20, end: 21, kind: 'separator', food_index: null },
+      { start: 21, end: 30, kind: 'other', food_index: null },
+    )
+    const banana = {
+      ...row('Bananas, raw', 7171),
+      country_code: 'US',
+      kcal_per_100g: 89,
+      protein_g: 1.09,
+      carbs_g: 22.84,
+      fat_g: 0.33,
+      fiber_g: 2.6,
+    }
+    const state = calculationDb([banana])
+    state.rpc.mockImplementation(async (_name, params) => ({
+      data: ['bananas raw', 'bananas, raw'].includes(String(params.search_term).toLowerCase())
+        ? [banana]
+        : [],
+      error: null,
+    }))
+    const result = prepared(await materialize(f, state))
+    expect(result.inputs.map((item) => item.calculation_input)).toEqual([
+      { food_name: 'banana', quantity_g: 100 },
+    ])
+    const calc = await calcMealMacros(
+      state.client,
+      result.inputs.map((item) => item.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calc.items).toMatchObject([
+      {
+        food_name: 'banana',
+        matched_taco_id: 7171,
+        quantity_g: 100,
+        kcal: 89,
+        protein_g: 1.09,
+        display_qty: 1,
+        display_unit: 'banana',
+        source: 'llm_estimate',
+      },
+    ])
+  })
+
   it.each([
     'text',
     'audio',

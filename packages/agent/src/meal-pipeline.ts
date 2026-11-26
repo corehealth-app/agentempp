@@ -384,6 +384,8 @@ export interface MealItemMatched {
   preparation_options?: string[]
 }
 
+const CHOCOLATE_MILK_ESTIMATE_REFERENCE = 'Leite, de vaca, achocolatado'
+
 /**
  * Decide unidade natural pra exibição baseado no nome do alimento.
  * Backend mantém gramas como unidade interna; isso é só pra UX.
@@ -407,7 +409,7 @@ export function naturalUnit(
     }
   }
   // A bebida pronta continua líquida quando seu nome descreve o pó usado.
-  if (consumedMealEstimateReference(foodName)) {
+  if (consumedMealEstimateReference(foodName) === CHOCOLATE_MILK_ESTIMATE_REFERENCE) {
     return { display_qty: qtyG, display_unit: 'ml' }
   }
   // SÓLIDOS/PÓS de marcas que costumam parecer líquido pelo nome.
@@ -707,13 +709,15 @@ export function consumedIngredientReference(name: string): string | null {
   return null
 }
 
-/** A verified representative for a generic finished beverage. Preserve the
- * reported name and disclose an estimate since the recipe or brand is unknown. */
+/** Verified references for whole names that lack a variety, brand or recipe.
+ * Keep the reported name and label the calculated value as an estimate. */
 export function consumedMealEstimateReference(name: string): string | null {
+  const whole = normalizeFoodText(name)
+  if (/^bananas?(?: cruas?)?$/u.test(whole)) return 'Bananas, raw'
   return /^(?:bebidas? achocolatadas?|(?:bebidas?(?: (?:quentes?|frias?))?|cafe com leite) com (?:chocolate|achocolatado) em po)$/u.test(
-    normalizeFoodText(name),
+    whole,
   )
-    ? 'Leite, de vaca, achocolatado'
+    ? CHOCOLATE_MILK_ESTIMATE_REFERENCE
     : null
 }
 
@@ -2714,7 +2718,7 @@ export async function calcMealMacros(
       (anchor == null || matchedNameLower.includes(anchor)) &&
       (m.name_pt == null || candidateNamesRequestedFood(referenceName, m.name_pt))
     const fruitSweetMismatch = isSweetDerivedFruitMismatch(it.food_name, m.name_pt, m.category)
-    // In reviewed finished beverages, “em pó” describes an ingredient.
+    // Reviewed estimates use the verified reference for modifier checks.
     const modifierName = usedEstimateReference ? referenceName : it.food_name
     const nutritionModifierMismatch =
       m.name_pt != null && hasNutritionModifierConflict(modifierName, m.name_pt)

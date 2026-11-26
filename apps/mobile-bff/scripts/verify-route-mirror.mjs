@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { completionTransports } from './training-completion-surface.mjs'
 import { withoutJourneySocialRecords } from './journey-social-surface.mjs'
+import { completionTransports } from './training-completion-surface.mjs'
 
 const expectedCount = 93
 const expectedHash = '379b260d910f1364041880fb6aab30c458c9a8b511760735a9396aa8a058b5cf'
@@ -170,8 +170,28 @@ const executionTransports = new Map([
   ['training/execution/[sessionId]/route.ts', ['GET', 'dynamic', 'runtime']],
   ['training/execution/commands/route.ts', ['POST', 'dynamic', 'runtime']],
 ])
-const completeSources = withoutJourneySocialRecords(sourceRecords(), 'SOURCE', fail),
-  completeWrappers = withoutJourneySocialRecords(wrapperRecords(), 'WRAPPER', fail)
+const mealReminderRoute = 'conversation/meal-reminders/[noticeId]/route.ts'
+function withoutFlowMealReminder(records, label) {
+  const route = records.find((record) => record.path === mealReminderRoute)
+  if (JSON.stringify(route?.exports) !== JSON.stringify(['GET', 'runtime']))
+    fail(`${label}_FLOW_MEAL_REMINDER_EXPORTS`)
+  if (
+    label === 'WRAPPER' &&
+    route?.sourcePath !== `@/app/api/mobile/v1/${mealReminderRoute.slice(0, -3)}`
+  )
+    fail(`${label}_FLOW_MEAL_REMINDER_SOURCE`)
+  return records.filter((record) => record.path !== mealReminderRoute)
+}
+const completeSources = withoutJourneySocialRecords(
+    withoutFlowMealReminder(sourceRecords(), 'SOURCE'),
+    'SOURCE',
+    fail,
+  ),
+  completeWrappers = withoutJourneySocialRecords(
+    withoutFlowMealReminder(wrapperRecords(), 'WRAPPER'),
+    'WRAPPER',
+    fail,
+  )
 for (const [label, records] of [
   ['SOURCE', completeSources],
   ['WRAPPER', completeWrappers],

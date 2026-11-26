@@ -96,6 +96,14 @@ BEGIN
     THEN RAISE EXCEPTION 'A meal reminder can be leased only once and requires its own claim id'; END IF;
   IF NOT public.finish_flow_meal_gap_notice(notice_id, lease_id, 'accepted')
     THEN RAISE EXCEPTION 'The valid claim must finish'; END IF;
+  IF public.read_flow_meal_gap_notice(u, notice_id) IS DISTINCT FROM jsonb_build_object(
+      'id', notice_id, 'local_date', local_day, 'meal_type', 'jantar', 'state', 'pending'
+    ) OR public.read_flow_meal_gap_notice(gen_random_uuid(), notice_id) IS NOT NULL
+    THEN RAISE EXCEPTION 'Only the owner should be able to read the pending reminder'; END IF;
+  INSERT INTO public.meal_logs(user_id, meal_type, food_name, consumed_at)
+  VALUES (u, 'jantar', 'Synthetic dinner', now_at);
+  IF public.read_flow_meal_gap_notice(u, notice_id)->>'state' IS DISTINCT FROM 'resolved'
+    THEN RAISE EXCEPTION 'Opening a reminder should recheck the current diary first'; END IF;
   IF public.finish_flow_meal_gap_notice(notice_id, lease_id, 'accepted')
     OR public.claim_flow_meal_gap_notice(u, d, topic, local_day, 'before_close','almoco') IS NOT NULL
     OR jsonb_array_length(public.read_flow_meal_gap_activity(u, local_day)->'accepted') <> 1
@@ -107,6 +115,7 @@ DO $acl$
 BEGIN
   IF has_function_privilege('authenticated', 'public.claim_flow_meal_gap_notice(uuid,uuid,text,date,text,public.meal_type_enum)', 'EXECUTE')
     OR has_function_privilege('anon', 'public.list_flow_meal_gap_targets(text,uuid,integer)', 'EXECUTE')
+    OR has_function_privilege('authenticated', 'public.read_flow_meal_gap_notice(uuid,uuid)', 'EXECUTE')
     OR has_table_privilege('authenticated', 'private.flow_meal_gap_notices', 'SELECT')
     THEN RAISE EXCEPTION 'The reminders gateway must not expose device or notice data to clients'; END IF;
 END $acl$;

@@ -1330,6 +1330,33 @@ extension ConversationMealQuestionOriginsTests {
     await model.close()
   }
 
+  @Test func updatingOriginsInTheSameSessionKeepsTheOlderReportsControl() async throws {
+    let f = try await coldOriginsNativeFixture()
+    defer { f.disk.remove() }
+    var page = try coldOriginsProjectedUnitPage()
+    let owner = UUID(uuidString: page["owner_id"] as! String)!
+    let epoch = UUID(uuidString: page["epoch"] as! String)!
+    page["has_more"] = true
+    page["next_cursor"] = coldOriginsUnitCursor(
+      owner: owner, epoch: epoch, at: "2026-11-04T11:00:00.000001Z")
+    await f.server.setPage(try neutralData(page))
+    let model = try await f.open()
+    await model.refreshConversation()
+    let origins = try #require(model.mealQuestionOrigins)
+    let ids = origins.rows.map(\.id)
+    #expect(origins.hasMore && ids.count == 2)
+    let barrier = ConversationControllerBarrier()
+    await f.server.holdOrigins(barrier)
+    let refreshing = Task { await model.loadMealQuestionOrigins() }
+    #expect(await barrier.waitEnteredOrFinished())
+    #expect(origins.rows.map(\.id) == ids && origins.hasMore)
+    #expect(origins.isLoading && !origins.isLoadingMore)
+    await barrier.release()
+    await refreshing.value
+    #expect(origins.rows.map(\.id) == ids && origins.hasMore)
+    await model.close()
+  }
+
   #if canImport(UIKit)
   @Test func actualFlowRefreshTaskLoadsOriginsAndNativeRecoveryControlsUseDistinctIds() async throws {
     let f = try await coldOriginsNativeFixture(); defer { f.disk.remove() }

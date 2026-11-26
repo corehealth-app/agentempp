@@ -19,6 +19,7 @@ final class FlowMealQuestionOriginsModel {
   private var task: Task<FlowMealQuestionOriginsPageSnapshot, any Error>?
   private var closed = false
   private(set) var isLoading = false
+  private(set) var isLoadingMore = false
   private(set) var unavailable = false
   private var visible: Bool {
     !closed && context.map { (try? $0.withCurrentAuthority { true }) == true } == true
@@ -45,14 +46,22 @@ final class FlowMealQuestionOriginsModel {
     if identity != incoming.identity { clear() }
     guard reset || (!isLoading && more && cursor != nil) else { return }
     let requestedCursor = reset ? nil : cursor
-    if reset { cancel(); entries.removeAll(); cursor = nil; more = false; seenCursors.removeAll() }
+    if reset {
+      cancel()
+      if !matches(incoming) {
+        entries.removeAll()
+        cursor = nil
+        more = false
+      }
+    }
     identity = incoming.identity
     context = incoming
     let id = UUID()
     requestID = id
     isLoading = true
+    isLoadingMore = !reset
     unavailable = false
-    defer { if requestID == id { requestID = nil; task = nil; isLoading = false } }
+    defer { if requestID == id { cancel() } }
     do {
       let repository = repository
       let operation = Task { try await repository.questionOrigins(cursor: requestedCursor, limit: limit, context: incoming) }
@@ -75,7 +84,9 @@ final class FlowMealQuestionOriginsModel {
               else { throw MobileAPITransportError.invalidResponse }
             }
           }
-          if let next = page.nextCursor, self.seenCursors.contains(next) || next == requestedCursor {
+          if let next = page.nextCursor,
+            (!reset && self.seenCursors.contains(next)) || next == requestedCursor
+          {
             throw MobileAPITransportError.invalidResponse
           }
           var pins = self.pins
@@ -85,6 +96,7 @@ final class FlowMealQuestionOriginsModel {
           }
           self.entries = reset ? page.items : self.entries + page.items
           self.pins = pins
+          if reset { self.seenCursors.removeAll() }
           if let requestedCursor { self.seenCursors.insert(requestedCursor) }
           self.cursor = page.nextCursor
           self.more = page.hasMore
@@ -96,7 +108,13 @@ final class FlowMealQuestionOriginsModel {
       if !(error is CancellationError) { unavailable = true }
     }
   }
-  func cancel() { task?.cancel(); task = nil; requestID = nil; isLoading = false }
+  func cancel() {
+    task?.cancel()
+    task = nil
+    requestID = nil
+    isLoading = false
+    isLoadingMore = false
+  }
   func suspend() { cancel(); context = nil; entries.removeAll(); cursor = nil; more = false; unavailable = false }
   func clear() { suspend(); identity = nil; pins.removeAll(); seenCursors.removeAll(); observedAt = nil }
   func close() { clear(); closed = true }

@@ -25,11 +25,6 @@ struct FlowConversationMealQuestionOriginsContent: View {
             .accessibilityIdentifier("conversation.origins.answer.\(origin.id.uuidString.lowercased())")
           }.padding(BodyFlowSpacing.sm)
         }
-        if origins.isLoading && origins.hasMore {
-          FlowWaitingBubble(
-            label: english ? "Loading earlier messages…" : "Carregando mensagens anteriores…",
-            identifier: "conversation.origins.loading")
-        }
         if origins.unavailable {
           Text(english ? "Previous reports are unavailable right now." : "Não foi possível consultar os relatos anteriores agora.")
           Button(english ? "Try again" : "Tentar novamente") {
@@ -37,8 +32,17 @@ struct FlowConversationMealQuestionOriginsContent: View {
           }.accessibilityIdentifier("conversation.origins.retry")
         }
         if origins.hasMore {
-          Button(english ? "Check older reports" : "Consultar relatos mais antigos") {
+          Button {
             Task { await model.loadMealQuestionOrigins(reset: false) }
+          } label: {
+            HStack(spacing: BodyFlowSpacing.sm) {
+              Text(english ? "Check older reports" : "Consultar relatos mais antigos")
+              if origins.isLoadingMore {
+                ProgressView().controlSize(.mini)
+                  .accessibilityLabel(english ? "Loading earlier reports" : "Carregando relatos anteriores")
+                  .accessibilityIdentifier("conversation.origins.loading")
+              }
+            }
           }
           .disabled(origins.isLoading)
           .accessibilityIdentifier("conversation.origins.more")

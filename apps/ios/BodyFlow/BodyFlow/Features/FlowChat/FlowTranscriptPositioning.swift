@@ -35,6 +35,10 @@ struct FlowTranscriptPositioning {
   private var userMovementRevision: UInt64 = 0
   var followsSendingMessage: Bool { activeSendID != nil && followedSend }
 
+  func shouldPinLayoutToLatest(positionedAtBottom: Bool) -> Bool {
+    !readingEarlier && (positionedAtBottom || followsSendingMessage)
+  }
+
   func positionBeforeAuthorityRefresh(visibleAnchor: String?) -> AuthorityRefreshPosition? {
     guard let owner, initiallyPositioned, !userIsMoving,
       let anchor = readingEarlier ? visibleAnchor : Self.latestAnchor

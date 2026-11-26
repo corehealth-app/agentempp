@@ -26,6 +26,7 @@ struct FlowTranscriptPositioningTests {
     sending.activeSendID = first
     #expect(policy.observe(sending) == FlowTranscriptPositioning.latestAnchor)
     #expect(policy.followsSendingMessage)
+    #expect(policy.shouldPinLayoutToLatest(positionedAtBottom: false))
 
     sending = snapshot(owner, history: ["old"], local: [first])
     sending.activeSendID = first
@@ -34,6 +35,7 @@ struct FlowTranscriptPositioningTests {
       policy.observe(snapshot(owner, history: ["old"], local: [first]))
         == FlowTranscriptPositioning.latestAnchor)
     #expect(!policy.followsSendingMessage)
+    #expect(policy.shouldPinLayoutToLatest(positionedAtBottom: true))
     #expect(
       policy.observe(snapshot(owner, history: [intake(first), "old"]))
         == FlowTranscriptPositioning.latestAnchor)
@@ -49,6 +51,7 @@ struct FlowTranscriptPositioningTests {
     _ = policy.observe(sending)
     policy.userScrolled()
     #expect(!policy.followsSendingMessage)
+    #expect(!policy.shouldPinLayoutToLatest(positionedAtBottom: true))
     #expect(policy.observe(snapshot(owner, history: ["old"], local: [first])) == nil)
     #expect(policy.observe(snapshot(owner, history: [intake(first), "old"])) == nil)
 
@@ -62,6 +65,7 @@ struct FlowTranscriptPositioningTests {
     let returnedToLatest = policy.userScrollSettled(atLatest: true)
     #expect(returnedToLatest)
     #expect(policy.followsSendingMessage)
+    #expect(policy.shouldPinLayoutToLatest(positionedAtBottom: false))
   }
 
   @Test func initialHistoryPositionsNewestOnlyAfterItsPageSettles() {

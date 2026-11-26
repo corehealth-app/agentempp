@@ -211,6 +211,13 @@ struct FlowConversationView: View {
       .padding(BodyFlowSpacing.md)
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
+    // The pending bubble, its reply, and the composer can resize the transcript
+    // after a scroll request has already been applied.
+    .defaultScrollAnchor(
+      transcriptPositioning.shouldPinLayoutToLatest(
+        positionedAtBottom: transcriptScrollPosition.edge == .bottom) ? .bottom : nil,
+      for: .sizeChanges
+    )
     .refreshable { await refreshPreservingPosition() }
   }
 

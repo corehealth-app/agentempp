@@ -4,6 +4,10 @@ import { conversationMealCommandsEnabled } from './conversation-meal-command-rou
 import { parseConversationMealEditInput } from './conversation-meal-edit-contracts'
 import { createConversationMealEditPublicService } from './conversation-meal-edit-public-service'
 import { createConversationMealReadonlyRuntime } from './conversation-meal-readonly-runtime'
+import {
+  CONVERSATION_TURNS_HEADER,
+  conversationTurnRepliesRequested,
+} from './conversation-turn-replies'
 import { MobileApiError, mobileSuccess, readJsonBody } from './http'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 import {
@@ -58,8 +62,16 @@ async function editBody(request: Request, operationId: string) {
     )
   }
 }
-function response(value: unknown, requestId: string) {
-  return mobileSuccess(value, requestId, 200, { 'X-Conversation-Protocol': 'meal-command-v1' })
+function response(value: unknown, requestId: string, turns = false) {
+  return mobileSuccess(value, requestId, 200, {
+    'X-Conversation-Protocol': 'meal-command-v1',
+    ...(turns
+      ? {
+          [CONVERSATION_TURNS_HEADER]: '1',
+          Vary: `Authorization, ${CONVERSATION_TURNS_HEADER}`,
+        }
+      : {}),
+  })
 }
 /** Same explicit current-staging opt-in as command admission. No flag, SQL,
  * provider or app activation is performed by defining these adapters. */
@@ -70,7 +82,11 @@ export function createConversationMealEditPublicRoutes(
   const enabled = ports.enabled?.bind(ports) ?? conversationMealCommandsEnabled,
     service = ports.service?.bind(ports) ?? createConversationMealEditPublicService,
     reauthenticate = runtime.authenticate.bind(runtime)
-  async function scopedResponse(context: MobileRouteContext, work: () => Promise<unknown>) {
+  async function scopedResponse(
+    context: MobileRouteContext,
+    work: () => Promise<unknown>,
+    turns = false,
+  ) {
     const original = Object.freeze({
       subject: context.auth.authUserId,
       patient: authenticatedReevaluationOwner(context.auth),
@@ -93,7 +109,7 @@ export function createConversationMealEditPublicRoutes(
         'conversation_patient_changed',
         'The original authenticated patient has changed',
       )
-    return response(value, context.requestId)
+    return response(value, context.requestId, turns)
   }
   const available = () => {
     if (!enabled())
@@ -108,8 +124,14 @@ export function createConversationMealEditPublicRoutes(
       available()
       requireOriginalPatient(context.request, context.auth.userId)
       const identity = original(context.request, (await route.params).commandId)
-      return scopedResponse(context, () =>
-        service(context.supabase).readGroup(context.auth, identity),
+      const turns = conversationTurnRepliesRequested(context.request.headers)
+      return scopedResponse(
+        context,
+        () =>
+          turns
+            ? service(context.supabase).readGroup(context.auth, identity, true)
+            : service(context.supabase).readGroup(context.auth, identity),
+        turns,
       )
     }, runtime),
     EDIT: createMobileRouteWithContext<EditRoute>(async (context, route) => {
@@ -119,6 +141,17 @@ export function createConversationMealEditPublicRoutes(
         identity = original(context.request, params.commandId),
         operationId = uuid.parse(params.operationId),
         body = await editBody(context.request, operationId)
+      if (
+        body.kind === 'save' &&
+        body.photo_review_index !== undefined &&
+        process.env.MOBILE_CONVERSATION_TURN_REPLIES_ENABLED !== 'true'
+      ) {
+        throw new MobileApiError(
+          503,
+          'conversation_photo_review_unavailable',
+          'Photo review is unavailable',
+        )
+      }
       return scopedResponse(context, () =>
         service(context.supabase).execute(
           context.auth,

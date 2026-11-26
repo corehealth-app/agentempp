@@ -1395,6 +1395,17 @@ final class FlowConversationModel {
       }
     } catch { failure = .changed }
   }
+  func beginPhotoAnswer(commandID: UUID, index: Int) async {
+    guard let editor = mealEditor, editor.canBeginEditing, let originalContext = context,
+      hasCurrentScope
+    else { return }
+    await loadCurrentGroup(commandID: commandID)
+    guard context?.observation.isSameGrant(as: originalContext.observation) == true,
+      let group = currentGroup(commandID: commandID), mealEditActions(commandID: commandID) != nil
+    else { return }
+    do { try editor.beginPhotoAnswer(group: group, index: index) }
+    catch { failure = .changed }
+  }
   func mealEditActions(commandID: UUID) -> FlowConversationMealEditActions? {
     guard hasCurrentScope, let group = currentGroup(commandID: commandID), group.current != nil,
       commands[commandID] != nil || linkedMealIdentities[commandID]?.matches(group: group) == true

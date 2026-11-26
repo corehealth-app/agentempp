@@ -186,11 +186,14 @@ struct FlowNeutralIntakeTranscriptContent: View {
           !historicalMealIDs.contains($0.childID) && !historicalSavedIntakeIDs.contains($0.id)
         }
       ) { row in
+        let review = row.feedback.map { FlowFeedbackPreview($0.presentation, english: english).pending != nil } ?? false
         VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
           FlowNeutralIntakeSavedContent(
-            row: row, english: english, compact: true, media: model.mediaPreview(for: row.id))
+            row: row, english: english, compact: true, media: model.mediaPreview(for: row.id),
+            showsPhotoQuestion: conversation?.currentGroup(commandID: row.childID)?.photoReview == nil)
           if case .meal = row.acknowledgement, let conversation {
-            FlowConversationMealControlsContent(model: conversation, commandID: row.childID)
+            FlowConversationMealControlsContent(
+              model: conversation, commandID: row.childID, needsPhotoReview: review)
           }
         }.id(FlowTranscriptPositioning.intakeAnchor(row.id))
       }
@@ -429,6 +432,7 @@ struct FlowNeutralIntakeSavedContent: View {
   let english: Bool
   var compact = false
   var media: FlowChatMediaPreview? = nil
+  var showsPhotoQuestion = true
   var body: some View {
     if compact {
       VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
@@ -444,7 +448,8 @@ struct FlowNeutralIntakeSavedContent: View {
         }
         FlowChatBubble {
           if let feedback = row.feedback {
-            ConversationFeedbackPresentationView(feedback: feedback, compact: true)
+            ConversationFeedbackPresentationView(
+              feedback: feedback, compact: true, showsPhotoQuestion: showsPhotoQuestion)
           } else {
             savedFacts
           }

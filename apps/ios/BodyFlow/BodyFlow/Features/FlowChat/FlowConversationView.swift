@@ -41,6 +41,17 @@ struct FlowConversationView: View {
               }
               .padding(BodyFlowSpacing.md)
               .id(reply.id)
+            } else if let editor = model.mealEditor, editor.isPhotoAnswerForm,
+              let presentation = editor.presentation
+            {
+              VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+                Button(english ? "Back to conversation" : "Voltar à conversa") {
+                  editor.dismiss()
+                }
+                FlowConversationMealEditorContent(model: editor)
+              }
+              .padding(BodyFlowSpacing.md)
+              .id(presentation.id)
             } else {
               FlowConversationComposerContent(
                 model: model, capture: capture, captureAction: openCapture
@@ -67,8 +78,8 @@ struct FlowConversationView: View {
     }
     .sheet(
       item: Binding(
-        get: { model.mealEditor?.presentation },
-        set: { if $0 == nil { model.mealEditor?.dismiss() } }
+        get: { model.mealEditor?.isPhotoAnswerForm == true ? nil : model.mealEditor?.presentation },
+        set: { if $0 == nil && model.mealEditor?.isPhotoAnswerForm != true { model.mealEditor?.dismiss() } }
       )
     ) { presentation in FlowConversationMealEditorView(model: presentation.model) }
     .task {
@@ -323,12 +334,17 @@ struct FlowConversationView: View {
         ForEach(Array(model.unifiedRows.reversed().filter {
           $0.kind != .replyResult || $0.status != .pending || $0.question != nil
         }), id: \.eventID) { entry in
+          let feedback = model.unifiedHistory.feedback(for: entry)
+          let review = feedback.map { FlowFeedbackPreview($0.presentation, english: english).pending != nil } ?? false
+          let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID)
           VStack(alignment: .leading, spacing: BodyFlowSpacing.md) {
             FlowConversationJournalV3Content(
-              entry: entry, feedback: model.unifiedHistory.feedback(for: entry), english: english,
-              media: model.neutralIntake?.mediaPreview(for: entry.intakeID))
-            if let commandID = model.unifiedMealDetailsCommandID(eventID: entry.eventID) {
-              FlowConversationMealControlsContent(model: model, commandID: commandID)
+              entry: entry, feedback: feedback, english: english,
+              media: model.neutralIntake?.mediaPreview(for: entry.intakeID),
+              showsPhotoQuestion: commandID.flatMap { model.currentGroup(commandID: $0)?.photoReview } == nil)
+            if let commandID {
+              FlowConversationMealControlsContent(
+                model: model, commandID: commandID, needsPhotoReview: review)
             }
           }.id(entry.eventID)
         }

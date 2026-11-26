@@ -128,6 +128,7 @@ struct FlowConversationJournalV3Presentation {
     let feedback: ConversationFeedbackPresentationSnapshot.Bound?
     let english: Bool
     var media: FlowChatMediaPreview? = nil
+    var showsPhotoQuestion = true
 
     var body: some View {
       let text = FlowConversationJournalV3Presentation(entry: entry, english: english)
@@ -151,7 +152,8 @@ struct FlowConversationJournalV3Presentation {
             if let reply = entry.turnReply {
               Text(verbatim: reply).accessibilityIdentifier("conversation.turn.reply")
             } else if let feedback {
-              ConversationFeedbackPresentationView(feedback: feedback, compact: true)
+              ConversationFeedbackPresentationView(
+                feedback: feedback, compact: true, showsPhotoQuestion: showsPhotoQuestion)
             } else {
               VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
                 if entry.question == nil {

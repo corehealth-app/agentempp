@@ -26,7 +26,8 @@ struct MobileConversationHistoryRepository: Sendable {
         method: .get,
         path: "/api/mobile/v1/conversation/meal-commands/\(commandID.uuidString.lowercased())/meal",
         conversation: .mealGroup(
-          epoch: context.epoch, ownerID: context.ownerID, inputHash: originalInputHash)))
+          epoch: context.epoch, ownerID: context.ownerID, inputHash: originalInputHash),
+        conversationTurns: true))
     try await validate(context)
     let group = response.data
     guard response.statusCode == 200, group.ownerID == context.ownerID,

@@ -91,6 +91,7 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
   let operationID: UUID
   let expectedRevision: Int
   let expectedVersion: String
+  let photoReviewIndex: Int?
   let action: Action
   let wireBody: Data
   let operationInputHash: String
@@ -98,7 +99,8 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
 
   init(
     ownerID: UUID, commandID: UUID, originalInputHash: String, epoch: UUID,
-    operationID: UUID = UUID(), expectedRevision: Int, expectedVersion: String, action: Action
+    operationID: UUID = UUID(), expectedRevision: Int, expectedVersion: String, action: Action,
+    photoReviewIndex: Int? = nil
   ) throws {
     var object: [String: ConversationMealEditJSON] = [
       "schema": .string("conversation.meal-edit.v1"),
@@ -115,6 +117,9 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
       object["kind"] = .string("undo_save")
       object["target_operation_id"] = .string(target.uuidString.lowercased())
     case .undoRegistration: object["kind"] = .string("undo_registration")
+    }
+    if let photoReviewIndex {
+      object["photo_review_index"] = .number(Double(photoReviewIndex))
     }
     let bytes = try Self.canonical(.object(object))
     try self.init(
@@ -138,17 +143,23 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
     case "undo_registration": keys = base
     default: throw ConversationMealEditInvalid.value
     }
-    let o = try raw.object(keys)
+    let o = try raw.object(required: keys, optional: kind == "save" ? ["photo_review_index"] : [])
     try editCheck(o.required("schema").string() == "conversation.meal-edit.v1")
     expectedRevision = try o.required("expected_revision").revision()
     expectedVersion = try o.required("expected_version").version()
+    photoReviewIndex = try o["photo_review_index"].map { try $0.revision() }
     _ = try ConversationMealEditJSON.string(originalInputHash).hash()
     switch kind {
     case "save":
       let items = try o.required("items").array()
       try editCheck((1...30).contains(items.count))
-      action = try .save(
-        recordID: o.required("record_id").uuid(), items: items.map { try Item($0) })
+      let decoded = try items.map { try Item($0) }
+      if let photoReviewIndex {
+        try editCheck(photoReviewIndex < 30 && decoded.count == 1
+          && decoded[0].quantityBasis == .stated && decoded[0].userKcal == nil
+          && decoded[0].candidateID == nil)
+      }
+      action = try .save(recordID: o.required("record_id").uuid(), items: decoded)
     case "undo_save":
       action = try .undoSave(targetOperationID: o.required("target_operation_id").uuid())
     default: action = .undoRegistration

@@ -178,6 +178,9 @@ export function createConversationMealEditService(
             },
             state,
             new Date(clock().getTime()),
+            ...(bound.input.photo_review_index === undefined
+              ? ([] as const)
+              : ([{ appendPhotoAnswer: true }] as const)),
           )
           if (!isDeepStrictEqual(prepared.expectedState, state)) return unavailable()
         } catch (error) {

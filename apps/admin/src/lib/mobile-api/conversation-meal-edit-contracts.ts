@@ -56,18 +56,31 @@ const base = {
   expected_revision: revision,
   expected_version: z.string().regex(/^v1:[0-9a-f]{64}$/u),
 }
-const inputSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      ...base,
-      kind: z.literal('save'),
-      record_id: uuid,
-      items: z.array(item).min(1).max(30),
-    })
-    .strict(),
-  z.object({ ...base, kind: z.literal('undo_save'), target_operation_id: uuid }).strict(),
-  z.object({ ...base, kind: z.literal('undo_registration') }).strict(),
-])
+const inputSchema = z
+  .discriminatedUnion('kind', [
+    z
+      .object({
+        ...base,
+        kind: z.literal('save'),
+        record_id: uuid,
+        items: z.array(item).min(1).max(30),
+        photo_review_index: finite.int().min(0).max(29).optional(),
+      })
+      .strict(),
+    z.object({ ...base, kind: z.literal('undo_save'), target_operation_id: uuid }).strict(),
+    z.object({ ...base, kind: z.literal('undo_registration') }).strict(),
+  ])
+  .refine((input) => {
+    if (input.kind !== 'save' || input.photo_review_index === undefined) return true
+    const answer = input.items[0]
+    return (
+      input.items.length === 1 &&
+      answer !== undefined &&
+      answer.quantity_basis === 'stated' &&
+      answer.user_kcal === undefined &&
+      answer.candidate_id === undefined
+    )
+  })
 export type ConversationMealEditInput = z.infer<typeof inputSchema>
 export interface ConversationMealEditBinding {
   readonly ownerId: string

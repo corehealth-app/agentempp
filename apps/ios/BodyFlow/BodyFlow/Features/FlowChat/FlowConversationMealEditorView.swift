@@ -74,6 +74,10 @@ struct FlowConversationMealEditorContent: View {
           )
           .foregroundStyle(BodyFlowColor.secondaryText)
         } else {
+          if model.isPhotoAnswerForm {
+            Text(english ? "Complete the meal" : "Completar refeição")
+              .font(BodyFlowTypography.headline)
+          }
           Text(english ? "Food" : "Alimento").font(BodyFlowTypography.headline)
           TextField(
             english ? "Food name" : "Nome do alimento",
@@ -134,7 +138,9 @@ struct FlowConversationMealEditorContent: View {
           Button(
             model.hasPreparedIntent
               ? (english ? "Continue the original edit" : "Continuar edição original")
-              : (english ? "Save edit" : "Salvar edição")
+              : model.isPhotoAnswerForm
+                ? (english ? "Confirm food" : "Confirmar alimento")
+                : (english ? "Save edit" : "Salvar edição")
           ) { Task { await model.save(language: language) } }
           .buttonStyle(.borderedProminent).disabled(!model.canSave(language: language))
           .accessibilityIdentifier("conversation.edit.save")

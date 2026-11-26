@@ -19,6 +19,13 @@ struct ConversationMealItemEditDraft: Sendable {
       grams: grams, metadata: item.quantityDisplay, name: item.foodName)
   }
 
+  init(photoQuestion: ConversationMealGroupSnapshot.PhotoQuestion, anchorID: UUID) {
+    recordID = anchorID
+    foodName = photoQuestion.name
+    originalName = photoQuestion.name
+    originalReference = MealQuantityValue(grams: nil, metadata: nil, name: photoQuestion.name)
+  }
+
   /// A rename cannot carry a milk density or whey scoop to a different food.
   /// Existing authored input is converted with its ORIGINAL reference, then
   /// shown in grams; it is never re-read as a different unit or erased.

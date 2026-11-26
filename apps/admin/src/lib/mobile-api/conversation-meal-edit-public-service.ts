@@ -1,5 +1,6 @@
 /** Dormant authenticated facade. Read reconciliation never invokes the writer;
  * factual ACK projection does not depend on refreshed group/Today/education. */
+import { visionFoodIdentity } from '@mpp/agent'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
 import type { MobileAuthContext } from './auth'
@@ -23,6 +24,7 @@ import {
   createSupabaseConversationMealEditStore,
 } from './conversation-meal-edit-store'
 import { freezeConversationWriter } from './conversation-meal-writer-contracts'
+import { workoutText } from './conversation-workout-contracts'
 import { MobileApiError } from './http'
 import { authenticatedReevaluationOwner } from './reevaluation-cycle-service'
 
@@ -30,6 +32,19 @@ const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-
 const originalSchema = z
   .object({ commandId: uuid, inputHash: z.string().regex(/^[a-f0-9]{64}$/u), epoch: uuid })
   .strict()
+const reviewItems = z
+  .array(
+    z
+      .object({
+        index: z.number().int().min(0).max(29),
+        name: workoutText(240),
+      })
+      .strict(),
+  )
+  .max(29)
+  .refine((items) =>
+    items.every((item, position) => item.index > (items[position - 1]?.index ?? -1)),
+  )
 export interface ConversationMealEditPublicPorts {
   readonly store?: ConversationMealEditStore
   readonly writer?: Pick<ReturnType<typeof createConversationMealEditService>, 'execute'>
@@ -85,11 +100,40 @@ export function createConversationMealEditPublicService(
   const writer = ports.writer ?? createConversationMealEditService(db, { store }),
     execute = writer.execute.bind(writer)
   return Object.freeze({
-    async readGroup(auth: MobileAuthContext, original: ConversationMealEditOriginal) {
+    async readGroup(
+      auth: MobileAuthContext,
+      original: ConversationMealEditOriginal,
+      photoReview = false,
+    ) {
       const b = identity(auth, original),
         read = await store.readState(b.binding)
       if (read.action !== 'available') return refuse(read.action)
-      return projectConversationMealGroup(b.auth, b.binding, read)
+      const group = projectConversationMealGroup(b.auth, b.binding, read)
+      if (
+        !photoReview ||
+        !group.actions.save.allowed ||
+        group.schema !== 'conversation.meal-group.v1'
+      )
+        return group
+      const rpc = db.rpc.bind(db) as unknown as (
+        name: 'read_conversation_meal_photo_review',
+        args: Record<string, string | number>,
+      ) => PromiseLike<{ data: unknown; error: unknown }>
+      const { data, error } = await rpc('read_conversation_meal_photo_review', {
+        p_user_id: b.binding.ownerId,
+        p_command_id: b.binding.commandId,
+        p_input_hash: b.binding.inputHash,
+        p_expected_epoch: b.binding.epoch,
+        p_revision: group.revision,
+      })
+      if (error) return group
+      const pending = reviewItems.safeParse(data)
+      if (!pending.success) return group
+      const questions = pending.data.flatMap((item) => {
+        const name = workoutText(160).safeParse(visionFoodIdentity(item.name).name.trim())
+        return name.success ? [{ index: item.index, name: name.data }] : []
+      })
+      return freezeConversationWriter({ ...group, photo_review: questions })
     },
     async execute(
       auth: MobileAuthContext,

@@ -124,6 +124,13 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
   let lastOperation: ConversationMealEditEffectSnapshot?
   let registrationUndoExpiresAt: String
   let actions: Actions
+  struct PhotoQuestion: Sendable, Identifiable {
+    let id: Int
+    let name: String
+  }
+  /// Nil when the server has not negotiated photo review. Empty means no
+  /// questions are available at this exact current revision.
+  let photoReview: [PhotoQuestion]?
 
   init(data: Data) throws {
     guard data.count <= 65_536 else { throw ConversationMealEditInvalid.value }
@@ -133,11 +140,11 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
     do {
       let raw = try ConversationMealEditJSON(from: decoder)
       try raw.boundPublicPacket()
-      let o = try raw.object([
+      let o = try raw.object(required: [
         "schema", "owner_id", "command_id", "input_hash", "epoch", "admitted_at", "observed_at",
         "original_receipt", "revision", "lineage_compatible", "current", "last_operation",
         "registration_undo_expires_at", "actions",
-      ])
+      ], optional: ConversationTurnReplySelection.selected(from: decoder) ? ["photo_review"] : [])
       let schema = try o.required("schema").string()
       try editCheck(["conversation.meal-group.v1", "conversation.meal-group.v2"].contains(schema))
       ownerID = try o.required("owner_id").uuid()
@@ -193,6 +200,22 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
         save: Availability(a.required("save")),
         undoRegistration: Availability(a.required("undo_registration")),
         undoSave: Availability(a.required("undo_save")))
+      if let rawQuestions = o["photo_review"] {
+        try editCheck(schema == "conversation.meal-group.v1" && actions.save.allowed)
+        let questions = try rawQuestions.array()
+        try editCheck(questions.count <= 29)
+        let decoded = try questions.map { raw -> PhotoQuestion in
+          let item = try raw.object(["index", "name"])
+          let id = try item.required("index").revision()
+          let name = try item.required("name").string()
+          try editCheck(id < 30 && neutralText(name, limit: 160))
+          return .init(id: id, name: name)
+        }
+        try editCheck(zip(decoded, decoded.dropFirst()).allSatisfy { $0.0.id < $0.1.id })
+        photoReview = decoded
+      } else {
+        photoReview = nil
+      }
     } catch { throw editDecodeFailure(decoder) }
   }
   private static func parseCurrent(_ raw: ConversationMealEditJSON) throws -> Current {

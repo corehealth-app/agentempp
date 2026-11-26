@@ -6,6 +6,7 @@ import SwiftUI
 struct ConversationFeedbackPresentationView: View {
     let feedback: ConversationFeedbackPresentationSnapshot.Bound
     var compact = false
+    var showsPhotoQuestion = true
     @Environment(\.locale) private var locale
     @State private var detailsExpanded = false
 
@@ -86,7 +87,7 @@ struct ConversationFeedbackPresentationView: View {
                 Text(verbatim: comment)
                     .accessibilityIdentifier("conversation.feedback.compact-education")
             }
-            if let pending = preview.pending {
+            if showsPhotoQuestion, let pending = preview.pending {
                 Text(verbatim: pending)
                     .foregroundStyle(BodyFlowColor.warning)
                     .accessibilityIdentifier("conversation.feedback.photo-question")

@@ -8,8 +8,8 @@ import {
 import type { Json, ServiceClient, Tables } from '@mpp/db'
 import type { MobileAuthContext } from './auth'
 import { type PrivateConfirmedMealState, privateConfirmedMealVersion } from './confirmed-meal-read'
-import type { RegistrationProposalInput } from './contracts'
 import { calculateMobileConsumedMeal } from './consumed-meal-calculation'
+import type { RegistrationProposalInput } from './contracts'
 import { MobileApiError } from './http'
 import { hashMobileRequest } from './idempotency'
 
@@ -192,6 +192,7 @@ export async function prepareConfirmedMealMutation(
   command: ConfirmedMealCommand,
   state: PrivateConfirmedMealState,
   now: Date,
+  options?: { readonly appendPhotoAnswer: true },
 ): Promise<PreparedConfirmedMealMutation> {
   // The caller MUST run findCompletedConfirmedMealReceipt before loading this fresh state.
   const context = state.context
@@ -278,6 +279,7 @@ export async function prepareConfirmedMealMutation(
   if (
     anchor &&
     onlyInput &&
+    !options?.appendPhotoAnswer &&
     onlyInput.user_kcal === undefined &&
     normalizedQuantityIdentity(onlyInput.food_name) === normalizedQuantityIdentity(anchor.food_name)
   ) {
@@ -302,7 +304,12 @@ export async function prepareConfirmedMealMutation(
   }))
   // Existing resolver is not pure: it may append existing product_events while preparing.
   // The RPC compares country/context again under locks before any meal/snapshot mutation.
-  const calculated = await calculateMobileConsumedMeal(supabase, input, context.country, auth.userId)
+  const calculated = await calculateMobileConsumedMeal(
+    supabase,
+    input,
+    context.country,
+    auth.userId,
+  )
   if (
     calculated.items.length < 1 ||
     calculated.items.length > 30 ||
@@ -314,14 +321,28 @@ export async function prepareConfirmedMealMutation(
       'Revise o alimento antes de confirmar a edição.',
     )
   }
-  if (state.items.length - 1 + calculated.items.length > 30) {
+  const photoAnswer = options?.appendPhotoAnswer
+  if (
+    photoAnswer &&
+    (!anchor ||
+      !onlyInput ||
+      calculated.items.length !== 1 ||
+      calculated.items[0]?.quantity_g !== onlyInput.quantity_g)
+  ) {
+    throw new MobileApiError(
+      422,
+      'MEAL_NUTRITION_UNRESOLVED',
+      'Confirme um alimento e uma quantidade para completar a refeição.',
+    )
+  }
+  if (state.items.length - (photoAnswer ? 0 : 1) + calculated.items.length > 30) {
     throw new MobileApiError(
       422,
       'MEAL_GROUP_LIMIT_EXCEEDED',
       'A edição ultrapassa o limite de alimentos deste registro.',
     )
   }
-  const calculatedItems: Json = calculated.items.map((item) => ({
+  const calculatedItems: Json[] = calculated.items.map((item) => ({
     food_name: item.food_name,
     food_db_id: item.matched_taco_id,
     quantity_g: item.quantity_g,
@@ -332,6 +353,21 @@ export async function prepareConfirmedMealMutation(
     source: item.source,
     confidence: item.similarity,
   }))
+  if (photoAnswer && anchor) {
+    // Keep the existing anchor's official facts. Only the new food is
+    // calculated; catalog changes must never rewrite the original nutrition.
+    calculatedItems.unshift({
+      food_name: anchor.food_name,
+      food_db_id: anchor.food_db_id,
+      quantity_g: anchor.quantity_g,
+      kcal: anchor.kcal,
+      protein_g: anchor.protein_g,
+      carbs_g: anchor.carbs_g,
+      fat_g: anchor.fat_g,
+      source: anchor.source,
+      confidence: anchor.confidence,
+    })
+  }
   return {
     expectedState: state,
     calculatedItems,

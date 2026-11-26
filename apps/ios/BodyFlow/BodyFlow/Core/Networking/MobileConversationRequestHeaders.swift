@@ -173,7 +173,7 @@ enum MobileConversationRequestHeaders: Sendable {
   }
   var supportsTurnReplies: Bool {
     switch self {
-    case .intakeSubmit, .intakeReconciliation, .unifiedJournal: true
+    case .intakeSubmit, .intakeReconciliation, .unifiedJournal, .mealGroup: true
     default: false
     }
   }

@@ -57,6 +57,7 @@ final class FlowConversationMealEditModel {
   private var group: ConversationMealGroupSnapshot?
   private var linkedOrigin: ConversationMealLinkedIdentity?
   private var draft: ConversationMealItemEditDraft?
+  private var photoReviewIndex: Int?
   private var requestedAction: ConversationMealEditOperation.Action?
   private var preparation: ConversationMealEditPreparation?
   private var intent: ConversationMealEditOperation?
@@ -111,6 +112,9 @@ final class FlowConversationMealEditModel {
     if draft != nil { return true }
     if case .save = formAction { return true }
     return false
+  }
+  var isPhotoAnswerForm: Bool {
+    hasScope && (intent?.photoReviewIndex ?? photoReviewIndex) != nil
   }
   var foodName: String {
     get {
@@ -234,9 +238,24 @@ final class FlowConversationMealEditModel {
     guard canBeginEditing, matches(group, linked: linked), group.actions.save.allowed,
       let item = group.current?.items.first(where: { $0.id == itemID })
     else { throw ConversationMealEditControllerError.unavailable }
+    beginForm(group: group, linked: linked, draft: .init(item))
+  }
+  func beginPhotoAnswer(group: ConversationMealGroupSnapshot, index: Int) throws {
+    guard canBeginEditing, matches(group, linked: nil), group.actions.save.allowed,
+      let items = group.current?.items, items.count < 30, let anchor = items.first,
+      let question = group.photoReview?.first(where: { $0.id == index })
+    else { throw ConversationMealEditControllerError.changed }
+    beginForm(group: group, linked: nil, draft: .init(photoQuestion: question, anchorID: anchor.id))
+    photoReviewIndex = index
+  }
+  private func beginForm(
+    group: ConversationMealGroupSnapshot, linked: ConversationMealLinkedIdentity?,
+    draft: ConversationMealItemEditDraft
+  ) {
     self.group = group
     linkedOrigin = linked
-    draft = .init(item)
+    self.draft = draft
+    photoReviewIndex = nil
     formID = UUID()
     presented = true
     storedFailure = nil
@@ -250,6 +269,7 @@ final class FlowConversationMealEditModel {
     group = nil
     linkedOrigin = nil
     draft = nil
+    photoReviewIndex = nil
     preparation = nil
     intent = entry.operation
     mayHaveDispatched = entry.state != .queued
@@ -369,7 +389,8 @@ final class FlowConversationMealEditModel {
     }
     return try await controller.prepare(
       commandID: group.commandID, originalInputHash: group.originalInputHash,
-      expectedRevision: group.revision, expectedVersion: version, action: action, context: context)
+      expectedRevision: group.revision, expectedVersion: version, action: action, context: context,
+      photoReviewIndex: photoReviewIndex)
   }
   private func dispatch(_ context: ConversationCommandContext) async throws {
     guard let intent else { throw ConversationOutboxError.invalidCommand }
@@ -489,6 +510,7 @@ final class FlowConversationMealEditModel {
     group = nil
     linkedOrigin = nil
     draft = nil
+    photoReviewIndex = nil
     requestedAction = nil
     preparation = nil
     intent = nil

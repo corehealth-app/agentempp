@@ -7,6 +7,7 @@
   struct FlowConversationMealControlsContent: View {
     let model: FlowConversationModel
     let commandID: UUID
+    var needsPhotoReview = false
     @State private var userExpansion: Bool?
     @Environment(\.locale) private var locale
     private var english: Bool {
@@ -18,6 +19,9 @@
     }
     var body: some View {
       if model.canLoadMealDetails(commandID: commandID) {
+        if needsPhotoReview {
+          reviewQuestions
+        }
         DisclosureGroup(isExpanded: Binding(
           get: { expanded }, set: { userExpansion = $0 }
         )) {
@@ -37,6 +41,31 @@
         .padding(.horizontal, BodyFlowSpacing.sm)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation.meal.controls.\(commandID.uuidString.lowercased())")
+        .task(id: model.knownEditRevision(commandID: commandID)) {
+          if needsPhotoReview && model.currentGroup(commandID: commandID) == nil {
+            await model.loadCurrentGroup(commandID: commandID)
+          }
+        }
+      }
+    }
+
+    @ViewBuilder private var reviewQuestions: some View {
+      if let group = model.currentGroup(commandID: commandID),
+        group.actions.save.allowed, let questions = group.photoReview
+      {
+        ForEach(questions) { item in
+          FlowChatBubble {
+            VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+              Text(english ? "Was that \(item.name)? How much did you eat?"
+                : "Era \(item.name)? Quanto você comeu?")
+              Button(english ? "Answer Flow" : "Responder ao Flow") {
+                Task { await model.beginPhotoAnswer(commandID: commandID, index: item.id) }
+              }
+              .disabled(model.mealEditor?.canBeginEditing != true)
+              .accessibilityIdentifier("conversation.photo-review.answer.\(item.id)")
+            }
+          }
+        }
       }
     }
 

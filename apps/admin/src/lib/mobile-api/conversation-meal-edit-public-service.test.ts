@@ -57,6 +57,28 @@ function setup() {
   return { op, receipt, state, store, execute, service }
 }
 describe('public factual command edit service without implicit effects', () => {
+  it('returns only the pending photo indices from the exact authorized meal revision', async () => {
+    const f = setup()
+    const rpc = vi.fn().mockResolvedValue({ data: [{ index: 3, name: 'feijão' }], error: null })
+    const service = createConversationMealEditPublicService({ rpc } as unknown as ServiceClient, {
+      store: f.store,
+      writer: { execute: f.execute },
+    })
+    const group = await service.readGroup(auth, original())
+    expect(group).not.toHaveProperty('photo_review')
+    expect(rpc).not.toHaveBeenCalled()
+    expect(await service.readGroup(auth, original(), true)).toMatchObject({
+      photo_review: [{ index: 3, name: 'feijão' }],
+    })
+    expect(rpc).toHaveBeenCalledWith('read_conversation_meal_photo_review', {
+      p_user_id: auth.userId,
+      p_command_id: original().commandId,
+      p_input_hash: original().inputHash,
+      p_expected_epoch: original().epoch,
+      p_revision: group.revision,
+    })
+    expect(f.execute).not.toHaveBeenCalled()
+  })
   it('reads a group once and projects its actual binding and private version', async () => {
     const f = setup(),
       value = await f.service.readGroup(auth, original())

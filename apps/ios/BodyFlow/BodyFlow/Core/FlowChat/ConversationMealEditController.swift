@@ -123,12 +123,12 @@ actor ConversationMealEditController {
   func prepare(
     commandID: UUID, originalInputHash: String, expectedRevision: Int, expectedVersion: String,
     action: ConversationMealEditOperation.Action, context: ConversationCommandContext,
-    operationID: UUID = UUID()
+    operationID: UUID = UUID(), photoReviewIndex: Int? = nil
   ) async throws -> ConversationMealEditPreparation {
     try await prepare(
       commandID: commandID, originalInputHash: originalInputHash, linked: nil,
       expectedRevision: expectedRevision, expectedVersion: expectedVersion,
-      action: action, context: context, operationID: operationID)
+      action: action, context: context, operationID: operationID, photoReviewIndex: photoReviewIndex)
   }
   func prepare(
     linked identity: ConversationMealLinkedIdentity, expectedRevision: Int,
@@ -143,7 +143,7 @@ actor ConversationMealEditController {
   private func prepare(
     commandID: UUID, originalInputHash: String, linked: ConversationMealLinkedIdentity?,
     expectedRevision: Int, expectedVersion: String, action: ConversationMealEditOperation.Action,
-    context: ConversationCommandContext, operationID: UUID
+    context: ConversationCommandContext, operationID: UUID, photoReviewIndex: Int? = nil
   ) async throws -> ConversationMealEditPreparation {
     let lease = try await validate(context)
     let history = history
@@ -169,6 +169,11 @@ actor ConversationMealEditController {
           case .save(let recordID, _):
             guard group.actions.save.allowed, current.items.contains(where: { $0.id == recordID })
             else { throw ConversationMealEditControllerError.unavailable }
+            if let photoReviewIndex {
+              guard linked == nil,
+                group.photoReview?.contains(where: { $0.id == photoReviewIndex }) == true
+              else { throw ConversationMealEditControllerError.changed }
+            }
           case .undoSave(let target):
             guard group.actions.undoSave.allowed, group.lastOperation?.kind == .saved,
               group.lastOperation?.operationID == target
@@ -182,7 +187,7 @@ actor ConversationMealEditController {
             ownerID: context.ownerID,
             commandID: commandID, originalInputHash: originalInputHash, epoch: context.epoch,
             operationID: operationID, expectedRevision: expectedRevision,
-            expectedVersion: expectedVersion, action: action)
+            expectedVersion: expectedVersion, action: action, photoReviewIndex: photoReviewIndex)
           return .init(operation: operation, context: context, scope: scope)
         }
       }

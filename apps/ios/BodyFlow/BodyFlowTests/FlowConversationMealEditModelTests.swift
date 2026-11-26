@@ -12,6 +12,51 @@ import Testing
 @Suite("Actual Flow item editor preserves one original operation")
 @MainActor
 struct FlowConversationMealEditModelTests {
+  @Test func photoAnswerBindsTheOmittedItemAndCannotBeSentAgainAfterReload() async throws {
+    let f = try FlowEditUIFixture("milk")
+    defer { f.base.disk.remove() }
+    let root = try #require(JSONSerialization.jsonObject(with: f.groupBody) as? [String: Any])
+    var data = try #require(root["data"] as? [String: Any])
+    func packet(_ questions: [[String: Any]]) throws -> Data {
+      data["photo_review"] = questions
+      var envelope = root
+      envelope["data"] = data
+      return try JSONSerialization.data(withJSONObject: envelope)
+    }
+    let pending = try packet([["index": 1, "name": "feijão"]])
+    let answered = try packet([])
+    let decoder = JSONDecoder()
+    ConversationTurnReplySelection.configure(decoder, requested: true, echo: "1")
+    let group = try decoder.decode(MobileAPISuccessEnvelope<ConversationMealGroupSnapshot>.self, from: pending).data
+    let latest = try decoder.decode(MobileAPISuccessEnvelope<ConversationMealGroupSnapshot>.self, from: answered).data
+    #expect(group.photoReview?.first?.id == 1 && latest.photoReview?.isEmpty == true)
+    let model = try await openEditor(f)
+    await f.base.http.stub.respond { request, _ in
+      if request.httpMethod == "GET" {
+        return .init(status: 200, body: pending, headers: ["X-Conversation-Turns": "1"])
+      }
+      return try f.savedReply(request)
+    }
+    try model.beginPhotoAnswer(group: group, index: 1)
+    #expect(model.isPhotoAnswerForm && model.foodName == "feijão")
+    #expect(!model.canSave(language: .portugueseBrazil))
+    model.setQuantityText("50", language: .portugueseBrazil)
+    await model.save(language: .portugueseBrazil)
+    #expect(model.lastSaved != nil && model.pendingOperation == nil)
+    let requests = await f.base.http.stub.requests
+    #expect(requests.map(\.httpMethod) == ["GET", "POST"])
+    let operation = try f.operation(#require(requests.last))
+    #expect(operation.photoReviewIndex == 1)
+    if case .save(let anchor, let items) = operation.action {
+      #expect(anchor == group.current?.items.first?.id)
+      #expect(items.count == 1 && items[0].foodName == "feijão")
+      #expect(items[0].quantityG == 50 && items[0].quantityBasis == .stated)
+    }
+    #expect(throws: ConversationMealEditControllerError.changed) {
+      try model.beginPhotoAnswer(group: latest, index: 1)
+    }
+    await model.close()
+  }
   @Test(arguments: [false, true])
   func coldRestoredACKRefreshesOfficialReadersEvenWhileJournalIsUnavailable(_ knownConflict: Bool)
     async throws

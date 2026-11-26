@@ -133,6 +133,7 @@ function withPhrases(q: ReturnType<typeof setup>) {
   })
   const event = { kind: 'c5' as const, message: out, receipt: packet.receipt }
   const phrase: FlowPhraseReplyStore = {
+    prepareReply: prepareFlowStatusPhraseReply,
     loadEventReply: vi.fn(async () => null),
     loadCursor: vi.fn(async () => ({ anchorAssistantId: null, cursorRevision: '0', cursor: null })),
     commitReply: vi.fn(async () => ({ action: 'committed' as const, message: out })),

@@ -195,7 +195,13 @@ function fixture() {
       flowStatusPhrase: tag,
     }),
   )
-  const phraseReplies = { loadEventReply, loadCursor, commitReply, failOwnedAttempt }
+  const phraseReplies = {
+    prepareReply: prepareFlowStatusPhraseReply,
+    loadEventReply,
+    loadCursor,
+    commitReply,
+    failOwnedAttempt,
+  }
   return {
     store,
     events,

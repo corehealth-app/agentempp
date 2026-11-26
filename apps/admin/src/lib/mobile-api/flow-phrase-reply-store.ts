@@ -3,6 +3,7 @@ import {
   FLOW_CURATED_PHRASE_CATALOG,
   type FlowStatusPhraseCursor,
   type FlowStatusPhraseReceipt,
+  prepareFlowStatusPhraseReply,
 } from '@mpp/agent/flow-curated-phrases'
 import type { ServiceClient } from '@mpp/db'
 import { z } from 'zod'
@@ -55,6 +56,7 @@ export interface FlowPhraseOwnedAttempt {
   errorCode: string
 }
 export interface FlowPhraseReplyStore {
+  prepareReply: typeof prepareFlowStatusPhraseReply
   loadEventReply(input: FlowPhraseEventIdentity): Promise<FlowPhraseEventReply | null>
   loadCursor(userId: string): Promise<FlowPhraseCursorSnapshot>
   commitReply(input: FlowPhraseReplyCommit): Promise<FlowPhraseReplyCommitResult>
@@ -239,6 +241,7 @@ function parseMessage(
 /** Stateless trusted-backend adapter. Constructing it never reads or advances C5. */
 export function createSupabaseFlowPhraseReplyStore(supabase: ServiceClient): FlowPhraseReplyStore {
   return {
+    prepareReply: prepareFlowStatusPhraseReply,
     async loadEventReply(input) {
       validateIdentity(input, true)
       const find = (direction: 'in' | 'out', key: string) =>

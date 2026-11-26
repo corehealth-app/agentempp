@@ -127,6 +127,7 @@ describe('C5a actual route composition', () => {
     expect(mocks.send).toHaveBeenCalledWith(
       expect.objectContaining({
         phraseReplies: expect.objectContaining({
+          prepareReply: expect.any(Function),
           loadCursor: expect.any(Function),
           commitReply: expect.any(Function),
         }),

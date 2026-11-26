@@ -1,5 +1,4 @@
 import type { FlowStatusPhraseContext } from '@mpp/agent'
-import { prepareFlowStatusPhraseReply } from '@mpp/agent/flow-curated-phrases'
 import type { ServiceClient } from '@mpp/db'
 import {
   assertCapturedFlowInboundAuthority,
@@ -1088,7 +1087,7 @@ async function runFlowTurn(
       const createdAt = new Date().toISOString()
       for (let count = 0; count < 3; count++) {
         const current = await phrasePhase(() => phraseReplies.loadCursor(input.userId), marks)
-        const packet = prepareFlowStatusPhraseReply(request, current.cursor)
+        const packet = phraseReplies.prepareReply(request, current.cursor)
         const result = await phrasePhase(
           () =>
             phraseReplies.commitReply({

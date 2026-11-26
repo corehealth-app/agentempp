@@ -29,6 +29,7 @@ const epoch = '00000000-0000-4000-8000-000000000015'
 const intakeID = '00000000-0000-4000-8000-000000000016'
 const admitted = '2026-11-26T03:09:00.000Z'
 const timezone = 'America/Sao_Paulo'
+const audioAssetID = '00000000-0000-4000-8000-000000000018'
 const clinical = { capture: vi.fn() } as unknown as CurrentClinicalStateSource
 const auth = { userId: owner, patient: { timezone } } as MobileAuthContext
 const walk = {
@@ -40,7 +41,12 @@ const walk = {
   performed_at: '2026-11-26T02:40:00.000Z',
 }
 
-function providerInput(text: string, restricted = false, earlierQuestion?: string) {
+function providerInput(
+  text: string,
+  restricted = false,
+  earlierQuestion?: string,
+  channel: 'text' | 'audio' = 'text',
+) {
   const policy = {
     assessment: 'complete',
     pause_weight_loss_guidance: restricted,
@@ -93,13 +99,20 @@ function providerInput(text: string, restricted = false, earlierQuestion?: strin
     limit: vi.fn().mockResolvedValue({ data, error: null }),
   })
   const workoutQuery = query([walk])
-  const messageQuery = query(earlierQuestion ? [{ direction: 'in', content: earlierQuestion }] : [])
+  const messageQuery = query(
+    earlierQuestion
+      ? [{ direction: 'in', content: earlierQuestion, created_at: '2026-11-26T02:45:00.000Z' }]
+      : [],
+  )
   const from = vi.fn((table: string) => (table === 'workout_logs' ? workoutQuery : messageQuery))
   const db = { from } as unknown as ServiceClient
   const intake = bindConversationIntake(owner, `cintake1:${intakeID}`, {
     intake_protocol: 'conversation.intake.v1',
     intake_id: intakeID,
-    source: { channel: 'text', text },
+    source:
+      channel === 'audio'
+        ? { channel: 'media', media_asset_id: audioAssetID, user_action: 'report_actual_record' }
+        : { channel: 'text', text },
   })
   const binding = {
     owner_id: owner,
@@ -121,7 +134,19 @@ function providerInput(text: string, restricted = false, earlierQuestion?: strin
           captured_at: admitted,
           time_zone: timezone,
           local_date: '2026-11-26',
-          media: null,
+          media:
+            channel === 'audio'
+              ? {
+                  asset_id: audioAssetID,
+                  owner_id: owner,
+                  kind: 'audio_note',
+                  status: 'processed',
+                  processed_at: admitted,
+                  updated_at: admitted,
+                  context_text: null,
+                  processing_result: { text },
+                }
+              : null,
         },
       },
       'question',
@@ -159,6 +184,25 @@ it.each([
   ])
   expect(workoutQuery.eq).toHaveBeenCalledWith('user_id', owner)
   expect(workoutQuery.lt).toHaveBeenCalledWith('performed_at', admitted)
+  if (prior) expect(payload.context.history[0].local_date).toBe('2026-11-25')
+})
+
+it.each([
+  'text',
+  'audio',
+] as const)('grounds a %s current-day summary without old denials or unrelated workouts', async (channel) => {
+  const { run, from } = providerInput(
+    'Como esta meu dia ate agora?',
+    false,
+    'Hoje não comi 100 g de arroz.',
+    channel,
+  )
+  await run()
+  const payload = JSON.parse(ports.complete.mock.calls[0]?.[0].messages[0].content)
+  expect(payload.context.day.date).toBe('2026-11-26')
+  expect(payload.context.history).toEqual([])
+  expect(from).not.toHaveBeenCalledWith('messages')
+  expect(from).not.toHaveBeenCalledWith('workout_logs')
 })
 
 it.each([

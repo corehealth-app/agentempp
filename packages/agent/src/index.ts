@@ -32,6 +32,7 @@ export {
   readFlowClinicalPolicy,
 } from './flow-current-clinical.js'
 export { loadFlowDayStatusContext } from './flow-day-status-context.js'
+export { classifyFlowDayStatusIntent } from './flow-day-status-intent.js'
 export * from './llm-judge.js'
 export * from './location-timezone.js'
 export * from './meal-addition-context.js'

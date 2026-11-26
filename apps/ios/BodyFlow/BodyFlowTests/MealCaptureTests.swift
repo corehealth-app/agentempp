@@ -462,7 +462,7 @@ struct MealAudioLimitTests {
             writer.append(buffer)
         }
         #expect(writer.progress.shouldStop)
-        #expect(writer.close())
+        #expect(writer.close() == nil)
         writer.append(buffer)
 
         let staged = try await MealMediaStager(staging: storage).stageRecording(at: raw)
@@ -477,6 +477,25 @@ struct MealAudioLimitTests {
         try captured.read(into: decoded)
         let output = try #require(decoded.floatChannelData?[0])
         #expect((0..<Int(decoded.frameLength)).contains { abs(output[$0]) > 0.1 })
+    }
+
+    @Test("A full-length recording without an audio signal cannot be sent")
+    func rejectsSilentPCMRecording() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("flow-silent-audio-\(UUID())", isDirectory: true)
+        let storage = MediaStagingStore(temporaryDirectory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let raw = try storage.makeFileURL(fileExtension: "wav")
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000))
+        buffer.frameLength = 16_000
+        let data = try #require(buffer.floatChannelData?[0])
+        for frame in 0..<Int(buffer.frameLength) { data[frame] = 0 }
+        let writer = try FlowVoicePCMFile(url: raw, inputFormat: format, maximumDuration: 180)
+        for _ in 0..<4 { writer.append(buffer) }
+
+        #expect(writer.progress.seconds >= 3.9)
+        #expect(writer.close() == .nothingRecognized)
     }
 
     @Test("Only audio types the server accepts are described")

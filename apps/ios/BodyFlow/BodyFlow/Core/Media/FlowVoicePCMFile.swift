@@ -11,6 +11,7 @@ final class FlowVoicePCMFile: @unchecked Sendable {
     private var file: AVAudioFile?
     private var frames: AVAudioFramePosition = 0
     private var failed = false
+    private var hasSignal = false
 
     init(url: URL, inputFormat: AVAudioFormat, maximumDuration: TimeInterval) throws {
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0,
@@ -50,14 +51,15 @@ final class FlowVoicePCMFile: @unchecked Sendable {
         }
     }
 
-    func close() -> Bool {
+    func close() -> MealCaptureFailure? {
         lock.withLock {
             if file != nil, !failed, frames > 0, frames < frameLimit {
                 writeConverted(nil, capacity: 512)
             }
             file?.close()
             file = nil
-            return !failed && frames > 0
+            if failed { return .captureUnavailable }
+            return hasSignal ? nil : .nothingRecognized
         }
     }
 
@@ -92,6 +94,13 @@ final class FlowVoicePCMFile: @unchecked Sendable {
         do {
             try file.write(from: converted)
             frames += AVAudioFramePosition(converted.frameLength)
+            if !hasSignal, let samples = converted.floatChannelData?[0] {
+                // Ignore digital silence, including rounding to a single
+                // signed PCM sample step. Quiet speech is still accepted.
+                hasSignal = (0..<Int(converted.frameLength)).contains {
+                    abs(samples[$0]) >= 2.0 / 32_768.0
+                }
+            }
         } catch {
             failed = true
         }

@@ -31,7 +31,7 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
         let file: FlowVoicePCMFile
         let url: URL
 
-        func stop() -> Bool {
+        func stop() -> MealCaptureFailure? {
             engine.stop()
             engine.inputNode.removeTap(onBus: 0)
             return file.close()
@@ -129,20 +129,23 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
             startTicker()
         } catch {
             releaseSession()
-            state = .failed(.captureUnavailable)
+            state = .failed((error as? MealCaptureFailure) == .nothingRecognized
+                ? .nothingRecognized : .captureUnavailable)
         }
     }
 
     func stop() {
         guard state == .recording else { return }
         if let capture = engineCapture {
-            finish(url: capture.url, successfully: capture.stop())
+            finish(url: capture.url, failure: capture.stop())
         } else {
             recorder?.stop()
         }
     }
 
     private func startEngineCapture(at url: URL) throws -> EngineCapture {
+        guard AVAudioSession.sharedInstance().isInputAvailable, !AVAudioApplication.shared.isInputMuted
+        else { throw MealCaptureFailure.nothingRecognized }
         let engine = AVAudioEngine()
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -201,7 +204,7 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     ) {
         let url = recorder.url
         Task { @MainActor in
-            self.finish(url: url, successfully: flag)
+            self.finish(url: url, failure: flag ? nil : .captureUnavailable)
         }
     }
 
@@ -211,22 +214,22 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     ) {
         let url = recorder.url
         Task { @MainActor in
-            self.finish(url: url, successfully: false)
+            self.finish(url: url, failure: .captureUnavailable)
         }
     }
 
-    private func finish(url: URL, successfully: Bool) {
+    private func finish(url: URL, failure: MealCaptureFailure?) {
         guard recorder?.url == url || engineCapture?.url == url else { return }
         ticker?.cancel()
         ticker = nil
         recorder = nil
         engineCapture = nil
         releaseSession()
-        if successfully {
-            state = .finished(url)
-        } else {
+        if let failure {
             staging.remove(url)
-            state = .failed(.captureUnavailable)
+            state = .failed(failure)
+        } else {
+            state = .finished(url)
         }
     }
 

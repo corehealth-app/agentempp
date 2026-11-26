@@ -65,9 +65,15 @@ struct FlowChatVoiceButton: View {
         case .failed(let error):
           guard owner != nil else { return }
           cancel()
-          notice = error == .permissionDenied
-            ? (english ? "Allow microphone access in Settings." : "Permita o microfone nos Ajustes.")
-            : (english ? "Could not record audio." : "Não foi possível gravar o áudio.")
+          switch error {
+          case .permissionDenied:
+            notice = english ? "Allow microphone access in Settings." : "Permita o microfone nos Ajustes."
+          case .nothingRecognized:
+            notice = english ? "I couldn't hear your voice. Check your microphone and try again."
+              : "Não consegui captar sua voz. Confira o microfone e tente novamente."
+          default:
+            notice = english ? "Could not record audio." : "Não foi possível gravar o áudio."
+          }
         default: break
         }
       }

@@ -2,11 +2,16 @@ import AVFoundation
 import Foundation
 import Observation
 
-/// Records the patient describing the meal: AAC in an .m4a, mono, and never
-/// longer than the limit — the recorder stops by itself at 180 seconds.
+/// Captures a mono voice note and stops automatically at the time limit.
+/// The Flow composer uses PCM until the recording has finished.
 @MainActor
 @Observable
 final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
+    enum CaptureFormat {
+        case aac
+        case linearPCM
+    }
+
     enum State: Equatable {
         case idle
         case recording
@@ -22,6 +27,7 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     private let staging: MediaStagingStore
+    private let captureFormat: CaptureFormat
     private let sessionAccess: SessionAccess
     private var ownsAudioSession = false
     private var recorder: AVAudioRecorder?
@@ -39,9 +45,11 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     init(
         staging: MediaStagingStore,
+        captureFormat: CaptureFormat = .aac,
         sessionAccess: SessionAccess? = nil
     ) {
         self.staging = staging
+        self.captureFormat = captureFormat
         self.sessionAccess = sessionAccess ?? SessionAccess(
             requestPermission: {
                 await AVAudioApplication.requestRecordPermission()
@@ -68,6 +76,15 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
         AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
     ]
 
+    private static let linearPCMSettings: [String: Any] = [
+        AVFormatIDKey: Int(kAudioFormatLinearPCM),
+        AVSampleRateKey: 16_000,
+        AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsFloatKey: false,
+        AVLinearPCMIsBigEndianKey: false,
+    ]
+
     func start() async {
         guard state != .recording, !isStarting else { return }
         isStarting = true
@@ -87,8 +104,10 @@ final class MealAudioRecorder: NSObject, AVAudioRecorderDelegate {
         do {
             try sessionAccess.configureActivate()
             ownsAudioSession = true
-            let url = try staging.makeFileURL(fileExtension: "m4a")
-            let recorder = try AVAudioRecorder(url: url, settings: Self.settings)
+            let pcm = captureFormat == .linearPCM
+            let url = try staging.makeFileURL(fileExtension: pcm ? "wav" : "m4a")
+            let settings = pcm ? Self.linearPCMSettings : Self.settings
+            let recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder.delegate = self
             guard recorder.record(forDuration: Self.recordingLimit) else {
                 staging.remove(url)

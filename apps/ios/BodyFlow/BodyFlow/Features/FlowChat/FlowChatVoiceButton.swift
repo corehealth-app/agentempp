@@ -24,7 +24,8 @@ struct FlowChatVoiceButton: View {
     self.english = english
     self._recordingCaption = recordingCaption
     self.dismissKeyboard = dismissKeyboard
-    self._recorder = State(initialValue: MealAudioRecorder(staging: stager.staging))
+    self._recorder = State(initialValue: MealAudioRecorder(
+      staging: stager.staging, captureFormat: .linearPCM))
   }
 
   private var available: Bool { model.inlineVoiceContext != nil }

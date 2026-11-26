@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import ImageIO
 import Testing
@@ -439,6 +440,38 @@ struct MealAudioLimitTests {
 
     private let AVFormatIDKeyName = "AVFormatIDKey"
     private let AVNumberOfChannelsKeyName = "AVNumberOfChannelsKey"
+
+    @Test("A recording preserves the full captured duration through upload preparation")
+    func recordingExportsWithFullDuration() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("flow-audio-conversion-\(UUID())", isDirectory: true)
+        let storage = MediaStagingStore(temporaryDirectory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let raw = try storage.makeFileURL(fileExtension: "wav")
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let frameCount: AVAudioFrameCount = 56_000
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
+        buffer.frameLength = frameCount
+        let samples = try #require(buffer.floatChannelData?[0])
+        for frame in 0..<Int(frameCount) {
+            samples[frame] = sin(Float(frame) * 0.13) * 0.3
+        }
+        try AVAudioFile(forWriting: raw, settings: [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+        ]).write(from: buffer)
+
+        let staged = try await MealMediaStager(staging: storage).stageRecording(at: raw)
+        #expect(staged.mimeType == "audio/mp4")
+        #expect(staged.channel == .audioRecording)
+        #expect(staged.fileURL.pathExtension == "m4a")
+        #expect(!FileManager.default.fileExists(atPath: raw.path))
+        #expect(abs((staged.duration ?? 0) - 3.5) < 0.12)
+        let audio = try AVAudioFile(forReading: staged.fileURL)
+        #expect(abs(Double(audio.length) / audio.fileFormat.sampleRate - 3.5) < 0.12)
+    }
 
     @Test("Only audio types the server accepts are described")
     func acceptedTypes() async {

@@ -123,10 +123,39 @@ struct MealMediaStager: Sendable {
 
     /// A recording already written inside the staging area.
     func stageRecording(at fileURL: URL) async throws -> StagedMedia {
+        if fileURL.pathExtension == "wav" {
+            return try await compressRecording(at: fileURL)
+        }
         do {
             return try await stagedAudio(at: fileURL, channel: .audioRecording)
         } catch {
             staging.remove(fileURL)
+            throw error
+        }
+    }
+
+    /// Capture speech without AAC timing while the microphone is active.
+    /// Encode after the input file has closed and check that the result plays
+    /// for the same duration before the upload can use it.
+    private func compressRecording(at source: URL) async throws -> StagedMedia {
+        defer { staging.remove(source) }
+        let recording = try await MealAudioInspector.describe(source)
+        let asset = AVURLAsset(url: source, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A)
+        else { throw MealCaptureFailure.unreadableMedia }
+        let output = try staging.makeFileURL(fileExtension: "m4a")
+        do {
+            try await exporter.export(to: output, as: .m4a)
+            try Task.checkCancellation()
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete], ofItemAtPath: output.path
+            )
+            let staged = try await stagedAudio(at: output, channel: .audioRecording)
+            guard let duration = staged.duration, abs(duration - recording.duration) < 0.12
+            else { throw MealCaptureFailure.unreadableMedia }
+            return staged
+        } catch {
+            staging.remove(output)
             throw error
         }
     }

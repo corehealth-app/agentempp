@@ -190,48 +190,6 @@ function runtimeExactStringRoutes(value: string): string[] {
  * or physical graph edge is exempted by the complete body certificates. */
 /** R168 admits only the explicit private-version field and its pairing check.
  * Pin the whole new source before reversing those exact additions. */
-function legacyPrivateMediaSourceR168(name: string, text: string): string {
-  const pins: Record<string, { hash: string; additions: readonly (readonly [string, number])[] }> =
-    {
-      'conversation-intake-contracts.ts': {
-        hash: '109337a08ea493451154ff2ab1664cbe88b8bcaf067b6a23fad0c06974a79c37',
-        additions: [['    catalog_version: z.literal(2).optional(),\n', 1]],
-      },
-      'conversation-intake-media-origin.ts': {
-        hash: '1144988dc4826d4f8fcef7da6efd11ac3f653466c8cfde85ee3f0a6ba138efc9',
-        additions: [
-          ['        catalog_version: z.literal(2).optional(),\n', 2],
-          ['    projection.media.catalog_version !== media.catalog_version ||\n', 1],
-        ],
-      },
-      'conversation-meal-interpretation-contracts.ts': {
-        hash: 'c7395069566844e764eed2bc5b212e490e9e831710d9a20a1184e1cd28b57013',
-        additions: [
-          ['        catalog_version: z.literal(2).optional(),\n', 1],
-          ['    catalog_version: z.literal(2).optional(),\n', 1],
-          ['        ...(m.catalog_version === 2 ? { catalog_version: 2 as const } : {}),\n', 1],
-        ],
-      },
-      'conversation-meal-writer-contracts.ts': {
-        hash: 'd20b68f55ed3a0e6b623c9f12f5add1fee7c9ddbc4f8c6a2abe9018709b937fb',
-        additions: [['    catalog_version: z.literal(2).optional(),\n', 1]],
-      },
-      'conversation-workout-contracts.ts': {
-        hash: 'eb2806dc5fa361f63c36e939ae2ebde8500ce23279bbb93aeb575efbc32cef8a',
-        additions: [['    catalog_version: z.literal(2).optional(),\n', 1]],
-      },
-    }
-  const pin = pins[name]
-  if (!pin) return text
-  expect(createHash('sha256').update(text).digest('hex')).toBe(pin.hash)
-  let restored = text
-  for (const [addition, count] of pin.additions) {
-    expect(restored.split(addition)).toHaveLength(count + 1)
-    restored = restored.split(addition).join('')
-  }
-  return restored
-}
-
 /** Whole fresh compiled bodies were compared. The declared literal additions
  * reverse to all four historical body hashes; no module/export is excluded. */
 function restorePrivateMediaContractR168(id: string, body: string): string {
@@ -282,28 +240,15 @@ function restorePrivateMediaContractR168(id: string, body: string): string {
 }
 
 function certifyOrdinaryPhotoSourcesR102(): void {
-  // Photo-only registration changes the materializer, the shared nutrition
-  // calculator and the meal registration service. The before/after builds
-  // retain all 383 module identities and 425 copies, with 380 identical bodies.
-  // R206 connected refinement changes only26432/69702;381 of383
-  // complete module bodies stay identical to candidate1.
-  // R206 compares all383 identities/425 physical copies: four changed whole
-  // bodies (materializer, shared calculator/export, V2 and V3 presentations)
-  // are sealed below. Global import/runtime scans and tampering tests remain.
-  // R204 intentionally extends the exact materializer and closed linked-name
-  // contracts. All383 chunk module identities remain;379 complete bodies are
-  // byte-identical. Pin the four changed complete bodies; do not exempt imports,
-  // providers, executable bytes, module counts or negative tampering controls.
-  // R165 adds only the exact app-only whey protein alias. All377 actual module
-  // identities were compared:375 whole bodies remain byte-identical; the two
-  // changed bodies (agent export/consumer) are sealed in full, with no edge or
-  // executable-byte exemption. Legacy lookup source remains unchanged in logic.
+  // The approved photo review and nutrition estimates change these complete
+  // sources and their compiled bodies. Keep the shared calculator and the
+  // split registration and interpretation modules covered in full.
   for (const [name, hash] of [
     [
       'everyday-food-defaults.ts',
       '6ab28a7063eba8ccd3d5a50e1c23165a62da29517883b68edd1fe3d82abb44fb',
     ],
-    ['meal-pipeline.ts', '9bb7e2618071eda70d5e843cea5755c5037d57f9461a6cb76c8807fbe4bce69f'],
+    ['meal-pipeline.ts', '0dd1e6d2fb66bb0f27084aa4681657b65a26867283bd6374c83ad4634b1fa897'],
     ['meal-draft.ts', '965638a77e021257b32021fbda78f72f88a359d8d8dfb14112422b3f1a1afda2'],
     [
       'registration-feedback-v2.ts',
@@ -320,11 +265,12 @@ function certifyOrdinaryPhotoSourcesR102(): void {
         .digest('hex'),
     ).toBe(hash)
   for (const [id, hash] of [
-    ['26432', 'f56dde20829a86d957d3384be2a56a9063f0020f297f8f7c7efe9a8e51746b87'],
+    ['26432', '15df72527043ee98cd2880c31d9b3da858e09f88e3686f3652a213006384e208'],
     ['418', 'b6f37d51d0e565142e530832b760faac2dbb8328acc25a2e129a8a6ab0ffdfb9'],
-    ['69702', '0b634d6fb26d3073ecca7ba14f85f93b029ec8c762f9e8cea8239bf46655f325'],
-    ['53637', 'b06d9ecef697d719db12f8de0c7a84645999c9ddbe142e463085767c6c6dae98'],
-    ['76697', 'f0c7d12af6f0c726c559ac99e7d6a2dba8bfd079bed17654d71d103b6cba542d'],
+    ['69702', '9397539592bfa3fc2efb80c8ccc5e0abe4d52a1843c078fca8c044baa00ee5db'],
+    ['53637', 'aba69758fc27c150f8c1ccc0b9fe2b8b1b39be381a02d149f2fef21ee91e9776'],
+    ['7311', 'fb67dab11bb9f98e71b1d76c0ccf92e8a3df51dfca7f42d169ded5025224b697'],
+    ['84883', 'fe4ecf65fb57042fa779ed51e572ae817d1226bdd59db349b28d4a5481256b0b'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
       (file) =>
@@ -336,27 +282,27 @@ function certifyOrdinaryPhotoSourcesR102(): void {
   for (const [name, hash] of [
     [
       'conversation-intake-contracts.ts',
-      'c37a0d57c17f236aa247925a9f2edbbd5a322789c5149ae19262da61692927c6',
+      '109337a08ea493451154ff2ab1664cbe88b8bcaf067b6a23fad0c06974a79c37',
     ],
     [
       'conversation-intake-media-origin.ts',
-      '5ee3e02da419d2763d965b8f951c7a09bbd7bd865fdf84a8260f0ea5e49795da',
+      '1144988dc4826d4f8fcef7da6efd11ac3f653466c8cfde85ee3f0a6ba138efc9',
     ],
     [
       'conversation-intake-router.ts',
-      '2387db5c40f5e28c1e4a2b14710d1e81cb04926d4fbb42abc226c8c910f93a75',
+      'f9410c87d088ebbe7eabfb9b3e01f1e7fe8f20603fe1bae1010ff1731de20257',
     ],
     [
       'conversation-meal-interpretation-contracts.ts',
-      'da551a890a824c75df16d6563920c811b86bf4acc83adfcd142b8cefd0ed588c',
+      'c7395069566844e764eed2bc5b212e490e9e831710d9a20a1184e1cd28b57013',
     ],
     [
       'conversation-meal-materialization.ts',
-      'cd106358a3610e0c5761efd38c5bedd74969ee3d759dfb39631bde66f85e7829',
+      '1b79fa54a5eea0ac6abb3894c4288161cc3e7915c6c85d19e004754b6a4be458',
     ],
     [
       'conversation-meal-registration-service.ts',
-      '74790555d4209e61ef0812f69e93fb9102b9bd4c7a1569e1464831fa1c72d393',
+      'ec7e74f8b07973bdd08b0054b46b2656abcdaeda5d1d2343c6982b0fe0c9cb04',
     ],
     [
       'conversation-meal-source.ts',
@@ -364,11 +310,11 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-writer-contracts.ts',
-      '6085f9076990de801ec388e36d60563e9a014929642b2bb1ebfd837899400487',
+      '0593aefc72083f8b20abeb305524191814a45a61fbe86f3b9dfc8595b95f28d0',
     ],
     [
       'conversation-workout-contracts.ts',
-      '990941bc8761a32e9ab3b0e717adcd63de7dee8eaa067e74916da4d0374c9df4',
+      'eb2806dc5fa361f63c36e939ae2ebde8500ce23279bbb93aeb575efbc32cef8a',
     ],
     [
       'conversation-photo-observations.ts',
@@ -377,12 +323,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
   ])
     expect(
       createHash('sha256')
-        .update(
-          legacyPrivateMediaSourceR168(
-            name ?? '',
-            readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name ?? ''), 'utf8'),
-          ),
-        )
+        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name ?? '')))
         .digest('hex'),
     ).toBe(hash)
 }
@@ -440,115 +381,50 @@ function restoreImageParserLinkR106(id: '6535' | '67584', body: string): string 
  * independently of the food identity. Seal the full current source/body;
  * restore only this reviewed module for the older historical certificates.
  * Actual module graphs and all tampering controls still use current bytes. */
-function restoreVisualPortionR206(text: string, kind: 'source' | 'build'): string {
-  expect(
-    createHash('sha256').update(text).digest('hex'),
-    'certified nutrition-shared module contents / visual portion identity',
-  ).toBe(
-    kind === 'source'
-      ? '69d19446fdcafceb6e6eccae17f6c7ef3f21e1b08c22a6c86782f5e0c6b77f14'
-      : '0ab25251ee4babb2bb866e207a80194c5cd3edb48163d2b256245c6608ad9c6a',
-  )
-  if (kind === 'source') {
-    const changes = [
-      ["import { visionFoodIdentity } from '@mpp/agent'\n", ''],
-      ['!nominal(visionFoodIdentity(item.name).name.trim())', '!nominal(item.name)'],
-    ] as const
-    for (const [current, prior] of changes) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      'db5efe55cca713eaf204c29d6270c4f9fccd4ea6d044fb322f2b50e2cf7c3892',
-    )
-    return text
+const conversationParserLinkPins = {
+  '36693': {
+    canonical: 'b093749b8f40831e81e4ef0d7934b4ee166ca60078b52c958737ca8efd621f85',
+    alternate: '26b3692e11ee91492552f8efd5e5b6f50f42045f9613d972d8618dbb5044746b',
+  },
+  '41216': {
+    canonical: '94af53200371515b97ee7124ad78096be9f43805da1e7338ba836651732fe41d',
+    alternate: '32fa42e5e6a1bc063386e54ca73d1299f63976de67ee578c89e76c47c831ccd7',
+  },
+} as const
+
+function certifyConversationParserLink(id: keyof typeof conversationParserLinkPins, body: string) {
+  const pins = conversationParserLinkPins[id]
+  if (body.includes('c(86248)')) {
+    expect(
+      createHash('sha256').update(body).digest('hex'),
+      'certified nutrition-shared module contents / relocated image parser',
+    ).toBe(pins.alternate)
+    expect(body.split('c(86248)')).toHaveLength(2)
+    body = body.replace('c(86248)', 'c(63867)')
   }
-  const prior = (
-    JSON.parse(
-      readFileSync(
-        resolve(dedicatedSourceRoot, '__fixtures__/r206-visual-validator-before.json'),
-        'utf8',
-      ),
-    ) as { body: string }
-  ).body
-  expect(createHash('sha256').update(prior).digest('hex')).toBe(
-    '28958721de3d1f152c2a213787e046b5d4f205c66bdfa519d604f12029fe6530',
-  )
-  return prior
-}
-
-/** R186 accounts only for a terminal current-time adjunct on an already
- * reported complete photo pointer. Reverse that sole source/build delta before
- * every older complete-body pin; unknown or additional changes still fail. */
-function restoreCurrentPhotoAdjunctR186(text: string, kind: 'source' | 'build'): string {
-  text = restoreVisualPortionR206(text, kind)
-  expect(
-    createHash('sha256').update(text).digest('hex'),
-    'certified nutrition-shared module contents / current photo adjunct',
-  ).toBe(
-    kind === 'source'
-      ? 'db5efe55cca713eaf204c29d6270c4f9fccd4ea6d044fb322f2b50e2cf7c3892'
-      : '28958721de3d1f152c2a213787e046b5d4f205c66bdfa519d604f12029fe6530',
-  )
-  const current =
-    kind === 'source'
-      ? "  // A current-time adjunct belongs to the same complete, already reported\n  // photo pointer. Only these exact terminal words are inert: questions,\n  // quantities, other dates and additional clauses remain fully accounted for.\n  const tailText = plain(text.slice(report.end)).replace(/ (?:agora|hoje)([.!]?)$/u, '$1')\n"
-      : '.replace(/ (?:agora|hoje)([.!]?)$/u,"$1")'
-  const prior = kind === 'source' ? '  const tailText = plain(text.slice(report.end))\n' : ''
-  expect(text.split(current)).toHaveLength(2)
-  const restored = text.replace(current, prior)
-  expect(createHash('sha256').update(restored).digest('hex')).toBe(
-    kind === 'source'
-      ? '6cdfdcf826ad75e03b2ee7e73f1f46a3060c24373c45c21030bfac0d0ed5308a'
-      : 'a5af333ad6fb31be8e67604e1c8db7d05b7403359d573e3b3a49080aae17b9b4',
-  )
-  return restored
-}
-
-/** R163 additionally accounts for a positive bound-photo report whose caption
- * is labeled media_pointer and retains its genuine consumption predicate.
- * The entire actual module table was compared: only65556 changes; the other19
- * complete certified bodies and moved parser still match. Pin the whole new
- * source/body; retain every consumer scan and executable-tampering refusal. */
-function certifyPhotoReportR163(body: string): string {
-  body = restoreCurrentPhotoAdjunctR186(body, 'build')
   expect(
     createHash('sha256').update(body).digest('hex'),
-    'certified nutrition-shared module contents / complete photo report validator',
-  ).toBe('a5af333ad6fb31be8e67604e1c8db7d05b7403359d573e3b3a49080aae17b9b4')
+    'certified nutrition-shared module contents / image parser identity',
+  ).toBe(pins.canonical)
   return body
 }
 
 function certifyNutritionJournalSplitContent(text: string): void {
   certifyOrdinaryPhotoSourcesR102()
-  // T52/R79 extend the report prefix; R82 also permits pure punctuation in `other`.
-  // R81 records closed guard reasons; R82 changes only its punctuation predicate.
-  // Reversing the R82 compiled predicate restores the R81 module byte-exactly.
-  // R79 adds the optional current-day adjunct; reversing that sole compiled delta
-  // reproduces the prior module hash exactly. No other module body changed.
-  // Seal the reviewed validator source before accepting its complete compiled body;
-  // the other18 module identities, table/count and negative controls stay literal.
-  // R95 accounts for the complete trailing current-meal context. Module65556's
-  // helper/guard plus compiler-local renaming reverse byte-exactly to R82;
-  // all other18 compiled bodies remain byte-identical. No consumer is exempted.
-  // R121 adds a bounded completed-report + trailing photo pointer. This module
-  // now has a complete new source/body pin; no prior guards are projected away.
+  // Literal incomplete reports can reach the quantity question. The revised
+  // validator still has an exact source and executable identity.
   expect(
     createHash('sha256')
       .update(
-        restoreCurrentPhotoAdjunctR186(
-          readFileSync(
-            resolve(
-              appRoot,
-              '../admin/src/lib/mobile-api/conversation-meal-interpretation-validation.ts',
-            ),
-            'utf8',
+        readFileSync(
+          resolve(
+            appRoot,
+            '../admin/src/lib/mobile-api/conversation-meal-interpretation-validation.ts',
           ),
-          'source',
         ),
       )
       .digest('hex'),
-  ).toBe('6cdfdcf826ad75e03b2ee7e73f1f46a3060c24373c45c21030bfac0d0ed5308a')
+  ).toBe('34f007b0bf2eb9b450b6dba4208de1740c75bb52cb0be65fa862ce62ba823c93')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -601,9 +477,11 @@ function certifyNutritionJournalSplitContent(text: string): void {
             .update(
               id === '67584'
                 ? restoreImageParserLinkR106('67584', body)
-                : id === '65556'
-                  ? certifyPhotoReportR163(body)
-                  : restorePrivateMediaContractR168(id, body),
+                : id === '36693'
+                  ? certifyConversationParserLink(id, body)
+                  : id === '65556'
+                    ? body
+                    : restorePrivateMediaContractR168(id, body),
             )
             .digest('hex')}`,
       )
@@ -620,11 +498,11 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '19514:571af417dce8a1714280e41071d29fd1b66446c8309cd124f40b8942f8422c13',
       '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
       '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
-      '36693:a67fde03374f03e52ce2cc12031cb0be06174e20443bb57226f2ef986828389c',
-      '52158:129ea4b769605c4e7ddee1f1bc26688f2d09e77a0922726299741a808f4ae420',
+      `36693:${conversationParserLinkPins['36693'].canonical}`,
+      '52158:1e66a92afaa7ef5143364de5d5de5ba91348905bba80324c5db7738be0fb8847',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:a5af333ad6fb31be8e67604e1c8db7d05b7403359d573e3b3a49080aae17b9b4',
+      '65556:f1a67ad59fd6f76d3b33142c2051372a148ada4d294a812b76309996afccaefd',
       '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
       '69431:d23ccd1a4aa218daf79f4cc51f9562056582cf964ac06c0e19fa481dd2a9a770',
       '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',
@@ -706,6 +584,8 @@ function restoreMediaFactoryLinkR173(body: string): string {
 function restoreWorkoutFacadeLinkR140(body: string): string {
   body = restoreMediaFactoryLinkR173(body)
   if (!body.includes('c(93498)')) return body
+  // Replaying an intake uses the workout question sealed at preparation time.
+  // Keep the full reader and writer bodies pinned before restoring the link.
   for (const [name, hash] of [
     [
       'conversation-current-scope.ts',
@@ -713,7 +593,7 @@ function restoreWorkoutFacadeLinkR140(body: string): string {
     ],
     [
       'conversation-workout-command-service.ts',
-      'dee0b58351a9423feabae7d1516de9735b2427c7369913fd30dbec203855613a',
+      '8c4110812c403632bdf874dbd602bc302a42977bcf5ac80a1b1f1bd70eae3734',
     ],
   ])
     expect(
@@ -722,8 +602,8 @@ function restoreWorkoutFacadeLinkR140(body: string): string {
         .digest('hex'),
     ).toBe(hash)
   for (const [id, hash] of [
-    ['93498', '21239d114e06d780ee4e5221fd60a783b3540a02209e36c0b687c64ea0bda359'],
-    ['72820', '97188fca6a52a4948cc0bf3f1a12004529a82d634d6547441780dfdc73a2dc7e'],
+    ['93498', '06788d3574afea00d14f76dc02155fab92ff2eb38f0b38d37b065902447226d7'],
+    ['72820', '250d74fc4704ff8214446d9eefc20126b3dcafe3f99efb815436ad439be127f6'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
       (file) =>
@@ -812,157 +692,89 @@ function certifyExactSharedTable(
   expect(observed.sort()).toEqual(pins.map(([id, hash]) => `${id}:${hash}`).sort())
   return bodies
 }
-/** R172 adds only atomic versioned admission and its sticky request policy.
- * Seal the full new body and every source; reconstruct the exact original
- * runtime/routes/store below. Historical R128/R168 certificates stay intact. */
-function originalIntakeSourceR172(name: string): string {
-  let text = readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name), 'utf8')
-  const pins: Record<string, string> = {
-    'conversation-intake-routes.ts':
-      '749ead1f22675a3b1ec88e20e74284461683ec2a2b08d5f1ca4fc7bfb4664804',
-    'conversation-intake-store.ts':
-      '5c7badf31dc9b71a2fe362cbd258f2458f8b6453d353bf606663f5dc1a35086f',
-    'conversation-intake-runtime.ts':
-      '0f2b74c31332e637c711e42feb2ec77f0db907f3681810c10b3f441716a13a36',
-    'versioned-conversation-intake-port.ts':
-      '53cec7b8ce91a41968a0f39425fee966c0885ab0d123a9a40402d903bb83a60e',
-  }
-  const deltas: Record<string, readonly (readonly [string, string])[]> = {
-    'conversation-intake-routes.ts': [
-      [
-        "          privateMediaCatalogEnabled: () =>\n            process.env.MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED === 'true',\n",
-        '',
-      ],
-    ],
-    'conversation-intake-store.ts': [
-      [
-        "refusal(['stale_epoch', 'input_conflict', 'rate_limited', 'media_unavailable'])",
-        "refusal(['stale_epoch', 'input_conflict', 'rate_limited'])",
-      ],
-    ],
-    'conversation-intake-runtime.ts': [
-      [
-        "import { createVersionedConversationIntakePort } from './versioned-conversation-intake-port'\n",
-        '',
-      ],
-      [
-        '  /** Atomic catalog dispatcher capability, selected by server policy only. */\n  readonly privateMediaCatalogEnabled?: () => boolean\n',
-        '',
-      ],
-      [
-        '    trustedMediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false),\n    trustedPrivateCatalogEnabled = ports.privateMediaCatalogEnabled?.bind(ports) ?? (() => false),\n    privateCatalogBound = trustedPrivateCatalogEnabled() === true',
-        '    trustedMediaEnabled = ports.mediaEnabled?.bind(ports) ?? (() => false)',
-      ],
-      [
-        '      if (mediaAuthorityRequired && privateCatalogBound && trustedPrivateCatalogEnabled() !== true)\n        throw unavailable()\n',
-        '',
-      ],
-      [
-        '    store = createConversationIntakeStore(\n      createVersionedConversationIntakePort(\n        { rpc },\n        {\n          enabled: trustedPrivateCatalogEnabled,\n          beforeAdmission: () => {\n            // A private media write requires this same sticky policy on every\n            // original Auth/owner/epoch observation, including recovery.\n            mediaAuthorityRequired = true\n            available()\n          },\n        },\n      ),\n      scopePort,\n    ),\n',
-        '    store = createConversationIntakeStore({ rpc }, scopePort),\n',
-      ],
-    ],
-  }
-  if (pins[name]) expect(createHash('sha256').update(text).digest('hex')).toBe(pins[name])
-  for (const [old, replacement] of deltas[name] ?? []) {
-    expect(text.split(old)).toHaveLength(2)
-    text = text.replace(old, replacement)
-  }
-  return text
-}
-// The current router substitutes a stable diagnostic reason after an isolated
-// reason-format error. Re-pin the full consumer; existing checks remain strict.
-function certifyVersionedIntakeBridgeR172(body: string): void {
-  body = restoreWorkoutFacadeLinkR140(body)
+// The router has its own compiled module after Flow turns began reusing its
+// validated discourse. Pin the complete intake table and its source boundaries.
+function certifyNegotiatedIntakeModule(body: string): void {
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '206e4e452022a83bd2b3ef6098a88fb0462e758190fbaf5b86c0875c8dfad570',
+    '83587f6e265d6841ca64fbaa95da4f2dd18dcf13d6dd82f0917ba0467a3162d2',
   )
-  certifyOrdinaryPhotoSourcesR102()
-  for (const [name, hash] of [
-    [
-      'conversation-intake-runtime.ts',
-      '673be3b703dd77d4ed98f5201e0a003dd55c2b829149554241a46b1cfe88958f',
-    ],
-    [
-      'conversation-intake-routes.ts',
-      '0a51079f077e44a40915e874c6da3321e0773397be1bbb37bff1a5bae86f2e7c',
-    ],
-    [
-      'conversation-intake-store.ts',
-      '41da3706c059a0c7c96696be35052364a2f28aac001d999ef9add79224436527',
-    ],
-    [
-      'conversation-intake-driver.ts',
-      '4ccd96a847ab7cff5c0b659239576f3e52d5cc96939c7e6d7610950a0d0ec4f7',
-    ],
-    [
-      'conversation-intake-router.ts',
-      '2387db5c40f5e28c1e4a2b14710d1e81cb04926d4fbb42abc226c8c910f93a75',
-    ],
-  ])
-    expect(
-      createHash('sha256')
-        .update(originalIntakeSourceR172(name ?? ''))
-        .digest('hex'),
-    ).toBe(hash)
-  originalIntakeSourceR172('versioned-conversation-intake-port.ts')
   for (const marker of [
     'admit_conversation_versioned_media_intake_v2',
     'X-Conversation-Media-Provenance',
+    'MOBILE_CONVERSATION_INTAKES_ENABLED',
     'MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED',
     'conversation.intake-result.v2',
     'media_temporarily_unavailable',
   ])
     expect(body).toContain(marker)
 }
-/** R99 adds opt-in media projection and request-owned fencing. R101 corrects
- * temporary-capability/unselected-original recovery; GET remains read-only.
- * Certify the complete reviewed sources and current executable body. The other
- * two unchanged shared modules retain their byte-exact pins; R102 also
- * recertifies the ordinary-kind workout codec in full. No global scan or
- * physical consumer assertion is exempted by this certificate. */
-function certifyIntakeMediaBridgeR102(body: string): void {
-  if (body.includes('admit_conversation_versioned_media_intake_v2')) {
-    certifyVersionedIntakeBridgeR172(body)
-    return
-  }
-  body = certifyStructuredIntakeRouterR128(body)
-  certifyOrdinaryPhotoSourcesR102()
+
+function certifyNegotiatedIntakeTable(chunk: string): string {
+  const bodies = certifyExactSharedTable(chunk, [
+    ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
+    ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
+    ['80804', 'b176c0bce9fc7d5ec2d5ca716a35164501638b03c4e8903e0bce4ea678041d0d'],
+  ])
+  const body = bodies.get('80804') ?? ''
+  certifyNegotiatedIntakeModule(body)
   for (const [name, hash] of [
     [
+      'conversation-intake-contracts.ts',
+      '109337a08ea493451154ff2ab1664cbe88b8bcaf067b6a23fad0c06974a79c37',
+    ],
+    [
       'conversation-intake-driver.ts',
-      '4ccd96a847ab7cff5c0b659239576f3e52d5cc96939c7e6d7610950a0d0ec4f7',
-    ],
-    [
-      'conversation-intake-runtime.ts',
-      '673be3b703dd77d4ed98f5201e0a003dd55c2b829149554241a46b1cfe88958f',
-    ],
-    [
-      'conversation-intake-routes.ts',
-      '0a51079f077e44a40915e874c6da3321e0773397be1bbb37bff1a5bae86f2e7c',
+      '925f134628c3e8853337bb2f5cab4c45a921cf367a52506b62f8f7b1ca0b7c04',
     ],
     [
       'conversation-intake-media-negotiation.ts',
       '3011cb873524dbbcea7412621c8cc89fa11be7a372b388317047dd1813dfba41',
     ],
-  ])
+    [
+      'conversation-intake-media-origin.ts',
+      '1144988dc4826d4f8fcef7da6efd11ac3f653466c8cfde85ee3f0a6ba138efc9',
+    ],
+    [
+      'conversation-intake-router.ts',
+      'f9410c87d088ebbe7eabfb9b3e01f1e7fe8f20603fe1bae1010ff1731de20257',
+    ],
+    [
+      'conversation-intake-routes.ts',
+      '933c6b1f9af03059a97baf8a1e0e48f3ab066b5c367a21ae1409056534ab330f',
+    ],
+    [
+      'conversation-intake-runtime.ts',
+      '78a348b367c9ffd76c2a8260950cc5eb4971a0806893238a14cfee8d2f4fcb48',
+    ],
+    [
+      'conversation-intake-store.ts',
+      '5c7badf31dc9b71a2fe362cbd258f2458f8b6453d353bf606663f5dc1a35086f',
+    ],
+    [
+      'versioned-conversation-intake-port.ts',
+      '53cec7b8ce91a41968a0f39425fee966c0885ab0d123a9a40402d903bb83a60e',
+    ],
+  ] as const)
     expect(
       createHash('sha256')
-        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name ?? '')))
+        .update(readFileSync(resolve(appRoot, '../admin/src/lib/mobile-api', name)))
         .digest('hex'),
+      name,
     ).toBe(hash)
-  expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3',
+  return body
+}
+
+function certifyConversationTurnTable(chunk: string): string {
+  const bodies = certifyExactSharedTable(
+    chunk,
+    [
+      ['1358', 'e7a379f7ad2f605b70f72fb190f5dad751e6f44f9efc1b1662db05396e893015'],
+      ['41216', conversationParserLinkPins['41216'].canonical],
+      ['50522', '0039979f25f5e30108abbe1d31a3d4a07b3ffabd719dc826bedc78469faf349f'],
+    ],
+    (id, body) => (id === '41216' ? certifyConversationParserLink(id, body) : body),
   )
-  expect(body.startsWith('(a,b,c)=>{c.d(b,{o:()=>ao,K:()=>ar});')).toBe(true)
-  for (const marker of [
-    'X-Conversation-Media-Provenance',
-    'MOBILE_CONVERSATION_MEDIA_PROTOCOL_ENABLED',
-    'conversation.intake-result.v2',
-    'conversation_intake_media_unavailable',
-    'media_temporarily_unavailable',
-  ])
-    expect(body).toContain(marker)
+  return bodies.get('41216') ?? ''
 }
 /** New shared read edge, extracted from the previous inline journal entry.
  * Certify complete current bodies and their unchanged authoritative sources;
@@ -1028,285 +840,8 @@ const photoManifestRoutesR59 = [
   '/api/mobile/v1/onboarding/body-photos/route',
   '/api/mobile/v1/onboarding/route',
 ]
-/** R184 bounds only private label grammar; canonical source/materialization
- * and every historical source/build pin are restored byte-for-byte below. */
-function restoreBoundedMealGrammarR184(text: string, kind: 'source' | 'build'): string {
-  if (kind === 'source') {
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '6e71f4044afe6489a1a5b40c6e10a320c495090c5b8a5b753996025d13703f2a',
-    )
-    for (const [current, prior] of [
-      [
-        "          .filter(\n            ([key]) => !['minimum', 'maximum', 'maxItems', 'definitions', '$defs'].includes(key),\n          )\n",
-        "          .filter(([key]) => !['minimum', 'maximum', 'maxItems'].includes(key))\n",
-      ],
-      [
-        "      // Source-owned token keys still belong to the canonical schema. On the\n      // provider wire, one array item grammar replaces an object per token.\n      // This keeps grammar size independent of the source's token count.\n      const properties = projected.properties\n      if (\n        projected.type === 'object' &&\n        properties !== null &&\n        typeof properties === 'object' &&\n        !Array.isArray(properties) &&\n        isDeepStrictEqual(Object.keys(properties).sort(), ['classification', 'labels'])\n      ) {\n        const fields = properties as Record<string, unknown>,\n          labels = fields.labels\n        if (\n          labels === null ||\n          typeof labels !== 'object' ||\n          !('properties' in labels) ||\n          labels.properties === null ||\n          typeof labels.properties !== 'object' ||\n          Array.isArray(labels.properties)\n        )\n          return interpretationUnavailable()\n        const entries = Object.values(labels.properties)\n        if (entries.some((label) => !isDeepStrictEqual(label, entries[0])))\n          return interpretationUnavailable()\n        fields.labels = { type: 'array', items: entries[0] ?? { type: 'null' } }\n      }\n",
-        '',
-      ],
-      ["  input: ReturnType<typeof prepareConversationMealSourceLabels>['input'],\n", ''],
-      [
-        '  for (const [unit, source] of Object.entries(value.sources)) {\n    const original = input.sources.find((item) => item.unit === unit)\n    if (\n      !original ||\n      !record(source) ||\n      !Array.isArray(source.labels) ||\n      source.labels.length !== original.tokens.length\n    )\n      return reject()\n    const labels = source.labels\n    source.labels = Object.fromEntries(original.tokens.map(([key], i) => [key, labels[i]]))\n    if (!record(source.labels)) return reject()\n',
-        '  for (const source of Object.values(value.sources)) {\n    if (!record(source) || !record(source.labels)) return reject()\n',
-      ],
-      [
-        "          systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1')\n            .replace(\n              'labels é um objeto com TODAS as chaves t0,t1,... fornecidas naquela unidade. Cada valor tem exatamente kind e food_index.',\n              'labels é um array na ordem EXATA das chaves t0,t1,... fornecidas naquela unidade, com exatamente um item por chave. Cada item tem exatamente kind e food_index. Não escreva as chaves no array.',\n            )\n            .replace(\n              'classification é visual e labels é objeto vazio',\n              'classification é visual e labels é array vazio',\n            ),\n",
-        "          systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1'),\n",
-      ],
-      [
-        '          decodeMealProviderIndices(decoded, onFailure, packet.input),\n',
-        '          decodeMealProviderIndices(decoded, onFailure),\n',
-      ],
-    ] as const) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '91a1d79b35daf2a3ea788a1ac10ac90275f88171f16338849a49c7ec208042eb',
-    )
-  }
-  if (kind === 'build') {
-    // Seal the complete current eight-module chunk before restoring the two
-    // reviewed module changes for the historical provider certificate. Runtime
-    // graph scans still inspect the actual current bytes.
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '9ee76ff55c620b6c92ff3bc339d16b598148afdf9341040065a23365eee778f8',
-    )
-    for (const [current, prior] of [
-      [
-        'J=(0,d.isDeepStrictEqual)(k.source_units,["vision_items"]),K=h.command.meal_type??(0,ad.b5L)(F)??(J&&"string"==typeof g.context.owner.timezone?(0,ad.W6d)((0,ad.SWw)(g.context.owner.timezone,new Date(f.admitted_at))):null);if(!K)return aF(h,"meal_type_required");let L=',
-        'J=h.command.meal_type??(0,ad.b5L)(F);if(!J)return aF(h,"meal_type_required");let K=',
-      ],
-      [
-        '}(h,g,u,E,K);try{b=await l.prepare({command:h,source:g,resolved:L})}',
-        '}(h,g,u,E,J);try{b=await l.prepare({command:h,source:g,resolved:K})}',
-      ],
-    ] as const) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    const tree = ts.createSourceFile('r204-provider.js', text, ts.ScriptTarget.Latest, true)
-    const found: ts.ArrowFunction[] = []
-    function visit(node: ts.Node): void {
-      if (
-        ts.isPropertyAssignment(node) &&
-        node.name.getText(tree) === '26432' &&
-        ts.isArrowFunction(node.initializer)
-      )
-        found.push(node.initializer)
-      ts.forEachChild(node, visit)
-    }
-    visit(tree)
-    expect(found).toHaveLength(1)
-    const current = found[0]?.getText(tree) ?? ''
-    expect(createHash('sha256').update(current).digest('hex')).toBe(
-      'f56dde20829a86d957d3384be2a56a9063f0020f297f8f7c7efe9a8e51746b87',
-    )
-    const prior = (
-      JSON.parse(
-        readFileSync(
-          resolve(dedicatedSourceRoot, '__fixtures__/r204-materializer-before.json'),
-          'utf8',
-        ),
-      ) as { body: string }
-    ).body
-    expect(createHash('sha256').update(prior).digest('hex')).toBe(
-      'a480fe25475fdd2728097553d30170e46e0595cd101f7cb6ca15eaa88c951da2',
-    )
-    expect(text.split(current)).toHaveLength(2)
-    text = text.replace(current, prior)
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '056663c4f528c4c4455c032f8126b170e5e62f60931671d8890a0ae837952b41',
-    )
-    for (const [current, prior] of [
-      [
-        'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=(a,e=[])=>{if(Array.isArray(a))return a.map(a=>c(a,e));if(null!==a&&"object"==typeof a){if("$ref"in a){let{$ref:d,...f}=a;if("string"!=typeof d||!d.startsWith("#/")||e.includes(d))return(0,z.v8)();let g=b.json_schema.schema;for(let a of d.slice(2).split("/")){let b=a.replaceAll("~1","/").replaceAll("~0","~");if(null===g||"object"!=typeof g||!Object.hasOwn(g,b))return(0,z.v8)();g=g[b]}return null===g||"object"!=typeof g||Array.isArray(g)?(0,z.v8)():c({...g,...f},[...e,d])}let f=Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems","definitions","$defs"].includes(a)).map(([a,b])=>[a,c(b,e)])),g=f.properties;if("object"===f.type&&null!==g&&"object"==typeof g&&!Array.isArray(g)&&(0,d.isDeepStrictEqual)(Object.keys(g).sort(),["classification","labels"])){let a=g.labels;if(null===a||"object"!=typeof a||!("properties"in a)||null===a.properties||"object"!=typeof a.properties||Array.isArray(a.properties))return(0,z.v8)();let b=Object.values(a.properties);if(b.some(a=>!(0,d.isDeepStrictEqual)(a,b[0])))return(0,z.v8)();g.labels={type:"array",items:b[0]??{type:"null"}}}return(0,d.isDeepStrictEqual)(f,{anyOf:[{type:"integer"},{type:"null"}]})?{type:"integer"}:f}return a};return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
-        'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=(a,e=[])=>{if(Array.isArray(a))return a.map(a=>c(a,e));if(null!==a&&"object"==typeof a){if("$ref"in a){let{$ref:d,...f}=a;if("string"!=typeof d||!d.startsWith("#/")||e.includes(d))return(0,z.v8)();let g=b.json_schema.schema;for(let a of d.slice(2).split("/")){let b=a.replaceAll("~1","/").replaceAll("~0","~");if(null===g||"object"!=typeof g||!Object.hasOwn(g,b))return(0,z.v8)();g=g[b]}return null===g||"object"!=typeof g||Array.isArray(g)?(0,z.v8)():c({...g,...f},[...e,d])}let f=Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems"].includes(a)).map(([a,b])=>[a,c(b,e)]));return(0,d.isDeepStrictEqual)(f,{anyOf:[{type:"integer"},{type:"null"}]})?{type:"integer"}:f}return a};return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
-      ],
-      [
-        'function(a,b,c){let d=a=>null!==a&&"object"==typeof a&&!Array.isArray(a),e=()=>(b("model_schema"),(0,z.v8)()),f=structuredClone(a);if(!d(f)||!d(f.sources)||!Array.isArray(f.foods))return e();function g(a,b){if(!d(a))return e();let c=a[b];if("number"!=typeof c||!Number.isInteger(c)||c<-1||c>29)return e();-1===c&&(a[b]=null)}for(let[a,b]of Object.entries(f.sources)){let f=c.sources.find(b=>b.unit===a);if(!f||!d(b)||!Array.isArray(b.labels)||b.labels.length!==f.tokens.length)return e();let h=b.labels;if(b.labels=Object.fromEntries(f.tokens.map(([a],b)=>[a,h[b]])),!d(b.labels))return e();for(let a of Object.values(b.labels))g(a,"food_index")}for(let a of f.foods)g(a,"visual_index");return f}(p,q,k.input)',
-        'function(a,b){let c=a=>null!==a&&"object"==typeof a&&!Array.isArray(a),d=()=>(b("model_schema"),(0,z.v8)()),e=structuredClone(a);if(!c(e)||!c(e.sources)||!Array.isArray(e.foods))return d();function f(a,b){if(!c(a))return d();let e=a[b];if("number"!=typeof e||!Number.isInteger(e)||e<-1||e>29)return d();-1===e&&(a[b]=null)}for(let a of Object.values(e.sources)){if(!c(a)||!c(a.labels))return d();for(let b of Object.values(a.labels))f(b,"food_index")}for(let a of e.foods)f(a,"visual_index");return e}(p,q)',
-      ],
-      [
-        'Y.replaceAll("null","-1").replace("labels \\xe9 um objeto com TODAS as chaves t0,t1,... fornecidas naquela unidade. Cada valor tem exatamente kind e food_index.","labels \\xe9 um array na ordem EXATA das chaves t0,t1,... fornecidas naquela unidade, com exatamente um item por chave. Cada item tem exatamente kind e food_index. N\\xe3o escreva as chaves no array.").replace("classification \\xe9 visual e labels \\xe9 objeto vazio","classification \\xe9 visual e labels \\xe9 array vazio")',
-        'Y.replaceAll("null","-1")',
-      ],
-    ] as const) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      'fac0e87fa7358859d3bfc3fbfe86e304a6115ee9915f69d1b802e3a80fb407b3',
-    )
-  }
-  return text
-}
-
-/** R183 adds fixed SDK error-type/vendor/technical-term observations only.
- * Seal and reverse this complete diagnostic delta before every R182/older check. */
-function restoreProviderErrorShapeR183(text: string, kind: 'source' | 'build'): string {
-  text = restoreBoundedMealGrammarR184(text, kind)
-  if (kind === 'source') {
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '91a1d79b35daf2a3ea788a1ac10ac90275f88171f16338849a49c7ec208042eb',
-    )
-    for (const [current, prior] of [
-      [
-        "  readonly provider_error?: Readonly<{\n    raw_kind: 'absent' | 'string' | 'object' | 'other'\n    error_type?:\n      | 'invalid_request'\n      | 'invalid_prompt'\n      | 'context_length_exceeded'\n      | 'max_tokens_exceeded'\n      | 'token_limit_exceeded'\n      | 'string_too_long'\n      | 'payload_too_large'\n      | 'unprocessable'\n      | 'unmapped'\n    provider?: 'anthropic' | 'bedrock' | 'azure' | 'google'\n    terms: readonly (\n      | 'additionalproperties'\n      | 'allof'\n      | 'anyof'\n      | 'array'\n      | 'body'\n      | 'budget'\n      | 'compilation'\n      | 'complex'\n      | 'const'\n      | 'constraint'\n      | 'credit'\n      | 'definitions'\n      | 'empty'\n      | 'enum'\n      | 'exceed'\n      | 'exceeds'\n      | 'format'\n      | 'grammar'\n      | 'integer'\n      | 'invalid'\n      | 'items'\n      | 'json'\n      | 'large'\n      | 'length'\n      | 'limit'\n      | 'long'\n      | 'maximum'\n      | 'maxitems'\n      | 'max_tokens'\n      | 'minimum'\n      | 'minitems'\n      | 'missing'\n      | 'null'\n      | 'object'\n      | 'oneof'\n      | 'parameter'\n      | 'pattern'\n      | 'properties'\n      | 'provider'\n      | 'ref'\n      | 'required'\n      | 'response_format'\n      | 'schema'\n      | 'size'\n      | 'string'\n      | 'temperature'\n      | 'tokens'\n      | 'type'\n      | 'unsupported'\n      | 'validation'\n    )[]\n  }>\n",
-        '',
-      ],
-      [
-        "  // Observe only fixed technical terms and published error/vendor enums when\n  // the phrase classifier cannot identify a category. Upstream raw may be an\n  // object, not a string. Never enumerate arbitrary keys or evaluate getters.\n  const providerDetails = (): ConversationMealInterpreterDiagnostic['provider_error'] => {\n    if (rejection || stage !== 'provider' || ownData(error, 'status') !== 400) return undefined\n    const inner = ownData(error, 'error'),\n      metadata = ownData(inner, 'metadata') ?? ownData(error, 'metadata'),\n      raw = ownData(metadata, 'raw'),\n      messages = [\n        ownData(error, 'message'),\n        ownData(inner, 'message'),\n        raw,\n        ownData(raw, 'message'),\n        ownData(ownData(raw, 'error'), 'message'),\n      ],\n      vocabulary = [\n        'additionalproperties',\n        'allof',\n        'anyof',\n        'array',\n        'body',\n        'budget',\n        'compilation',\n        'complex',\n        'const',\n        'constraint',\n        'credit',\n        'definitions',\n        'empty',\n        'enum',\n        'exceed',\n        'exceeds',\n        'format',\n        'grammar',\n        'integer',\n        'invalid',\n        'items',\n        'json',\n        'large',\n        'length',\n        'limit',\n        'long',\n        'maximum',\n        'maxitems',\n        'max_tokens',\n        'minimum',\n        'minitems',\n        'missing',\n        'null',\n        'object',\n        'oneof',\n        'parameter',\n        'pattern',\n        'properties',\n        'provider',\n        'ref',\n        'required',\n        'response_format',\n        'schema',\n        'size',\n        'string',\n        'temperature',\n        'tokens',\n        'type',\n        'unsupported',\n        'validation',\n      ] as const,\n      allowedTerms = new Set<string>(vocabulary),\n      words = new Set<string>()\n    if (\n      (inner === null || typeof inner !== 'object') &&\n      (metadata === null || typeof metadata !== 'object')\n    )\n      return undefined\n    for (const message of messages) {\n      if (typeof message !== 'string' || message.length > 65_536) continue\n      for (const word of message.toLowerCase().split(/[^a-z_]+/u))\n        if (allowedTerms.has(word)) words.add(word)\n    }\n    const terms = Object.freeze(vocabulary.filter((term) => words.has(term))),\n      error_type = (\n        [\n          'invalid_request',\n          'invalid_prompt',\n          'context_length_exceeded',\n          'max_tokens_exceeded',\n          'token_limit_exceeded',\n          'string_too_long',\n          'payload_too_large',\n          'unprocessable',\n          'unmapped',\n        ] as const\n      ).find((type) => type === ownData(metadata, 'error_type')),\n      providerName = ownData(metadata, 'provider_name'),\n      provider =\n        typeof providerName === 'string' && providerName.length <= 50\n          ? (\n              [\n                ['anthropic', 'anthropic'],\n                ['amazon bedrock', 'bedrock'],\n                ['amazon-bedrock', 'bedrock'],\n                ['azure', 'azure'],\n                ['google', 'google'],\n                ['google vertex', 'google'],\n              ] as const\n            ).find(([name]) => name === providerName.toLowerCase())?.[1]\n          : undefined\n    if (!terms.length && !error_type && !provider && raw === undefined) return undefined\n    return Object.freeze({\n      raw_kind:\n        raw === undefined\n          ? 'absent'\n          : typeof raw === 'string'\n            ? 'string'\n            : raw !== null && typeof raw === 'object'\n              ? 'object'\n              : 'other',\n      ...(error_type ? { error_type } : {}),\n      ...(provider ? { provider } : {}),\n      terms,\n    })\n  }\n  const details = providerDetails()\n",
-        '',
-      ],
-      ['      ...(details ? { provider_error: details } : {}),\n', ''],
-    ] as const) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      'ee9eef413e471687491523cf15386c9bcb4b514c77acade2b9aa0edc33f14d69',
-    )
-  }
-  if (kind === 'build') {
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      'fac0e87fa7358859d3bfc3fbfe86e304a6115ee9915f69d1b802e3a80fb407b3',
-    )
-    for (const [current, prior] of [
-      [
-        'function _(a,b,c,d){let e=(()=>{if("provider"!==a||400!==$(b,"status"))return;let c=$(b,"error");for(let a of[$(b,"message"),$(c,"message"),$($(b,"metadata"),"raw"),$($(c,"metadata"),"raw")]){if("string"!=typeof a||a.length>65536)continue;let b=a.toLowerCase();if(/(schema|grammar).{0,120}(complex|compil|too many|exceed|limit)/u.test(b))return"schema_complexity";if(/(unsupported|not supported|not permitted|not allowed).{0,80}(keyword|schema)|(?:keyword).{0,80}(unsupported|not supported|not permitted|not allowed)/u.test(b))return"schema_keyword";if(/(invalid|malformed).{0,40}(json.?schema|schema)|(?:schema).{0,40}(invalid|malformed)/u.test(b))return"schema_invalid";if(/(not support|unsupported).{0,80}(structured|response_format)|(?:structured|response_format).{0,80}(not support|unsupported)/u.test(b))return"structured_output_unsupported";if(/(max_tokens|output token).{0,80}(exceed|limit|maximum)|(?:exceed|maximum).{0,80}(max_tokens|output token)/u.test(b))return"output_token_limit"}})(),f=(()=>{if(e||"provider"!==a||400!==$(b,"status"))return;let c=$(b,"error"),d=$(c,"metadata")??$(b,"metadata"),f=$(d,"raw"),g=[$(b,"message"),$(c,"message"),f,$(f,"message"),$($(f,"error"),"message")],h=["additionalproperties","allof","anyof","array","body","budget","compilation","complex","const","constraint","credit","definitions","empty","enum","exceed","exceeds","format","grammar","integer","invalid","items","json","large","length","limit","long","maximum","maxitems","max_tokens","minimum","minitems","missing","null","object","oneof","parameter","pattern","properties","provider","ref","required","response_format","schema","size","string","temperature","tokens","type","unsupported","validation"],i=new Set(h),j=new Set;if((null===c||"object"!=typeof c)&&(null===d||"object"!=typeof d))return;for(let a of g)if("string"==typeof a&&!(a.length>65536))for(let b of a.toLowerCase().split(/[^a-z_]+/u))i.has(b)&&j.add(b);let k=Object.freeze(h.filter(a=>j.has(a))),l=["invalid_request","invalid_prompt","context_length_exceeded","max_tokens_exceeded","token_limit_exceeded","string_too_long","payload_too_large","unprocessable","unmapped"].find(a=>a===$(d,"error_type")),m=$(d,"provider_name"),n="string"==typeof m&&m.length<=50?[["anthropic","anthropic"],["amazon bedrock","bedrock"],["amazon-bedrock","bedrock"],["azure","azure"],["google","google"],["google vertex","google"]].find(([a])=>a===m.toLowerCase())?.[1]:void 0;if(k.length||l||n||void 0!==f)return Object.freeze({raw_kind:void 0===f?"absent":"string"==typeof f?"string":null!==f&&"object"==typeof f?"object":"other",...l?{error_type:l}:{},...n?{provider:n}:{},terms:k})})(),g=$(b,"name");if(void 0===g&&null!==b&&"object"==typeof b)try{g=$($(Object.getPrototypeOf(b),"constructor"),"name")}catch{}let h=$(b,"status"),i=Object.freeze({event:"conversation_meal_interpreter_failure",stage:a,error_name:Z.find(a=>a===g)??"UnknownError",...e?{provider_rejection:e}:{},...f?{provider_error:f}:{},..."validation"===a?{validation_reason:T.U.find(a=>a===d)??"validation_internal"}:{},..."number"==typeof h&&Number.isInteger(h)&&h>=100&&h<=599?{http_status:h}:{}});try{c(i)}catch{}}',
-        'function _(a,b,c,d){let e=(()=>{if("provider"!==a||400!==$(b,"status"))return;let c=$(b,"error");for(let a of[$(b,"message"),$(c,"message"),$($(b,"metadata"),"raw"),$($(c,"metadata"),"raw")]){if("string"!=typeof a||a.length>65536)continue;let b=a.toLowerCase();if(/(schema|grammar).{0,120}(complex|compil|too many|exceed|limit)/u.test(b))return"schema_complexity";if(/(unsupported|not supported|not permitted|not allowed).{0,80}(keyword|schema)|(?:keyword).{0,80}(unsupported|not supported|not permitted|not allowed)/u.test(b))return"schema_keyword";if(/(invalid|malformed).{0,40}(json.?schema|schema)|(?:schema).{0,40}(invalid|malformed)/u.test(b))return"schema_invalid";if(/(not support|unsupported).{0,80}(structured|response_format)|(?:structured|response_format).{0,80}(not support|unsupported)/u.test(b))return"structured_output_unsupported";if(/(max_tokens|output token).{0,80}(exceed|limit|maximum)|(?:exceed|maximum).{0,80}(max_tokens|output token)/u.test(b))return"output_token_limit"}})(),f=$(b,"name");if(void 0===f&&null!==b&&"object"==typeof b)try{f=$($(Object.getPrototypeOf(b),"constructor"),"name")}catch{}let g=$(b,"status"),h=Object.freeze({event:"conversation_meal_interpreter_failure",stage:a,error_name:Z.find(a=>a===f)??"UnknownError",...e?{provider_rejection:e}:{},..."validation"===a?{validation_reason:T.U.find(a=>a===d)??"validation_internal"}:{},..."number"==typeof g&&Number.isInteger(g)&&g>=100&&g<=599?{http_status:g}:{}});try{c(h)}catch{}}',
-      ],
-    ] as const) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      'cf311a5996ea1dd3e4752bd495ae51c5df9c72ba2a7ddb4d24fbf179028120d3',
-    )
-  }
-  return text
-}
-
-/** R182 adds closed provider-rejection observations only. Reverse the complete
- * sealed diagnostic delta before every R181 and historical source/build check. */
-function restoreProviderDiagnosticR182(text: string, kind: 'source' | 'build'): string {
-  text = restoreProviderErrorShapeR183(text, kind)
-  if (kind === 'source') {
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      'ee9eef413e471687491523cf15386c9bcb4b514c77acade2b9aa0edc33f14d69',
-    )
-    for (const [current, prior] of [
-      [
-        "  readonly provider_rejection?:\n    | 'schema_complexity'\n    | 'schema_keyword'\n    | 'schema_invalid'\n    | 'structured_output_unsupported'\n    | 'output_token_limit'\n",
-        '',
-      ],
-      [
-        "  // Classify bounded SDK data in memory; only this closed enum may escape.\n  // Neither raw provider messages nor user-controlled text enter the sink.\n  const providerRejection = (): ConversationMealInterpreterDiagnostic['provider_rejection'] => {\n    if (stage !== 'provider' || ownData(error, 'status') !== 400) return undefined\n    const inner = ownData(error, 'error')\n    const candidates = [\n      ownData(error, 'message'),\n      ownData(inner, 'message'),\n      ownData(ownData(error, 'metadata'), 'raw'),\n      ownData(ownData(inner, 'metadata'), 'raw'),\n    ]\n    for (const raw of candidates) {\n      if (typeof raw !== 'string' || raw.length > 65_536) continue\n      const text = raw.toLowerCase()\n      if (/(schema|grammar).{0,120}(complex|compil|too many|exceed|limit)/u.test(text))\n        return 'schema_complexity'\n      if (\n        /(unsupported|not supported|not permitted|not allowed).{0,80}(keyword|schema)|(?:keyword).{0,80}(unsupported|not supported|not permitted|not allowed)/u.test(\n          text,\n        )\n      )\n        return 'schema_keyword'\n      if (\n        /(invalid|malformed).{0,40}(json.?schema|schema)|(?:schema).{0,40}(invalid|malformed)/u.test(\n          text,\n        )\n      )\n        return 'schema_invalid'\n      if (\n        /(not support|unsupported).{0,80}(structured|response_format)|(?:structured|response_format).{0,80}(not support|unsupported)/u.test(\n          text,\n        )\n      )\n        return 'structured_output_unsupported'\n      if (\n        /(max_tokens|output token).{0,80}(exceed|limit|maximum)|(?:exceed|maximum).{0,80}(max_tokens|output token)/u.test(\n          text,\n        )\n      )\n        return 'output_token_limit'\n    }\n    return undefined\n  }\n  const rejection = providerRejection()\n",
-        '',
-      ],
-      ['      ...(rejection ? { provider_rejection: rejection } : {}),\n', ''],
-    ] as const) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '6ad76cadf7ca119afac675aeeed3a09962684f165a480072c20289af068d63c7',
-    )
-  }
-  if (kind === 'build') {
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      'cf311a5996ea1dd3e4752bd495ae51c5df9c72ba2a7ddb4d24fbf179028120d3',
-    )
-    for (const [current, prior] of [
-      [
-        'function _(a,b,c,d){let e=(()=>{if("provider"!==a||400!==$(b,"status"))return;let c=$(b,"error");for(let a of[$(b,"message"),$(c,"message"),$($(b,"metadata"),"raw"),$($(c,"metadata"),"raw")]){if("string"!=typeof a||a.length>65536)continue;let b=a.toLowerCase();if(/(schema|grammar).{0,120}(complex|compil|too many|exceed|limit)/u.test(b))return"schema_complexity";if(/(unsupported|not supported|not permitted|not allowed).{0,80}(keyword|schema)|(?:keyword).{0,80}(unsupported|not supported|not permitted|not allowed)/u.test(b))return"schema_keyword";if(/(invalid|malformed).{0,40}(json.?schema|schema)|(?:schema).{0,40}(invalid|malformed)/u.test(b))return"schema_invalid";if(/(not support|unsupported).{0,80}(structured|response_format)|(?:structured|response_format).{0,80}(not support|unsupported)/u.test(b))return"structured_output_unsupported";if(/(max_tokens|output token).{0,80}(exceed|limit|maximum)|(?:exceed|maximum).{0,80}(max_tokens|output token)/u.test(b))return"output_token_limit"}})(),f=$(b,"name");if(void 0===f&&null!==b&&"object"==typeof b)try{f=$($(Object.getPrototypeOf(b),"constructor"),"name")}catch{}let g=$(b,"status"),h=Object.freeze({event:"conversation_meal_interpreter_failure",stage:a,error_name:Z.find(a=>a===f)??"UnknownError",...e?{provider_rejection:e}:{},..."validation"===a?{validation_reason:T.U.find(a=>a===d)??"validation_internal"}:{},..."number"==typeof g&&Number.isInteger(g)&&g>=100&&g<=599?{http_status:g}:{}});try{c(h)}catch{}}',
-        'function _(a,b,c,d){let e=$(b,"name");if(void 0===e&&null!==b&&"object"==typeof b)try{e=$($(Object.getPrototypeOf(b),"constructor"),"name")}catch{}let f=$(b,"status"),g=Object.freeze({event:"conversation_meal_interpreter_failure",stage:a,error_name:Z.find(a=>a===e)??"UnknownError",..."validation"===a?{validation_reason:T.U.find(a=>a===d)??"validation_internal"}:{},..."number"==typeof f&&Number.isInteger(f)&&f>=100&&f<=599?{http_status:f}:{}});try{c(g)}catch{}}',
-      ],
-    ] as const) {
-      expect(text.split(current)).toHaveLength(2)
-      text = text.replace(current, prior)
-    }
-    expect(createHash('sha256').update(text).digest('hex')).toBe(
-      '6b9684163de94810e5702c60980d35d1a2a04eb7367b15c55fc74a4424fb5d20',
-    )
-  }
-  return text
-}
-
-/** R181 changes only private provider wire indices. Seal the full current
- * source/build, then reverse the three reviewed compiled expressions and the
- * source projection. Every historical hash and raw graph scan remains active. */
-function certifyMealProviderWireR181(): string {
-  const chunks = semanticChunks(['.replaceAll("null","-1")', 'conversation.meal-source-labels.v1'])
-  expect(chunks).toHaveLength(1)
-  const chunk = chunks[0] ?? ''
-  let text = restoreProviderDiagnosticR182(readFileSync(chunk, 'utf8'), 'build')
-  expect(createHash('sha256').update(text).digest('hex')).toBe(
-    '6b9684163de94810e5702c60980d35d1a2a04eb7367b15c55fc74a4424fb5d20',
-  )
-  for (const [current, prior] of [
-    ['.replaceAll("null","-1")', ''],
-    [
-      'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=(a,e=[])=>{if(Array.isArray(a))return a.map(a=>c(a,e));if(null!==a&&"object"==typeof a){if("$ref"in a){let{$ref:d,...f}=a;if("string"!=typeof d||!d.startsWith("#/")||e.includes(d))return(0,z.v8)();let g=b.json_schema.schema;for(let a of d.slice(2).split("/")){let b=a.replaceAll("~1","/").replaceAll("~0","~");if(null===g||"object"!=typeof g||!Object.hasOwn(g,b))return(0,z.v8)();g=g[b]}return null===g||"object"!=typeof g||Array.isArray(g)?(0,z.v8)():c({...g,...f},[...e,d])}let f=Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems"].includes(a)).map(([a,b])=>[a,c(b,e)]));return(0,d.isDeepStrictEqual)(f,{anyOf:[{type:"integer"},{type:"null"}]})?{type:"integer"}:f}return a};return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
-      'function(a){let b=(0,S.AS)(a,"conversation_meal_source_labels_v1"),c=a=>Array.isArray(a)?a.map(c):null!==a&&"object"==typeof a?Object.fromEntries(Object.entries(a).filter(([a])=>!["minimum","maximum","maxItems"].includes(a)).map(([a,b])=>[a,c(b)])):a;return{...b,json_schema:{...b.json_schema,schema:c(b.json_schema.schema)}}}(k.schema)',
-    ],
-    [
-      'function(a,b){let c=a=>null!==a&&"object"==typeof a&&!Array.isArray(a),d=()=>(b("model_schema"),(0,z.v8)()),e=structuredClone(a);if(!c(e)||!c(e.sources)||!Array.isArray(e.foods))return d();function f(a,b){if(!c(a))return d();let e=a[b];if("number"!=typeof e||!Number.isInteger(e)||e<-1||e>29)return d();-1===e&&(a[b]=null)}for(let a of Object.values(e.sources)){if(!c(a)||!c(a.labels))return d();for(let b of Object.values(a.labels))f(b,"food_index")}for(let a of e.foods)f(a,"visual_index");return e}(p,q)',
-      'p',
-    ],
-  ] as const) {
-    expect(text.split(current)).toHaveLength(2)
-    text = text.replace(current, prior)
-  }
-  expect(createHash('sha256').update(text).digest('hex')).toBe(
-    '41cfeaa189a954a60be85ea522189b6fa692e3297dc06b87d7b2b2dffeccac04',
-  )
-  return chunk
-}
-function restoreMealProviderWireSourceR181(text: string): string {
-  text = restoreProviderDiagnosticR182(text, 'source')
-  expect(createHash('sha256').update(text).digest('hex')).toBe(
-    '6ad76cadf7ca119afac675aeeed3a09962684f165a480072c20289af068d63c7',
-  )
-  const projectStart = text.indexOf('  const project = '),
-    projectEnd = text.indexOf('\n  return {\n    ...format,', projectStart)
-  expect(projectStart).toBeGreaterThan(0)
-  expect(projectEnd).toBeGreaterThan(projectStart)
-  expect(createHash('sha256').update(text.slice(projectStart, projectEnd)).digest('hex')).toBe(
-    '69b5db01934bf69a36ca30c4721ed3b9ddad809ee3bc4fb286a50ba0c10b71ed',
-  )
-  text =
-    text.slice(0, projectStart) +
-    "  const project = (value: unknown): unknown => {\n    if (Array.isArray(value)) return value.map(project)\n    if (value !== null && typeof value === 'object')\n      return Object.fromEntries(\n        Object.entries(value)\n          .filter(([key]) => !['minimum', 'maximum', 'maxItems'].includes(key))\n          .map(([key, item]) => [key, project(item)]),\n      )\n    return value\n  }" +
-    text.slice(projectEnd)
-  const decoderStart = text.indexOf('function decodeMealProviderIndices('),
-    decoderEnd = text.indexOf('export interface ConversationMealInterpreter', decoderStart)
-  expect(decoderStart).toBeGreaterThan(0)
-  expect(decoderEnd).toBeGreaterThan(decoderStart)
-  expect(createHash('sha256').update(text.slice(decoderStart, decoderEnd)).digest('hex')).toBe(
-    '5261b6b7e842249ec7c5b65a39f5086998184ac8173e00ec73c592b304c701d1',
-  )
-  text = text.slice(0, decoderStart) + text.slice(decoderEnd)
-  for (const [current, prior] of [
-    [
-      "systemPrompt: MEAL_INTERPRETER_PROMPT.replaceAll('null', '-1'),",
-      'systemPrompt: MEAL_INTERPRETER_PROMPT,',
-    ],
-    [
-      'const canonical = packet.materialize(\n          decodeMealProviderIndices(decoded, onFailure),\n          onFailure,\n        )',
-      'const canonical = packet.materialize(decoded, onFailure)',
-    ],
-  ] as const) {
-    expect(text.split(current)).toHaveLength(2)
-    text = text.replace(current, prior)
-  }
-  return text
-}
-
-/** T51 adds the explicit OpenAI structured-output helper to the interpreter.
- * This one closed chunk has exactly12 interpreter consumers and no ordinary
- * media/workout edge. Every physical target remains in the global scans. */
+/** The parser and structured-output helper remain limited to meal and intake
+ * routes. Pin the entire provider chunk and its reviewed interpreter source. */
 function certifyStructuredMealHelperT51() {
   const chunks = semanticChunks(['strict:!0', 'json_schema', 'ZodObject'])
   expect(chunks).toHaveLength(1)
@@ -1317,27 +852,22 @@ function certifyStructuredMealHelperT51() {
   certifyExactSharedTable(chunk, [
     ['69725', '05baadb1daac3f593c2b929f33b08e833c6de075d41caebcbbae406ed9dd7f0d'],
   ])
-  const providerWireChunk = certifyMealProviderWireR181()
-  const interpreter = restoreMealProviderWireSourceR181(
-    readFileSync(
-      resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),
-      'utf8',
-    ),
+  const providerChunks = semanticChunks([
+    '.replaceAll("null","-1")',
+    'conversation.meal-source-labels.v1',
+  ])
+  expect(providerChunks).toHaveLength(1)
+  const providerWireChunk = providerChunks[0] ?? ''
+  expect(createHash('sha256').update(readFileSync(providerWireChunk)).digest('hex')).toBe(
+    'a2fb9f90df15c14dc5692f8ea20456cdb55c36708307df119da0cf1f66d03166',
+  )
+  const interpreter = readFileSync(
+    resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),
+    'utf8',
   )
   expect(createHash('sha256').update(interpreter).digest('hex')).toBe(
-    'fbeb7ccbd4e0850bcc1f6d4cc203c2b08067cd40410f2e050c8c68a2f18f0d6c',
+    '341d8c8b9a6e0c6c388a440c9151ae60cbd8230048d11d1fe0eb4f8cb3ab8ca5',
   )
-  // R127 changes only the complete-photo example in the literal prompt; pin
-  // its entire new source. Provider helper bytes, parsing and route consumers
-  // are unchanged and independently certified below.
-  // R80 adds closed enum/count observations only for completed ambiguities.
-  // R81 adds closed screening reason codes and JSON encoding of this safe projection.
-  // R83 changes only the literal role-boundary prompt; source identity stays sealed.
-  // R95 adds one literal trailing-context/missing-quantity paragraph only;
-  // removing that paragraph restores the reviewed prior source byte-exactly.
-  // A retained233-file physical baseline proves the prompt/loader deltas only.
-  // Helper bytes, exact route consumers and global scans remain enforced.
-  // T53 replaces private literal replay with source-owned token labels on the same edge.
   expect(
     createHash('sha256')
       .update(
@@ -2306,42 +1836,37 @@ describe('authoritative Mobile API source surface', () => {
       'reconcile_conversation_intake_routing',
     ])
     expect(chunks).toHaveLength(1)
-    const bodies = certifyExactSharedTable(
-        chunks[0] ?? '',
-        [
-          ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
-          ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-          ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-          ...(readFileSync(chunks[0] ?? '', 'utf8').includes('32978:')
-            ? [
-                [
-                  '32978',
-                  '206e4e452022a83bd2b3ef6098a88fb0462e758190fbaf5b86c0875c8dfad570',
-                ] as const,
-              ]
-            : [
-                [
-                  '6535',
-                  '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3',
-                ] as const,
-              ]),
-        ],
-        restorePrivateMediaContractR168,
-      ),
-      body = bodies.get('32978') ?? bodies.get('6535') ?? ''
-    expect(() => certifyIntakeMediaBridgeR102(body)).not.toThrow()
-    for (const changed of [
-      body.replace('o:()=>ao,', ''),
-      body.replace('o:()=>ao,', 'o:()=>ao,x:()=>ao,'),
-      body.replace('MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'),
-      body.replace('X-Conversation-Media-Provenance', 'X-Unapproved-Provenance'),
-      body.replace('conversation.intake-result.v2', 'conversation.intake-result.v1'),
-      body.replace('media_temporarily_unavailable', 'media_projection_required'),
-      body.replace('label_product_required', 'routing_unavailable'),
-      body.replace('image_description_required', 'routing_unavailable'),
-      body.replace(/n=c\((?:63867|86248)\)/, 'n=c(86249)'),
-    ])
-      expect(() => certifyIntakeMediaBridgeR102(changed)).toThrow()
+    const body = certifyNegotiatedIntakeTable(chunks[0] ?? '')
+    for (const [original, replacement] of [
+      ['o:()=>af,', ''],
+      ['o:()=>af,', 'o:()=>af,x:()=>af,'],
+      ['MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'],
+      ['X-Conversation-Media-Provenance', 'X-Unapproved-Provenance'],
+      ['conversation.intake-result.v2', 'conversation.intake-result.v1'],
+      ['media_temporarily_unavailable', 'media_projection_required'],
+      ['admit_conversation_versioned_media_intake_v2', 'admit_conversation_intake'],
+      ['c(93498)', 'c(999999)'],
+    ]) {
+      expect(body).toContain(original)
+      expect(() => certifyNegotiatedIntakeModule(body.replace(original, replacement))).toThrow()
+    }
+    expect(() => certifyNegotiatedIntakeModule(`${body};void 0`)).toThrow()
+
+    const routerChunks = semanticChunks(['label_product_required', 'image_description_required'])
+    expect(routerChunks).toHaveLength(1)
+    const routerBody = certifyConversationTurnTable(routerChunks[0] ?? '')
+    expect(() => certifyConversationParserLink('41216', routerBody)).not.toThrow()
+    const parserLink = routerBody.includes('c(86248)') ? 'c(86248)' : 'c(63867)'
+    for (const [original, replacement] of [
+      ['label_product_required', 'routing_unavailable'],
+      ['image_description_required', 'routing_unavailable'],
+      [parserLink, 'c(86249)'],
+    ]) {
+      expect(routerBody).toContain(original)
+      expect(() =>
+        certifyConversationParserLink('41216', routerBody.replace(original, replacement)),
+      ).toThrow()
+    }
   })
   test('refuses removal or substitution of the exact private media version checks', () => {
     const chunks = semanticChunks([
@@ -3794,6 +3319,43 @@ describe('authoritative Mobile API source surface', () => {
       'Headers cannot be modified',
       'NodeNextRequest.stream() can only be called once',
     ])
+    // Compare the old and current NFT graphs using the exact two new Flow
+    // targets. Only these edges are removed from historical reference counts.
+    // Actual route traces and the forbidden dependency scans still include them.
+    const turnChunk = uniqueChunk([
+      'MOBILE_CONVERSATION_TURN_REPLIES_ENABLED',
+      'conversation.turn-reply.v1',
+      'Flow replies unavailable',
+    ])
+    const turnStoreChunk = uniqueChunk(['flow_provider_failed', 'flow_turn_interrupted'])
+    const turnRoutes = [
+      ...conversationIntakeAppPaths,
+      ...conversationReadEditAdditions.map((p) => `/api/mobile/v1/${p.replace(/\.ts$/, '')}`),
+    ].sort()
+    const flowChatRoute = '/api/mobile/v1/flow/chat/route'
+    const turnStoreRoutes = [...turnRoutes, flowChatRoute].sort()
+    expect(chunkConsumers(turnChunk)).toEqual(turnRoutes)
+    expect(chunkConsumers(turnStoreChunk)).toEqual(turnStoreRoutes)
+    certifyConversationTurnTable(turnChunk)
+    certifyExactSharedTable(turnStoreChunk, [
+      ['52476', '21ea7e0a5173398e66f0de955f505c06ca5331e304e41011ceef5e8474f45f9e'],
+      ['63761', 'adeb0ca9619a1400e068ab883c034c7db0ffa63b9c632ab6e5bb06441fcc8c9b'],
+    ])
+    for (const route of allBuildRoutes) {
+      expect(
+        tracedTargets(route).filter((target) => target === turnChunk),
+        route,
+      ).toHaveLength(turnRoutes.includes(route) ? 1 : 0)
+      expect(
+        tracedTargets(route).filter((target) => target === turnStoreChunk),
+        route,
+      ).toHaveLength(turnStoreRoutes.includes(route) ? 1 : 0)
+    }
+    const isAddedTurnEdge = (route: string, target: string) =>
+      (turnRoutes.includes(route) && target === turnChunk) ||
+      (turnStoreRoutes.includes(route) && target === turnStoreChunk)
+    const beforeTurnTargets = (route: string) =>
+      tracedTargets(route).filter((target) => !isAddedTurnEdge(route, target))
     expect(chunkConsumers(nextHttpSplit)).toEqual(allBuildRoutes.slice().sort())
     for (const route of allRoutes) {
       expect(
@@ -3975,7 +3537,7 @@ describe('authoritative Mobile API source surface', () => {
       'f1bae64338d545292a31d72af6e2b3d20f428fa2035b695667fdd12438c642bc',
     )
     const priorTargets = (route: string): string[] =>
-      tracedTargets(route).filter(
+      beforeTurnTargets(route).filter(
         (target) =>
           target !== nextHttpSplit &&
           target !== disposalSharedChunk &&
@@ -4002,7 +3564,7 @@ describe('authoritative Mobile API source surface', () => {
     expect(repositoryUniqueSize([...priorTargetSet]) + 1).toBe(214)
     expect(tracedTargets(recoveryRoute)).toHaveLength(100)
     expect(
-      [...new Set(allRoutes.flatMap((route) => tracedTargets(route)))]
+      [...new Set(allRoutes.flatMap(beforeTurnTargets))]
         .filter((target) => !priorTargetSet.has(target))
         .sort(),
     ).toEqual(
@@ -4021,11 +3583,11 @@ describe('authoritative Mobile API source surface', () => {
     // All75 keep8202 references. The verified duplicate is217 physical targets,
     // still216 logical identities; the webhook adds only its own manifest.
     const webhookRoute = '/api/webhooks/revenuecat/route'
-    const mobileTargets = new Set(allRoutes.flatMap((route) => tracedTargets(route)))
+    const mobileTargets = new Set(allRoutes.flatMap(beforeTurnTargets))
     // R173 adds precisely the existing private-catalog chunk to process; its
     // exact four consumers and all seven complete modules are bound above.
     expect(
-      allRoutes.reduce((sum, route) => sum + tracedTargets(route).length, 0) +
+      allRoutes.reduce((sum, route) => sum + beforeTurnTargets(route).length, 0) +
         absorbedReferences(allRoutes),
     ).toBe(8202 + 16 + 11 + 4)
     expect(mobileTargets.size + 1).toBe(219)
@@ -4115,36 +3677,7 @@ describe('authoritative Mobile API source surface', () => {
         'read_conversation_intake_routing_result',
         'reconcile_conversation_intake_routing',
       ])
-    // R62 qualifies the router's closed failure diagnostics and existing SDK
-    // error-class imports against this exact source and complete module body.
-    // Independent R59 body: 1ad24d6589b874c420dbfc09b405b86c331378f98a646adf764ea0e8bf60a855.
-    // R102 adds ordinary classified observations and refuses unsupported images.
-    // Router/workout codec bodies are recertified in full; two other shared
-    // modules remain byte-exact. No physical/global scan is bypassed.
-    expect(
-      createHash('sha256')
-        .update(
-          readFileSync(
-            resolve(appRoot, '../admin/src/lib/mobile-api/conversation-intake-router.ts'),
-          ),
-        )
-        .digest('hex'),
-    ).toBe('2387db5c40f5e28c1e4a2b14710d1e81cb04926d4fbb42abc226c8c910f93a75')
-    const intakeBodies = certifyExactSharedTable(
-      intakeChunk,
-      [
-        ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
-        ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-        ['50522', 'a5d450bd9b7267e8756ae2f7b5a6910ead5d90ff83fe073d39b7f6ad278b3633'],
-        ...(readFileSync(intakeChunk, 'utf8').includes('32978:')
-          ? [['32978', '206e4e452022a83bd2b3ef6098a88fb0462e758190fbaf5b86c0875c8dfad570'] as const]
-          : [
-              ['6535', '2eef75ca30d2cfabb2e71e2e652c8b41d0b884572469eed6424484a5b45969f3'] as const,
-            ]),
-      ],
-      restorePrivateMediaContractR168,
-    )
-    certifyIntakeMediaBridgeR102(intakeBodies.get('32978') ?? intakeBodies.get('6535') ?? '')
+    certifyNegotiatedIntakeTable(intakeChunk)
     // Full typed service code remains physically present, including dormant
     // writers. Journal3 invokes only read through its tested closed RPC port.
     certifySharedModule(
@@ -4153,7 +3686,7 @@ describe('authoritative Mobile API source surface', () => {
       // R140 full re-certification after shared current-scope extraction.
       // Old96 same-path baseline retained 4fccbc5a...; source bytes are
       // unchanged and BOTH replacement modules are pinned above.
-      '21239d114e06d780ee4e5221fd60a783b3540a02209e36c0b687c64ea0bda359',
+      '06788d3574afea00d14f76dc02155fab92ff2eb38f0b38d37b065902447226d7',
     )
     // T48's lookup-only GET reuses the same qualified STABLE history reader.
     // The two new public markers must remain confined to that parent entry;
@@ -4266,7 +3799,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
     for (const [route, count] of expectedCommandCounts)
       expect(
-        tracedTargets(route).filter(
+        beforeTurnTargets(route).filter(
           (target) =>
             target !== scopeChunk &&
             !structuredMealHelper.isEdge(route, target) &&
@@ -4301,11 +3834,9 @@ describe('authoritative Mobile API source surface', () => {
     }
     expect([...currentCounts.keys()].sort()).toEqual(commandRoutes)
     for (const [route, count] of currentCounts)
-      expect(tracedTargets(route), route).toHaveLength(count)
-    const legacyTargets = new Set(
-        [...allRoutes, webhookRoute].flatMap((route) => tracedTargets(route)),
-      ),
-      commandOnlyTargets = [...new Set(commandRoutes.flatMap((route) => tracedTargets(route)))]
+      expect(beforeTurnTargets(route), route).toHaveLength(count)
+    const legacyTargets = new Set([...allRoutes, webhookRoute].flatMap(beforeTurnTargets)),
+      commandOnlyTargets = [...new Set(commandRoutes.flatMap(beforeTurnTargets))]
         .filter((target) => !legacyTargets.has(target))
         .sort()
     expect(commandOnlyTargets).toEqual(
@@ -4330,8 +3861,10 @@ describe('authoritative Mobile API source surface', () => {
     )
     expect(legacyTargets.size).toBe(219) // R111: exactly one qualified shared target added
     expect(
-      [...allRoutes, webhookRoute].reduce((sum, route) => sum + tracedTargets(route).length, 0) +
-        absorbedReferences(allRoutes),
+      [...allRoutes, webhookRoute].reduce(
+        (sum, route) => sum + beforeTurnTargets(route).length,
+        0,
+      ) + absorbedReferences(allRoutes),
     ).toBe(8202 + 16 + 104 + 11 + 4)
     expect(tracedTargets(nutritionWindowAppPath)).toHaveLength(116)
     expect(tracedTargets('/api/mobile/v1/training/window/route')).toHaveLength(116)
@@ -4342,7 +3875,7 @@ describe('authoritative Mobile API source surface', () => {
     // Historical counts project that exact edge only; all raw scans include it.
     // The five separately sealed social routes add5*105 references and six
     // targets. Their entire raw graph remains in every global forbidden scan.
-    expect(surface.nftReferenceCount - 5 * 105).toBe(
+    expect(surface.nftReferenceCount - 5 * 105 - turnRoutes.length - turnStoreRoutes.length).toBe(
       8202 +
         104 -
         6 +
@@ -4365,8 +3898,10 @@ describe('authoritative Mobile API source surface', () => {
         3 * 114 + // R136: original execution route traces remain exact.
         5 * 120, // R140: five explicit completion traces; all included in scans.
     )
-    expect(surface.nftUniqueTargetCount - 6).toBe(217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6)
-    expect(surface.nftRegularFileTargetCount - 6).toBe(
+    expect(surface.nftUniqueTargetCount - 6 - 2).toBe(
+      217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6,
+    )
+    expect(surface.nftRegularFileTargetCount - 6 - 2).toBe(
       215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6,
     )
     expect(surface.nftDirectoryTargetCount).toBe(2)

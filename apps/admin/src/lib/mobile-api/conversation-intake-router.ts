@@ -398,6 +398,27 @@ export function createOpenRouterConversationIntakeRouter(
                 text: 'Não consegui identificar os alimentos na foto. O que você consumiu e em qual quantidade?',
               },
             })
+          const input = source.intake.input.source
+          if (
+            image.status === 'ready' &&
+            image.classification === 'meal' &&
+            image.analysis.type === 'meal' &&
+            source.context.media.catalog_version === 2 &&
+            source.context.media.context_text === null &&
+            input.channel === 'media' &&
+            input.user_action === 'report_actual_record' &&
+            input.caption === undefined &&
+            image.analysis.items.length > 0 &&
+            image.analysis.items.every((item) => item.quantity_g_estimate > 0)
+          ) {
+            // The bound send supplies the intent. The meal service still validates
+            // the visual observations and resolves each item before saving.
+            return intakeSnapshot({
+              schema: 'conversation.intake-routing.v1',
+              kind: 'meal.report',
+              reason: 'visual_meal_identification',
+            })
+          }
         }
         const payload = conversationIntakeDiscourse(source)
         const [statement] = payload.sources

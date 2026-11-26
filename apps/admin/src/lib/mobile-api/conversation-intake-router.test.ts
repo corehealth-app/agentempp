@@ -72,6 +72,7 @@ function mediaSource(
   result: Record<string, unknown>,
   caption: string | null = 'O que acha desta refeição?',
   context: string | null = 'Ainda não consumi.',
+  catalogVersion?: 2,
 ) {
   const input = bindConversationIntake(owner, `cintake1:${id}`, {
       intake_protocol: 'conversation.intake.v1',
@@ -107,6 +108,7 @@ function mediaSource(
         processed_at: '2026-11-05T12:59:59Z',
         updated_at: '2026-11-05T12:59:59Z',
         context_text: context,
+        ...(catalogVersion === undefined ? {} : { catalog_version: catalogVersion }),
         processing_result: result,
       },
     },
@@ -535,6 +537,58 @@ describe('safe routing failure diagnostics without changing the durable outcome'
 })
 
 describe('ordinary photos retain their validated classification and literal discourse', () => {
+  const mealWithPortion = {
+    schema: 'conversation.image-result.v1',
+    status: 'ready',
+    classification: 'meal',
+    analysis: {
+      type: 'meal',
+      items: [{ name: 'pão francês', quantity_g_estimate: 50, confidence: 0.9 }],
+    },
+  }
+
+  it('routes a bound captionless meal photo with portions without asking the provider again', async () => {
+    const f = setup()
+    const photo = mediaSource('conversation_photo', mealWithPortion, null, null, 2)
+
+    expect(await f.router.route(photo)).toEqual({
+      ...decision,
+      reason: 'visual_meal_identification',
+    })
+    expect(f.complete).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['Será meu almoço?', null],
+    [null, 'Ainda não comi.'],
+  ])('preserves intent routing when a bound meal photo includes literal text (%#)', async (caption, context) => {
+    const f = setup(JSON.stringify({ ...decision, kind: 'not_reported', reason: 'question' }))
+    const photo = mediaSource('conversation_photo', mealWithPortion, caption, context, 2)
+
+    expect(await f.router.route(photo)).toMatchObject({ kind: 'not_reported' })
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the normal routing when a bound meal photo lacks a portion', async () => {
+    const f = setup()
+    const photo = mediaSource(
+      'conversation_photo',
+      {
+        ...mealWithPortion,
+        analysis: {
+          type: 'meal',
+          items: [{ name: 'pão francês', quantity_g_estimate: 0, confidence: 0.9 }],
+        },
+      },
+      null,
+      null,
+      2,
+    )
+
+    expect(await f.router.route(photo)).toEqual(decision)
+    expect(f.complete).toHaveBeenCalledOnce()
+  })
+
   it('preserves a valid meal route when a processed photo gets a malformed provider reason', async () => {
     const f = setup(
       JSON.stringify({ ...decision, reason: 'Foto de pão - refeição', question: null }),

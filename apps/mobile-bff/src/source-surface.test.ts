@@ -290,7 +290,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-intake-router.ts',
-      'f9410c87d088ebbe7eabfb9b3e01f1e7fe8f20603fe1bae1010ff1731de20257',
+      'f1b1f96ee9768dc6fc85abf707ac9c61326f85097a5bb4697bde97b4b0773190',
     ],
     [
       'conversation-meal-interpretation-contracts.ts',
@@ -387,8 +387,8 @@ const conversationParserLinkPins = {
     alternate: '26b3692e11ee91492552f8efd5e5b6f50f42045f9613d972d8618dbb5044746b',
   },
   '41216': {
-    canonical: '94af53200371515b97ee7124ad78096be9f43805da1e7338ba836651732fe41d',
-    alternate: '32fa42e5e6a1bc063386e54ca73d1299f63976de67ee578c89e76c47c831ccd7',
+    canonical: 'd8db40868e73c4b3dc32cb29c5d3bb998fe7656e9d0dbbc1e2c65566a8ff5c2c',
+    alternate: '7d4eb312cc09466aa1de3115948f2021b6333b0376eed324a120079c534bf05d',
   },
 } as const
 
@@ -736,7 +736,7 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
     ],
     [
       'conversation-intake-router.ts',
-      'f9410c87d088ebbe7eabfb9b3e01f1e7fe8f20603fe1bae1010ff1731de20257',
+      'f1b1f96ee9768dc6fc85abf707ac9c61326f85097a5bb4697bde97b4b0773190',
     ],
     [
       'conversation-intake-routes.ts',

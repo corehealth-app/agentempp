@@ -4,13 +4,16 @@ import UIKit.UIGestureRecognizerSubclass
 
 @MainActor
 struct FlowChatVoiceButton: View {
-  let model: FlowNeutralIntakeModel
   let stager: MealMediaStager
   let english: Bool
   @Binding var recordingCaption: String?
   let dismissKeyboard: () -> Void
+  let availableTarget: () -> FlowVoiceCaptureTarget?
+  let retainedTarget: () -> FlowVoiceCaptureTarget?
+  let send: (StagedMedia, FlowVoiceCaptureTarget) async throws -> Void
+  let accessibilityID: String
   @State private var recorder: MealAudioRecorder
-  @State private var owner: ConversationCommandContext.Identity?
+  @State private var owner: FlowVoiceCaptureTarget?
   @State private var work: Task<Void, Never>?
   @State private var released = false
   @State private var notice: String?
@@ -19,16 +22,34 @@ struct FlowChatVoiceButton: View {
   init(model: FlowNeutralIntakeModel, stager: MealMediaStager, english: Bool,
     recordingCaption: Binding<String?>, dismissKeyboard: @escaping () -> Void
   ) {
-    self.model = model
+    self.init(stager: stager, english: english, recordingCaption: recordingCaption,
+      dismissKeyboard: dismissKeyboard,
+      availableTarget: { model.inlineVoiceContext.map { .init(identity: $0, destination: .composer) } },
+      retainedTarget: { model.captureSelectionIdentity.map { .init(identity: $0, destination: .composer) } },
+      accessibilityID: "conversation.neutral.record-audio") { staged, target in
+      try model.attach(staged, expectedContext: target.identity)
+      await model.submit()
+    }
+  }
+
+  init(stager: MealMediaStager, english: Bool, recordingCaption: Binding<String?>,
+    dismissKeyboard: @escaping () -> Void, availableTarget: @escaping () -> FlowVoiceCaptureTarget?,
+    retainedTarget: @escaping () -> FlowVoiceCaptureTarget?, accessibilityID: String,
+    send: @escaping (StagedMedia, FlowVoiceCaptureTarget) async throws -> Void
+  ) {
     self.stager = stager
     self.english = english
     self._recordingCaption = recordingCaption
     self.dismissKeyboard = dismissKeyboard
+    self.availableTarget = availableTarget
+    self.retainedTarget = retainedTarget
+    self.accessibilityID = accessibilityID
+    self.send = send
     self._recorder = State(initialValue: MealAudioRecorder(
       staging: stager.staging, captureFormat: .linearPCM))
   }
 
-  private var available: Bool { model.inlineVoiceContext != nil }
+  private var available: Bool { availableTarget() != nil }
 
   var body: some View {
     Image(systemName: owner == nil ? "mic" : "mic.fill")
@@ -47,7 +68,7 @@ struct FlowChatVoiceButton: View {
       .accessibilityAddTraits(.isButton)
       .accessibilityAction { if owner == nil { begin() } else { finish() } }
       .accessibilityAction(named: Text(english ? "Cancel recording" : "Cancelar gravação")) { cancel() }
-      .accessibilityIdentifier("conversation.neutral.record-audio")
+      .accessibilityIdentifier(accessibilityID)
       .alert(english ? "Audio" : "Áudio", isPresented: Binding(
         get: { notice != nil }, set: { if !$0 { notice = nil } }
       )) {
@@ -77,21 +98,21 @@ struct FlowChatVoiceButton: View {
         default: break
         }
       }
-      .onChange(of: model.captureSelectionIdentity) { _, identity in
-        if let owner, identity != owner { cancel() }
+      .onChange(of: retainedTarget()) { _, target in
+        if let owner, target != owner { cancel() }
       }
       .onChange(of: scenePhase) { _, phase in if phase == .background { cancel() } }
       .onDisappear { cancel() }
   }
 
   private func begin() {
-    guard owner == nil, let identity = model.inlineVoiceContext else { return }
-    owner = identity
+    guard owner == nil, let target = availableTarget() else { return }
+    owner = target
     released = false
     dismissKeyboard()
     recordingCaption = "0:00"
     work = Task {
-      guard !Task.isCancelled, owner == identity else { return }
+      guard !Task.isCancelled, owner == target else { return }
       await recorder.start()
     }
   }
@@ -112,15 +133,15 @@ struct FlowChatVoiceButton: View {
   }
 
   private func stageAndSend() {
-    guard let identity = owner, let url = recorder.takeRecording() else { return }
+    guard let target = owner, let url = recorder.takeRecording() else { return }
     work = Task {
       do {
         let staged = try await stager.stageRecording(at: url)
-        guard !Task.isCancelled, owner == identity else {
+        guard !Task.isCancelled, owner == target else {
           stager.staging.remove(staged.fileURL)
           return
         }
-        guard model.inlineVoiceContext == identity else {
+        guard availableTarget() == target else {
           stager.staging.remove(staged.fileURL)
           interrupt()
           return
@@ -133,18 +154,22 @@ struct FlowChatVoiceButton: View {
             : "Segure o microfone enquanto fala."
           return
         }
-        do { try model.attach(staged, expectedContext: identity) }
+        owner = nil
+        recordingCaption = nil
+        do { try await send(staged, target) }
         catch {
           stager.staging.remove(staged.fileURL)
           throw error
         }
-        owner = nil
-        recordingCaption = nil
-        await model.submit()
       } catch {
-        if Task.isCancelled { return }
+        if Task.isCancelled || error is CancellationError { return }
         cancel()
-        notice = english ? "Could not attach the audio." : "Não foi possível anexar o áudio."
+        if target.destination == .composer {
+          notice = english ? "Could not attach the audio." : "Não foi possível anexar o áudio."
+        } else if retainedTarget() == target {
+          notice = english ? "I couldn't use that answer. Try recording again or type it here."
+            : "Não consegui usar essa resposta. Você pode gravar de novo ou escrever aqui."
+        }
       }
     }
   }

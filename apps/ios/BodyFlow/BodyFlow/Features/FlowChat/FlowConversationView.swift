@@ -19,7 +19,9 @@ struct FlowConversationView: View {
   @State private var transcriptScrollPosition = ScrollPosition(idType: String.self, edge: .bottom)
   @State private var isOpeningConversation = true
   @State private var isLoadingEarlierHistory = false
-  private var english: Bool { BodyFlowPresentationLanguage.resolve(locale) == .englishUnitedStates }
+  @State private var linkedRecordingCaption: String?
+  private var language: SupportedAppLanguage { BodyFlowPresentationLanguage.resolve(locale) }
+  private var english: Bool { language == .englishUnitedStates }
 
   var body: some View {
     GeometryReader { geometry in
@@ -35,11 +37,16 @@ struct FlowConversationView: View {
           ) {
             if let reply = model.mealReplies?.presentation {
               VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Button(english ? "Back to conversation" : "Voltar à conversa") {
-                  reply.model.dismiss()
+                HStack {
+                  Button(english ? "Back to conversation" : "Voltar à conversa") {
+                    reply.model.dismiss()
+                  }
+                  .accessibilityIdentifier("conversation.reply.close")
+                  Spacer()
+                  linkedVoiceControls(for: .mealReply(reply.id))
                 }
-                .accessibilityIdentifier("conversation.reply.close")
                 FlowConversationMealReplyContent(model: reply.model, inline: true)
+                  .disabled(model.linkedVoiceInProgress || linkedRecordingCaption != nil)
               }
               .padding(BodyFlowSpacing.md)
               .id(reply.id)
@@ -47,10 +54,20 @@ struct FlowConversationView: View {
               let presentation = editor.presentation
             {
               VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-                Button(english ? "Back to conversation" : "Voltar à conversa") {
-                  editor.dismiss()
+                HStack {
+                  Button(english ? "Back to conversation" : "Voltar à conversa") {
+                    editor.dismiss()
+                  }
+                  Spacer()
+                  linkedVoiceControls(for: .photoReview(presentation.id))
+                }
+                if editor.photoVoiceNeedsQuantity,
+                  editor.quantityText(language: language).isEmpty
+                {
+                  Text(english ? "How many grams did you eat?" : "Quantos gramas você comeu?")
                 }
                 FlowConversationMealEditorContent(model: editor)
+                  .disabled(model.linkedVoiceInProgress || linkedRecordingCaption != nil)
               }
               .padding(BodyFlowSpacing.md)
               .id(presentation.id)
@@ -153,6 +170,38 @@ struct FlowConversationView: View {
           ? "Only a report that was never dispatched can be discarded."
           : "Somente um relato que nunca foi enviado pode ser descartado.")
     }
+  }
+
+  @ViewBuilder private func linkedVoiceControls(for destination: FlowVoiceCaptureTarget.Destination)
+    -> some View
+  {
+    if let capture {
+      if let linkedRecordingCaption {
+        Text(linkedRecordingCaption).monospacedDigit()
+      } else if model.linkedVoiceInProgress {
+        ProgressView()
+          .accessibilityLabel(english ? "Listening to the answer" : "Ouvindo a resposta")
+      }
+      FlowChatVoiceButton(
+        stager: capture.stager, english: english, recordingCaption: $linkedRecordingCaption,
+        dismissKeyboard: {
+          UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil)
+        },
+        availableTarget: { model.linkedVoiceInProgress ? nil : linkedVoiceTarget(for: destination) },
+        retainedTarget: { linkedVoiceTarget(for: destination) },
+        accessibilityID: "conversation.linked.record-audio"
+      ) { staged, target in
+        try await model.submitLinkedVoice(staged, target: target, language: language)
+      }
+    }
+  }
+
+  private func linkedVoiceTarget(for destination: FlowVoiceCaptureTarget.Destination)
+    -> FlowVoiceCaptureTarget?
+  {
+    guard let target = model.linkedVoiceTarget, target.destination == destination else { return nil }
+    return target
   }
 
   private var transcript: some View {

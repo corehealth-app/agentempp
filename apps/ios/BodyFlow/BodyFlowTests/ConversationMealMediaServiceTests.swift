@@ -5,6 +5,27 @@ import Testing
 
 @Suite("Command media preparation preserves owned assets and processing identity")
 struct ConversationMealMediaServiceTests {
+  @Test func linkedAudioReadsOnlyItsOwnedProcessedTranscriptAndDiscardsTheTemporaryAsset() async throws {
+    let f = try await Fixture.make()
+    defer { f.remove() }
+    let audio = StagedMedia(fileURL: f.staged.fileURL, kind: .audioNote,
+      mimeType: "audio/wav", sizeBytes: 15, duration: 1.4, channel: .audioRecording)
+    await f.http.stub.respond { request, index in
+      try f.reply(request, assetState: request.httpMethod == "GET" && index > 2 ? "processed" : "uploaded",
+        kind: "audio_note", transcript: " Queijo. ")
+    }
+    let service = try await f.open()
+    let transcript = try await service.transcribeLinkedAnswer(audio, context: f.context)
+    #expect(transcript == "Queijo.")
+    let requests = await f.http.stub.requests
+    #expect(requests.first?.url?.path == "/api/mobile/v1/media")
+    #expect(requests.allSatisfy { $0.url?.path.hasPrefix("/api/mobile/v1/media") == true })
+    #expect(requests.filter { $0.httpMethod == "DELETE" }.count == 1)
+    #expect(await f.uploader.count == 1)
+    #expect(!FileManager.default.fileExists(atPath: f.staged.fileURL.path))
+    await service.close()
+  }
+
   @Test func legacyUploadAndProcessingCannotBorrowTheNeutralPhotoPurpose() async throws {
     let f = try await Fixture.make()
     defer { f.remove() }
@@ -182,14 +203,16 @@ struct ConversationMealMediaServiceTests {
         transport: http.transport, lifecycle: http.lifecycle, lease: lease, uploader: uploader,
         staging: staging, pollInterval: .zero, maximumPolls: 2)
     }
-    func reply(_ request: URLRequest, assetState: String = "uploaded", kind: String = "meal_photo")
+    func reply(_ request: URLRequest, assetState: String = "uploaded", kind: String = "meal_photo",
+      transcript: String? = nil)
       throws
       -> ConversationHTTPReply
     {
-      let asset: [String: Any] = [
+      var asset: [String: Any] = [
         "id": assetID, "kind": kind, "status": assetState, "failure_stage": NSNull(),
         "failure_code": NSNull(),
       ]
+      if let transcript, assetState == "processed" { asset["result"] = ["text": transcript] }
       let create = request.url?.path == "/api/mobile/v1/media"
       let ticket: [String: Any] = [
         "signed_url":

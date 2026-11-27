@@ -12,7 +12,8 @@ import Testing
 @Suite("Actual Flow item editor preserves one original operation")
 @MainActor
 struct FlowConversationMealEditModelTests {
-  @Test func photoAnswerBindsTheOmittedItemAndCannotBeSentAgainAfterReload() async throws {
+  @Test(arguments: [false, true])
+  func photoAnswerBindsTheOmittedItemAndCannotBeSentAgainAfterReload(byVoice: Bool) async throws {
     let f = try FlowEditUIFixture("milk")
     defer { f.base.disk.remove() }
     let root = try #require(JSONSerialization.jsonObject(with: f.groupBody) as? [String: Any])
@@ -40,8 +41,17 @@ struct FlowConversationMealEditModelTests {
     try model.beginPhotoAnswer(group: group, index: 1)
     #expect(model.isPhotoAnswerForm && model.foodName == "feijão")
     #expect(!model.canSave(language: .portugueseBrazil))
-    model.setQuantityText("50", language: .portugueseBrazil)
-    await model.save(language: .portugueseBrazil)
+    if byVoice {
+      let form = try #require(model.photoVoiceAnswerFormID)
+      try await model.submitPhotoVoiceAnswer("Era feijão.", for: form, language: .portugueseBrazil)
+      #expect(model.photoVoiceNeedsQuantity)
+      #expect(await f.base.http.stub.requests.isEmpty)
+      try await model.submitPhotoVoiceAnswer("Cinquenta gramas.", for: form, language: .portugueseBrazil)
+      #expect(!model.photoVoiceNeedsQuantity)
+    } else {
+      model.setQuantityText("50", language: .portugueseBrazil)
+      await model.save(language: .portugueseBrazil)
+    }
     #expect(model.lastSaved != nil && model.pendingOperation == nil)
     let requests = await f.base.http.stub.requests
     #expect(requests.map(\.httpMethod) == ["GET", "POST"])

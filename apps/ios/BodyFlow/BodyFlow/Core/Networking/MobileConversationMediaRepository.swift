@@ -27,8 +27,29 @@ struct MobileConversationMediaRepository: MealMediaProviding {
     -> MediaAssetSnapshot
   { try await media.requestProcessing(attempt) }
   func asset(id: String) async throws -> MediaAssetSnapshot { try await media.asset(id: id) }
+  func transcriptForAudio(id: UUID) async throws -> String {
+    let assetID = id.uuidString.lowercased()
+    let response: ProcessedAudio = try await media.transport.executeMealCapture {
+      try MobileAPIRequest(method: .get, path: MobileMediaRepository.assetPath(assetID))
+    }
+    guard response.id == assetID, response.kind == MediaUploadKind.audioNote.rawValue,
+      response.status == "processed"
+    else { throw MealCaptureFailure.unreadableMedia }
+    guard let text = response.result?.text.trimmingCharacters(in: .whitespacesAndNewlines),
+      !text.isEmpty, text.count <= MealMediaLimits.maximumTextLength
+    else { throw MealCaptureFailure.nothingRecognized }
+    return text
+  }
   func delete(_ attempt: MutationAttempt<MediaAssetCommand>) async throws {
     try await media.delete(attempt)
+  }
+
+  private struct ProcessedAudio: Codable, Sendable {
+    struct Result: Codable, Sendable { let text: String }
+    let id: String
+    let kind: String
+    let status: String
+    let result: Result?
   }
 }
 

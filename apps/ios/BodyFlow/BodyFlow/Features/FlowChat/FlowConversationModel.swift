@@ -135,6 +135,7 @@ final class FlowConversationModel {
   private var groupFailures: Set<UUID> = []
   private let lifetime = FlowConversationLifetime()
   private var mediaService: ConversationMealMediaService?
+  private(set) var linkedVoiceInProgress = false
   private let mediaDependencies: FlowConversationMediaDependencies?
   private var selectedAttachment: FlowConversationAttachment?
   private(set) var mediaPhase: FlowConversationMediaPhase?
@@ -233,6 +234,38 @@ final class FlowConversationModel {
   var captureSelectionIdentity: ConversationCommandContext.Identity? {
     guard !isClosed else { return nil }
     return neutralIntake?.captureSelectionIdentity ?? lastIdentity
+  }
+  var linkedVoiceTarget: FlowVoiceCaptureTarget? {
+    guard hasCurrentScope, mediaService != nil, let identity = context?.identity else { return nil }
+    if let reply = mealReplies?.voiceAnswerFormID {
+      return .init(identity: identity, destination: .mealReply(reply))
+    }
+    if let photo = mealEditor?.photoVoiceAnswerFormID {
+      return .init(identity: identity, destination: .photoReview(photo))
+    }
+    return nil
+  }
+  func submitLinkedVoice(
+    _ staged: StagedMedia, target: FlowVoiceCaptureTarget, language: SupportedAppLanguage
+  ) async throws {
+    guard !linkedVoiceInProgress, linkedVoiceTarget == target, let context, let mediaService else {
+      mediaDependencies?.staging.remove(staged.fileURL)
+      throw ConversationOutboxError.staleObservation
+    }
+    linkedVoiceInProgress = true
+    defer { linkedVoiceInProgress = false }
+    let transcript = try await mediaService.transcribeLinkedAnswer(staged, context: context)
+    try Task.checkCancellation()
+    guard linkedVoiceTarget == target, self.context?.observation.isSameGrant(as: context.observation) == true
+    else { throw CancellationError() }
+    switch target.destination {
+    case .mealReply(let formID):
+      try await mealReplies?.submitVoiceAnswer(transcript, for: formID, language: language)
+    case .photoReview(let formID):
+      try await mealEditor?.submitPhotoVoiceAnswer(transcript, for: formID, language: language)
+    case .composer:
+      break
+    }
   }
   var attachment: FlowConversationAttachment? {
     if let neutralIntake { return hasCurrentScope ? neutralIntake.attachment : nil }

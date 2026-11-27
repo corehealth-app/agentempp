@@ -210,6 +210,34 @@ actor ConversationMealMediaService {
       assetID: assetID, operationID: input.intakeID, context: context, photoKind: .conversationPhoto
     )
   }
+
+  /// Linked answers use the same owned audio processor. They never admit a
+  /// new intake or put raw audio in the meal reply/edit outbox.
+  func transcribeLinkedAnswer(
+    _ staged: StagedMedia, context: ConversationCommandContext
+  ) async throws -> String {
+    guard staged.kind == .audioNote, staged.channel.isAudio else {
+      throw MealCaptureFailure.invalidInput
+    }
+    let captureID = UUID()
+    defer { staging.remove(staged.fileURL) }
+    do {
+      let assetID = try await uploadIntake(staged, captureID: captureID, context: context)
+      try await process(
+        assetID: assetID, operationID: captureID, context: context, photoKind: .conversationPhoto)
+      let transcript = try await run(context: context) {
+        try await self.repository(context).transcriptForAudio(id: assetID)
+      }
+      // This asset has no durable command reference. On an unavailable
+      // connection the server's existing media expiry remains its fallback.
+      try? await discard(captureID: captureID, context: context)
+      return transcript
+    } catch {
+      try? await discard(captureID: captureID, context: context)
+      throw error
+    }
+  }
+
   private func process(
     assetID: UUID, operationID: UUID, context: ConversationCommandContext,
     photoKind: MediaUploadKind

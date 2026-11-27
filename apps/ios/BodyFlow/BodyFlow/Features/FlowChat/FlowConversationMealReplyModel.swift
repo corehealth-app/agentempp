@@ -270,6 +270,38 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     presented = false
     if requestedID == nil { clearForm() }
   }
+  var voiceAnswerFormID: UUID? {
+    guard requestedID == nil, !isLocked, let offer, accepts(offer) else { return nil }
+    return presentation?.id
+  }
+  func submitVoiceAnswer(
+    _ transcript: String, for expectedForm: UUID, language: SupportedAppLanguage
+  ) async throws {
+    guard voiceAnswerFormID == expectedForm, let q = question else {
+      throw ConversationOutboxError.staleObservation
+    }
+    switch q.kind {
+    case "food_name":
+      guard let name = FlowVoiceMealAnswer.name(transcript) else {
+        throw MealCaptureFailure.nothingRecognized
+      }
+      amountText = name
+    case "meal_type":
+      guard let meal = FlowVoiceMealAnswer.meal(transcript) else {
+        throw MealCaptureFailure.nothingRecognized
+      }
+      mealType = meal
+    case "quantity":
+      guard let result = FlowVoiceMealAnswer.quantity(transcript, language: language),
+        q.allowedUnits.contains(result.unit)
+      else { throw MealCaptureFailure.nothingRecognized }
+      amountText = MealProposalNumberParser.format(result.amount, language: language)
+      quantityUnit = result.unit
+    default:
+      throw MealCaptureFailure.nothingRecognized
+    }
+    await submit(language: language)
+  }
   func submit(language: SupportedAppLanguage = .portugueseBrazil) async {
     self.language = language
     guard canSubmit, let context, let offer else { return }

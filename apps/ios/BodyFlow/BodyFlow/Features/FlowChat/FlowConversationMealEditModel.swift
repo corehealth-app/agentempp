@@ -60,6 +60,7 @@ final class FlowConversationMealEditModel {
   private var linkedOrigin: ConversationMealLinkedIdentity?
   private var draft: ConversationMealItemEditDraft?
   private var photoReviewIndex: Int?
+  private(set) var photoVoiceNeedsQuantity = false
   private var requestedAction: ConversationMealEditOperation.Action?
   private var preparation: ConversationMealEditPreparation?
   private var intent: ConversationMealEditOperation?
@@ -258,6 +259,7 @@ final class FlowConversationMealEditModel {
     linkedOrigin = linked
     self.draft = draft
     photoReviewIndex = nil
+    photoVoiceNeedsQuantity = false
     formID = UUID()
     presented = true
     storedFailure = nil
@@ -315,6 +317,40 @@ final class FlowConversationMealEditModel {
     }
     return draft?.hasChanges(language: language) == true
       && draft?.request(language: language) != nil
+  }
+  var photoVoiceAnswerFormID: UUID? {
+    guard isPhotoAnswerForm, !isLocked, let active = presentation else { return nil }
+    return active.id
+  }
+  func submitPhotoVoiceAnswer(
+    _ transcript: String, for expectedForm: UUID, language: SupportedAppLanguage
+  ) async throws {
+    guard photoVoiceAnswerFormID == expectedForm, draft != nil else {
+      throw ConversationOutboxError.staleObservation
+    }
+    let answer = FlowVoiceMealAnswer.photo(transcript, language: language)
+    guard answer.name != nil || answer.amount != nil else {
+      throw MealCaptureFailure.nothingRecognized
+    }
+    if let amount = answer.amount {
+      let grams: Decimal
+      switch amount.unit {
+      case "g": grams = amount.amount
+      case "kg": grams = amount.amount * 1_000
+      default: throw MealCaptureFailure.invalidInput
+      }
+      guard grams <= 9_999 else { throw MealCaptureFailure.invalidInput }
+      setQuantityText(MealProposalNumberParser.format(grams, language: language), language: language)
+    }
+    if let name = answer.name { foodName = name }
+    // Only the same item's already-authored quantity may complete a name-only answer.
+    // A detection without a reliable quantity requires the person to supply it.
+    guard canSave(language: language) else {
+      photoVoiceNeedsQuantity = quantityText(language: language).isEmpty
+      return
+    }
+    photoVoiceNeedsQuantity = false
+    await save(language: language)
   }
   func save(language: SupportedAppLanguage) async {
     guard canSave(language: language), let context else { return }

@@ -10,6 +10,73 @@ import Testing
 
 @Suite("Actual linked question UI preserves original typed intent")
 @MainActor struct FlowConversationMealReplyModelTests {
+  @Test func spokenQuantitiesPreserveUnitsAndRefuseAlternatives() throws {
+    let language = SupportedAppLanguage.portugueseBrazil
+    let milk = try #require(FlowVoiceMealAnswer.quantity("Duzentos mililitros.", language: language))
+    #expect(milk.amount == 200 && milk.unit == "mL")
+    let whey = try #require(FlowVoiceMealAnswer.quantity("Uma medida.", language: language))
+    #expect(whey.amount == 1 && whey.unit == "scoop")
+    let photo = FlowVoiceMealAnswer.photo("150 g de queijo.", language: language)
+    #expect(photo.name == "queijo" && photo.amount?.amount == 150)
+    #expect(FlowVoiceMealAnswer.meal("Foi o jantar.") == .jantar)
+    #expect(FlowVoiceMealAnswer.quantity("Cem ou cinquenta gramas.", language: language) == nil)
+    #expect(FlowVoiceMealAnswer.photo("Não foi queijo.", language: language).name == nil)
+  }
+
+  @Test func spokenAnswerCannotAttachToAnotherQuestionAndOnlySendsTheSelectedLinkedReply() async throws {
+    let f = try ReplyControllerFixture()
+    defer { f.disk.remove() }
+    await f.http.lifecycle.replace(f.disk.lease)
+    await f.http.stub.respond { _, _ in throw URLError(.networkConnectionLost) }
+    let controller = try await f.open()
+    let model = try await FlowConversationMealReplyModel.open(
+      controller: controller, lifecycle: f.http.lifecycle, lease: f.disk.lease
+    ) { _, _ in }
+    model.accept(f.context)
+    let original = try f.disk.intent()
+    try model.begin(parentBinding: original.parentBinding, parentDecisionHash: original.parentDecisionHash,
+      question: original.question)
+    let oldForm = try #require(model.voiceAnswerFormID)
+    model.dismiss()
+
+    let newParentID = UUID()
+    let parent = try JSONDecoder().decode(ConversationThreadPageSnapshot.Binding.self,
+      from: JSONSerialization.data(withJSONObject: [
+        "owner_id": original.parentBinding.ownerID.uuidString.lowercased(),
+        "command_id": newParentID.uuidString.lowercased(),
+        "input_hash": String(repeating: "f", count: 64),
+        "command_protocol": "conversation.command.v1", "kind": "meal.report",
+        "epoch": original.parentBinding.epoch.uuidString.lowercased(),
+        "admitted_at": original.parentBinding.admittedAt,
+      ]))
+    var wire = try #require(JSONSerialization.jsonObject(with: original.question.encodedData) as? [String: Any])
+    wire["kind"] = "food_name"
+    wire["food_index"] = 1
+    wire["food_name"] = "alimento da foto"
+    let question = try JSONDecoder().decode(ConversationThreadPageSnapshot.Question.self,
+      from: JSONSerialization.data(withJSONObject: wire))
+    try model.begin(parentBinding: parent, parentDecisionHash: original.parentDecisionHash,
+      question: question)
+    await #expect(throws: ConversationOutboxError.staleObservation) {
+      try await model.submitVoiceAnswer("Queijo.", for: oldForm, language: .portugueseBrazil)
+    }
+    #expect(model.amountText.isEmpty)
+    #expect(await f.http.stub.requests.isEmpty)
+    let current = try #require(model.voiceAnswerFormID)
+    try await model.submitVoiceAnswer("Era queijo.", for: current, language: .portugueseBrazil)
+    let pending = try #require(model.pendingIntent)
+    let packet = try #require(JSONSerialization.jsonObject(with: pending.wireBody) as? [String: Any])
+    let input = try #require(packet["input"] as? [String: Any])
+    let answer = try #require(input["answer"] as? [String: Any])
+    #expect(pending.parentBinding.commandID == newParentID)
+    #expect(answer["name"] as? String == "queijo")
+    #expect(answer["food_index"] as? Int == 1)
+    #expect(await f.http.stub.requests.map(\.httpMethod) == ["POST"])
+    #expect(await f.http.stub.requests.first?.httpBody == pending.wireBody)
+    #expect(model.canCheckStatus)
+    await model.close()
+  }
+
   @Test func actualRuntimeSourceInstallsReplyWithSameOriginalAuthPatientScopeAndSharedVault()
     async throws
   {

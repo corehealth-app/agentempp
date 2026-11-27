@@ -17,6 +17,7 @@ import {
   type ConversationMealInterpretation,
   type ConversationMealInterpretationSource,
   freezeInterpretation,
+  type MealInterpretationModelResult,
   mealInterpretationSchema,
 } from './conversation-meal-interpretation-contracts'
 import { validateConversationMealInterpretationModel } from './conversation-meal-interpretation-validation'
@@ -104,27 +105,55 @@ function existing(
   return freezeInterpretation({ status: 'interpreted', command, interpretation })
 }
 
-/** A bound send already declares consumption when there is no text to interpret.
- * Quantities, confidence and nutrition references still pass through materialization. */
-function interpretCaptionlessMealPhoto(
+/** A bound send declares consumption. A caption that only identifies the meal
+ * and its independently verified day still refers to all bound visual items. */
+function interpretBoundMealPhoto(
   command: BoundConversationMealCommand,
   source: ConversationMealInterpretationSource,
   attemptId: string,
 ): ConversationMealInterpretation | null {
   const input = command.command
-  const observation = source.sources[0]
+  const [first, second] = source.sources
+  const caption = first?.unit === 'media_caption' ? first.text : null
+  const observation = caption === null ? first : second
   if (
     !('intake_origin' in input) ||
     input.source.channel !== 'media' ||
     input.source.user_action !== 'report_actual_record' ||
-    input.source.caption !== undefined ||
     source.media_binding?.kind !== 'conversation_photo' ||
     source.media_binding.catalog_version !== 2 ||
-    source.sources.length !== 1 ||
+    source.sources.length !== (caption === null ? 1 : 2) ||
     observation?.unit !== 'vision_items' ||
     !observation.visual_items.length
   )
     return null
+
+  const textSources: MealInterpretationModelResult['sources'] = []
+  if (caption === null) {
+    if (input.source.caption !== undefined) return null
+  } else {
+    const description =
+      /^(?<report>(?:isso|isto|esse|essa|este|esta) foi) (?:meu|minha) (?:café da manhã|cafe da manha|almoço|almoco|jantar|lanche|refeição|refeicao) de (?<day>ontem|anteontem)[.!]?$/iu.exec(
+        caption,
+      )?.groups
+    if (
+      input.source.caption !== caption ||
+      !source.reported_day ||
+      !description?.report ||
+      description.day?.toLowerCase() !== source.reported_day
+    )
+      return null
+    const reportEnd = description.report.length
+    textSources.push({
+      unit: 'media_caption',
+      classification: 'reported',
+      spans: [
+        { start: 0, end: reportEnd, kind: 'report', food_index: null },
+        { start: reportEnd, end: caption.length, kind: 'other', food_index: null },
+      ],
+      visual_indexes: [],
+    })
+  }
 
   // At least one portion distinguishes a partial meal from the single
   // missing-portion sentinel used for a nutrition label.
@@ -142,6 +171,7 @@ function interpretCaptionlessMealPhoto(
       decision: 'reported_meal',
       reason: 'explicit_media_action',
       sources: [
+        ...textSources,
         { unit: 'vision_items', classification: 'visual', spans: [], visual_indexes: indexes },
       ],
       foods: indexes.map((index) => ({
@@ -267,7 +297,7 @@ export async function interpretPersistedConversationMeal(
       const remainingMs = deadline - Date.now()
       if (remainingMs <= 0) return reconciliation()
       const returned =
-        interpretCaptionlessMealPhoto(command, source, claim.attempt_id) ??
+        interpretBoundMealPhoto(command, source, claim.attempt_id) ??
         (await interpret(source, { attemptId: claim.attempt_id, remainingMs }))
       interpreted = mealInterpretationSchema.parse(structuredClone(returned))
       if (

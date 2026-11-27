@@ -127,11 +127,42 @@ function run(d: ReturnType<typeof dependencies>, raw: unknown = candidateCommand
 
 describe('actual durable meal interpretation composition', () => {
   it.each([
-    { caption: null, missingPortion: false },
-    { caption: null, missingPortion: true },
-    { caption: 'Só queria saber o que tem na foto', missingPortion: false },
-  ])('uses only explicit, captionless photo intent locally (%o)', async ({
+    { caption: null, decision: 'local', missingPortion: false },
+    { caption: null, decision: 'local', missingPortion: true },
+    { caption: 'Só queria saber o que tem na foto', decision: 'provider', missingPortion: false },
+    {
+      caption: 'Esse foi meu jantar de ontem.',
+      capturedDay: '2026-11-03',
+      decision: 'local',
+      missingPortion: true,
+    },
+    {
+      caption: 'Essa foi minha refeição de anteontem.',
+      capturedDay: '2026-11-02',
+      decision: 'local',
+      missingPortion: false,
+    },
+    {
+      caption: 'Esse foi meu jantar de ontem.',
+      capturedDay: '2026-11-02',
+      decision: 'provider',
+      missingPortion: false,
+    },
+    {
+      caption: 'Esse foi meu jantar de ontem.',
+      decision: 'provider',
+      missingPortion: false,
+    },
+    {
+      caption: 'Esse foi meu jantar de ontem, mas deixei o pão.',
+      capturedDay: '2026-11-03',
+      decision: 'provider',
+      missingPortion: false,
+    },
+  ])('uses independently bound photo intent locally (%o)', async ({
     caption,
+    capturedDay,
+    decision,
     missingPortion,
   }) => {
     const base = candidateCommand()
@@ -211,8 +242,8 @@ describe('actual durable meal interpretation composition', () => {
         },
         catalog: {},
         owner: {},
-        clinical: {},
-        day: {},
+        clinical: capturedDay ? { date: '2026-11-04' } : {},
+        day: capturedDay ? { date: capturedDay } : {},
       },
     })
     d.interpreter.interpret.mockResolvedValue({
@@ -226,7 +257,7 @@ describe('actual durable meal interpretation composition', () => {
       result,
     }))
     const outcome = await run(d, command.command)
-    if (caption) {
+    if (decision === 'provider') {
       expect(d.interpreter.interpret).toHaveBeenCalledTimes(1)
       expect(outcome.interpretation).toMatchObject({ decision: 'clarification_required' })
     } else {

@@ -270,7 +270,8 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     // Removing the reviewed banana prata alias reproduces the previous body hash.
     ['69702', '86d8a1ded5634dd2fcd243f46acaea64a5517f2aaa794b75ea1a35dbdf6e393c'],
     ['53637', '24a52b32484ed1661004e044c84360f8b88c831c459c8ceca19878e549256fe3'],
-    ['7311', '573bf3689c7ec8a557195140599151dc0313a99be8535b769f644a41b0a63942'],
+    // The verified-date picture caption changes only the bound interpretation body.
+    ['7311', 'b11fd4f875d046393266028129f95122b0ca3b5427180c1840c3a4ed07fe63ee'],
     ['84883', '2d92f920dc7d68eef20d87309ecd098814392c103ab64ad71642b5a1b4f454b1'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
@@ -866,8 +867,9 @@ function certifyStructuredMealHelperT51() {
   ])
   expect(providerChunks).toHaveLength(1)
   const providerWireChunk = providerChunks[0] ?? ''
+  // Only module 7311 changes; restoring that body reproduces the prior chunk.
   expect(createHash('sha256').update(readFileSync(providerWireChunk)).digest('hex')).toBe(
-    '11ab64adeca2f0183d2bbe681591af82df1720608ad16747672ecf4191a29dd3',
+    'bc2654e811cb95f8c85f55947d83bbae00cd3bbbb25caec0c29ed46b39c4affb',
   )
   const interpreter = readFileSync(
     resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),

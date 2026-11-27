@@ -411,7 +411,14 @@ describe('actual source-to-factual meal registration composition', () => {
         error: null,
       })),
     } as unknown as ServiceClient
-    const result = await registerPersistedConversationMeal(
+    let releaseCalculation = () => {}
+    const calculationGate = new Promise<void>((resolve) => {
+      releaseCalculation = resolve
+    })
+    const readRoutine = vi.fn(() => history)
+    Object.assign(history, { limit: readRoutine })
+    const calculationStarted = vi.fn()
+    const registration = registerPersistedConversationMeal(
       client,
       candidateAuth,
       `cmsg1:${action.commandId}`,
@@ -420,6 +427,10 @@ describe('actual source-to-factual meal registration composition', () => {
         ...d,
         materialize: materializeConversationMealInterpretation,
         calculate: async (...args) => {
+          if (personal) {
+            calculationStarted()
+            await calculationGate
+          }
           const result = await calcMealMacros(...args)
           if (!calculationMiss) return result
           const items = result.items.map((item, index) =>
@@ -459,6 +470,19 @@ describe('actual source-to-factual meal registration composition', () => {
         },
       },
     )
+    if (personal) {
+      try {
+        await vi.waitFor(() => {
+          expect(calculationStarted).toHaveBeenCalledOnce()
+          expect(readRoutine).toHaveBeenCalledOnce()
+        })
+        expect(d.writer.prepare).not.toHaveBeenCalled()
+      } finally {
+        releaseCalculation()
+        await registration
+      }
+    }
+    const result = await registration
     if (ambiguous && !partial) {
       expect(result).toMatchObject({ status: 'not_recorded', reason: 'meal_type_required' })
       expect(d.writer.prepare).not.toHaveBeenCalled()

@@ -606,6 +606,22 @@ export async function registerPersistedConversationMeal(
     // Labels require a separate explicit consent command. They are not generic
     // food references and cannot silently become approval or be discarded.
     if (m.nutrition_label) return notRecorded(command, 'nutrition_label_confirmation_required')
+    const text = evidence.sources
+      .filter((source) => source.unit !== 'vision_items')
+      .map((source) => source.text ?? '')
+      .join('\n')
+    let mealType = command.command.meal_type ?? detectExplicitMealType(text)
+    const timezone = s.context.owner.timezone
+    const admittedAt = new Date(b.admitted_at)
+    // The meal slot is independent of nutrient lookup. Keep the same owned,
+    // admission-bounded routine read and only use its result after nutrition
+    // has qualified. A failed lookup cannot grant a guessed meal slot.
+    const routine =
+      !mealType && evidence.source_units.includes('vision_items') && typeof timezone === 'string'
+        ? getPersonalMealWindows(db, owner, timezone, admittedAt, {
+            excludeAtOrAfterReference: true,
+          }).catch(() => null)
+        : null
     const inputs = m.inputs.map((input) => ({ ...input.calculation_input }))
     const initial = await calculate(db, inputs, String(s.context.owner.country), owner, {
       consumptionPolicy: 'consumed-meal-v1',
@@ -630,25 +646,11 @@ export async function registerPersistedConversationMeal(
         i.foods.map((food) => food.index),
       )
     if (hasUnresolved) materialBinding(result.material, i, command, s)
-    // Compare the saved routine with the account's civil time at admission.
-    // Older or conflicting temporal claims are handled by interpretation first.
-    const text = evidence.sources
-      .filter((source) => source.unit !== 'vision_items')
-      .map((source) => source.text ?? '')
-      .join('\n')
-    let mealType = command.command.meal_type ?? detectExplicitMealType(text)
-    const timezone = s.context.owner.timezone
-    if (
-      !mealType &&
-      evidence.source_units.includes('vision_items') &&
-      typeof timezone === 'string'
-    ) {
-      const admittedAt = new Date(b.admitted_at)
-      const routine = await getPersonalMealWindows(db, owner, timezone, admittedAt, {
-        excludeAtOrAfterReference: true,
-      })
+    if (routine && typeof timezone === 'string') {
+      const windows = await routine
+      if (!windows) return unavailable()
       const localHour = getLocalHour(timezone, admittedAt)
-      mealType = resolveUnambiguousMealTypeByHour(localHour, routine)
+      mealType = resolveUnambiguousMealTypeByHour(localHour, windows)
       // The older linked-answer writer requires a complete meal. Keep the
       // existing civil slot for partial photos so that known items are saved.
       if (!mealType && result.material.photo_review?.length) {

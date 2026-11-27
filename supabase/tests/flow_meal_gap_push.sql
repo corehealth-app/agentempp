@@ -41,8 +41,8 @@ BEGIN
   IF public.claim_flow_meal_gap_notice(owner_id, device_id, topic, local_day, 'before_close','almoco') IS NOT NULL
     THEN RAISE EXCEPTION 'An explicitly skipped meal must not produce a notification'; END IF;
 
-  INSERT INTO public.meal_logs(user_id, meal_type, food_name, consumed_at)
-  VALUES (owner_id, 'lanche', 'Synthetic snack', now_at);
+  INSERT INTO public.meal_logs(user_id, meal_type, food_name, consumed_at, quantity_g, kcal, protein_g, carbs_g, fat_g, source)
+  VALUES (owner_id, 'lanche', 'Synthetic snack', now_at, 100, 120, 4, 17, 4, 'user_kcal');
   IF public.claim_flow_meal_gap_notice(owner_id, device_id, topic, local_day, 'before_close','lanche') IS NOT NULL
     THEN RAISE EXCEPTION 'A meal already recorded for the local day must not produce a notification'; END IF;
 
@@ -115,8 +115,8 @@ BEGIN
       'id', notice_id, 'local_date', local_day, 'meal_type', 'jantar', 'state', 'pending'
     ) OR public.read_flow_meal_gap_notice(gen_random_uuid(), notice_id) IS NOT NULL
     THEN RAISE EXCEPTION 'Only the owner should be able to read the pending reminder'; END IF;
-  INSERT INTO public.meal_logs(user_id, meal_type, food_name, consumed_at)
-  VALUES (u, 'jantar', 'Synthetic dinner', now_at);
+  INSERT INTO public.meal_logs(user_id, meal_type, food_name, consumed_at, quantity_g, kcal, protein_g, carbs_g, fat_g, source)
+  VALUES (u, 'jantar', 'Synthetic dinner', now_at, 200, 240, 8, 34, 8, 'user_kcal');
   IF public.read_flow_meal_gap_notice(u, notice_id)->>'state' IS DISTINCT FROM 'resolved'
     THEN RAISE EXCEPTION 'Opening a reminder should recheck the current diary first'; END IF;
   IF public.finish_flow_meal_gap_notice(notice_id, lease_id, 'accepted')

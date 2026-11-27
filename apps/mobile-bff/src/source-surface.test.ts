@@ -266,11 +266,11 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ).toBe(hash)
   for (const [id, hash] of [
     ['26432', '78dba943a656b4f72cc74802f3de9f2d4e89b340292d530877c2526414d03c2a'],
-    ['418', 'b6f37d51d0e565142e530832b760faac2dbb8328acc25a2e129a8a6ab0ffdfb9'],
+    ['418', '1c2da29d3556a3c86a93cbe1139b49ce88081e79c651a21e29620713d57411df'],
     ['69702', '2cc3570a228d06c69c6f65039216f397bef9389b38be729da4d1cb2d0c14539e'],
-    ['53637', 'aba69758fc27c150f8c1ccc0b9fe2b8b1b39be381a02d149f2fef21ee91e9776'],
-    ['7311', 'd763797dbd0054c54d60fd7d56a159875f32f9883d554fc7b87e55c5dddcef94'],
-    ['84883', 'fe4ecf65fb57042fa779ed51e572ae817d1226bdd59db349b28d4a5481256b0b'],
+    ['53637', '24a52b32484ed1661004e044c84360f8b88c831c459c8ceca19878e549256fe3'],
+    ['7311', '573bf3689c7ec8a557195140599151dc0313a99be8535b769f644a41b0a63942'],
+    ['84883', '2d92f920dc7d68eef20d87309ecd098814392c103ab64ad71642b5a1b4f454b1'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
       (file) =>
@@ -282,7 +282,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
   for (const [name, hash] of [
     [
       'conversation-intake-contracts.ts',
-      '109337a08ea493451154ff2ab1664cbe88b8bcaf067b6a23fad0c06974a79c37',
+      '9a1bb228b386b473c0e8b7650f1184408d3c8012bac89ee2accc0eca184645db',
     ],
     [
       'conversation-intake-media-origin.ts',
@@ -290,11 +290,11 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-intake-router.ts',
-      '5bc90ab6ea6e926d6c738848bb899f52d292e31cceadd011770623b013a8c53a',
+      '1f62d21ca01d01850cc31b87da816360df3fbd0280d41d774fd7534cfe725211',
     ],
     [
       'conversation-meal-interpretation-contracts.ts',
-      'c7395069566844e764eed2bc5b212e490e9e831710d9a20a1184e1cd28b57013',
+      'cda2d498d80d576a35926ee50bf587ad7c3450dfa060b772e33e04d85db4d47d',
     ],
     [
       'conversation-meal-materialization.ts',
@@ -302,11 +302,11 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-registration-service.ts',
-      '2ddab88c41d1391424f75427f5c7d4a81b97feef417a6f61c705a7ed3aaddfd9',
+      '6a85be2dc2717adefaf38c6f07e805ad75ef840cc1f080b918e57ec4e84bf7e3',
     ],
     [
       'conversation-meal-edit-contracts.ts',
-      '57dfaa94c0a082dc3ee03d9461546143beb9a23c1ea495ccaac1de21537154b5',
+      'f4280b0dc8f79a2bbf18e41cddeba981e9205a8ac932a6782657b5c4784a1a33',
     ],
     [
       'conversation-meal-source.ts',
@@ -391,8 +391,8 @@ const conversationParserLinkPins = {
     alternate: '26b3692e11ee91492552f8efd5e5b6f50f42045f9613d972d8618dbb5044746b',
   },
   '41216': {
-    canonical: '564ded8824c22fff0b05f31115aed1b5bea64c6ca0d33b0fe54b88538645d82b',
-    alternate: '4448de0b644b6d1a7184ac5a5d25df7358b55c8bce719aa88f544f2d0281fd03',
+    canonical: 'e402a4fcf5057f0b7f502df436f2449927c1ce97eda83f19cb355e3032dab1b4',
+    alternate: '62d90b21958319d41fd38c9fc1f04d6c735d71d36c8a364378fb71e32392e8a1',
   },
 } as const
 
@@ -428,7 +428,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
         ),
       )
       .digest('hex'),
-  ).toBe('34f007b0bf2eb9b450b6dba4208de1740c75bb52cb0be65fa862ce62ba823c93')
+  ).toBe('8b65d6ff024e1bce000edccbae0714e47a3b954863aabd511f27a51c4444e1b7')
   const source = ts.createSourceFile(
     'nutrition-shared.js',
     text,
@@ -473,6 +473,8 @@ function certifyNutritionJournalSplitContent(text: string): void {
   }
   const bodies = physicalBodies.filter((value) => value !== movedParser)
   expect(bodies, 'certified nutrition-shared module count').toHaveLength(20)
+  // The dated interpretation and receipt modules are pinned as full current
+  // bodies. The unchanged legacy modules still use their exact restorations.
   expect(
     bodies
       .map(
@@ -483,7 +485,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
                 ? restoreImageParserLinkR106('67584', body)
                 : id === '36693'
                   ? certifyConversationParserLink(id, body)
-                  : id === '65556'
+                  : id === '65556' || id === '13300'
                     ? body
                     : restorePrivateMediaContractR168(id, body),
             )
@@ -497,18 +499,18 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '11098:d4857c703c68cd66c3f72119bbc71906f1789861cc2123935c8f7b12120fc40b',
       '40747:411b3586832f4b981362200d53a3836cff6395e29cee48554464d97d48fa94a9',
       '93639:ce2fe7a229147bad36167351267198cbd255aa881701566612da47ce193e2e04',
-      '49634:e0cfd36f17df52ccd53f400f3f6f311cebf661ac8cdf5e5ab1feada0a7114902',
-      '85685:41deccfd9e90c2b6a6de3cf6e0493c94e9776c8a1bbc1f5fe4ee3bfe76475b1a',
-      '13300:6447848bbd6a737c168e7027e61dc5c57a12e9881a8104ffbc9829810b07122c',
+      '49634:7677f2c398354eac5e6719df588b821a85f364543bf7774c95d96e6e7a5d6fb9',
+      '85685:10fe8857c7977d2b2023fdfe2acf939fb5db496d8b914182a34301d167a39354',
+      '13300:e8db9d297e0e887fbaca4fec74e4c3fb3c81192d35354386c95986fcf55d515c',
       '19514:571af417dce8a1714280e41071d29fd1b66446c8309cd124f40b8942f8422c13',
       '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
       '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
       `36693:${conversationParserLinkPins['36693'].canonical}`,
-      '52158:003311e0209b0a25f0014d77ec873519377d4dcd2854ae4a585f75acf9222f9a',
+      '52158:f362d66e2870f166ff6367edcabde2ee3180127765f23a9b5142effbf361e8e2',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
-      '65556:f1a67ad59fd6f76d3b33142c2051372a148ada4d294a812b76309996afccaefd',
-      '69423:37ddc2d0a8b30f80f4fa3636ccf2f406ebf262172e88117949b472d070fbc7a3',
+      '65556:49028e83d57992bf3ecbcc68ad4f03fb138e3279ae2845fe8f7a6d2c5d719907',
+      '69423:2d1d6acd50a441c85535393551d129df877ea51440bd289140b054f3b3284523',
       '69431:d23ccd1a4aa218daf79f4cc51f9562056582cf964ac06c0e19fa481dd2a9a770',
       '67584:ff042cee49ac972821a92bd39b840a0e19208a3580392eb75625de480f75ee1e',
       '69837:de43933bd7d89880c4ff178067cc8261700f1b969bdbbfa605c385ba219b1f77',
@@ -701,7 +703,7 @@ function certifyExactSharedTable(
 // validated discourse. Pin the complete intake table and its source boundaries.
 function certifyNegotiatedIntakeModule(body: string): void {
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '8964e90d90633d091e3b31a390ad7b94cf43dfa1739d12876b76ce11b0246860',
+    '0dded8e42f33edf70c71daa1bc9a051afa4b7fe657098121579740b96763a48e',
   )
   for (const marker of [
     'admit_conversation_versioned_media_intake_v2',
@@ -718,18 +720,18 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
   const bodies = certifyExactSharedTable(chunk, [
     ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
     ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-    ['80804', '09c86eeba660bb044e7f284f4141b6d2c6147083f3622b4289e605bde56c50c7'],
+    ['80804', 'ea12ce0acbf1c6506289658678629ca9bd6fad8799719cee2389887b9c9ed079'],
   ])
   const body = bodies.get('80804') ?? ''
   certifyNegotiatedIntakeModule(body)
   for (const [name, hash] of [
     [
       'conversation-intake-contracts.ts',
-      '109337a08ea493451154ff2ab1664cbe88b8bcaf067b6a23fad0c06974a79c37',
+      '9a1bb228b386b473c0e8b7650f1184408d3c8012bac89ee2accc0eca184645db',
     ],
     [
       'conversation-intake-driver.ts',
-      '925f134628c3e8853337bb2f5cab4c45a921cf367a52506b62f8f7b1ca0b7c04',
+      '3df1b575e63ffa894a553c0d3c1f7dd237ed482b9e228dc3a3ef9397579c4b70',
     ],
     [
       'conversation-intake-media-negotiation.ts',
@@ -741,15 +743,15 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
     ],
     [
       'conversation-intake-router.ts',
-      '5bc90ab6ea6e926d6c738848bb899f52d292e31cceadd011770623b013a8c53a',
+      '1f62d21ca01d01850cc31b87da816360df3fbd0280d41d774fd7534cfe725211',
     ],
     [
       'conversation-intake-routes.ts',
-      'a84fa3c875caa4cd5104feb3ba231c27b3ed0a4d2e979f021e3b2774c6d9b4ac',
+      '6f54759f094b36dfc4d5a6260b6f4b5039417e53a0f233972476241be26ebd33',
     ],
     [
       'conversation-intake-runtime.ts',
-      'ad3cb43d1eec4b7366f3998cf64da14ee156775e578a7ed6977a8c1774998552',
+      '72886831b41d8239028dfbee28f2872b5ef942a112738da7f9d4bdbcd1e8dc1a',
     ],
     [
       'conversation-intake-store.ts',
@@ -773,16 +775,16 @@ function certifyConversationTurnTable(chunk: string): string {
   const bodies = certifyExactSharedTable(
     chunk,
     [
-      ['1358', 'f4d3db9eed3cf57c60e15f4f9603d10107ee39a9df607840eb411ecec9a582c3'],
+      ['1358', '4ba75630b2111e32d0f3144c133c4369290f3cea6019c4d8c5f403ac80514311'],
       ['41216', conversationParserLinkPins['41216'].canonical],
-      ['50522', '0039979f25f5e30108abbe1d31a3d4a07b3ffabd719dc826bedc78469faf349f'],
+      ['50522', '118251e5495e4fd0d0b63c5fc2bb8ace2590a7baa15b1dfbfa36cf126b4aaba0'],
     ],
     (id, body) => (id === '41216' ? certifyConversationParserLink(id, body) : body),
   )
   return bodies.get('41216') ?? ''
 }
 /** New shared read edge, extracted from the previous inline journal entry.
- * Certify complete current bodies and their unchanged authoritative sources;
+ * Certify complete current bodies and their authoritative sources;
  * keep every physical consumer and global forbidden scan independently checked. */
 function certifyT48OriginPageChunk(chunk: string): void {
   // R204 selects the versioned meal and unified readers. The other
@@ -798,7 +800,7 @@ function certifyT48OriginPageChunk(chunk: string): void {
     ],
     [
       'conversation-meal-thread-page-store.ts',
-      'f18c1ac5025b5e3273fb7dfc8b12581227e6f2a9da0f2abed794ee98fb88325c',
+      '21c092173f37b52af41eca438a984215dabf9b8853e7fc4dcbef1c1eb1ddb911',
     ],
   ] as const)
     expect(
@@ -809,7 +811,7 @@ function certifyT48OriginPageChunk(chunk: string): void {
   certifyExactSharedTable(chunk, [
     ['11127', 'af1048cd20f83493747e07f281dda8c9d5adebf9888864a6460321ab95afc9bf'],
     ['46469', '57ef8adb59a381861c2ddcee2dcb6000c88fd2b78fd7824aebfe1f43f0beceab'],
-    ['58670', '368c287618c1e8165a1ada7f2673722bf196773c3a9499c8d9052add60ac13dc'],
+    ['58670', 'b3554b08dde50626257a88c37528c8b234af9836d418b217fd5b9faaf5ddcac7'],
   ])
 }
 const photoPurposeRoutesR59 = [
@@ -864,7 +866,7 @@ function certifyStructuredMealHelperT51() {
   expect(providerChunks).toHaveLength(1)
   const providerWireChunk = providerChunks[0] ?? ''
   expect(createHash('sha256').update(readFileSync(providerWireChunk)).digest('hex')).toBe(
-    '8f3410463b82ef324b381898b2020288e49b2719646b86c4d09ea90af90219b0',
+    '11ab64adeca2f0183d2bbe681591af82df1720608ad16747672ecf4191a29dd3',
   )
   const interpreter = readFileSync(
     resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),
@@ -1843,8 +1845,8 @@ describe('authoritative Mobile API source surface', () => {
     expect(chunks).toHaveLength(1)
     const body = certifyNegotiatedIntakeTable(chunks[0] ?? '')
     for (const [original, replacement] of [
-      ['o:()=>af,', ''],
-      ['o:()=>af,', 'o:()=>af,x:()=>af,'],
+      ['ol:()=>ah,', ''],
+      ['ol:()=>ah,', 'ol:()=>ah,x:()=>ah,'],
       ['MOBILE_CONVERSATION_INTAKES_ENABLED', 'MOBILE_CONVERSATION_UNREVIEWED'],
       ['X-Conversation-Media-Provenance', 'X-Unapproved-Provenance'],
       ['conversation.intake-result.v2', 'conversation.intake-result.v1'],
@@ -2057,14 +2059,14 @@ describe('authoritative Mobile API source surface', () => {
     ).toEqual(['GET', 'HEAD', 'POST', 'dynamic', 'maxDuration', 'runtime'])
   })
 
-  test('keeps the v1 journal source unchanged and read-only Auth factory inert with no journal calls', () => {
+  test('pins the date-aware journal and keeps its read-only Auth factory inert', () => {
     const library = resolve(appRoot, '../admin/src/lib/mobile-api')
-    // Exact prior5e8-parent source, independently checked before the new build.
+    // The journal checks the actual commit instant and preserves older receipt reads.
     expect(
       createHash('sha256')
         .update(readFileSync(resolve(library, 'conversation-meal-journal-store.ts')))
         .digest('hex'),
-    ).toBe('d006ed0689e1d4043b4fb31bd3c1026313eca2e7ff9c810fe6f3513bffb881b4')
+    ).toBe('8b7a50c87017849b5770288383827353824b93cb1d75a0a8e73f1fc6c1c0eb9d')
     const parse = (name: string) =>
       ts.createSourceFile(
         name,

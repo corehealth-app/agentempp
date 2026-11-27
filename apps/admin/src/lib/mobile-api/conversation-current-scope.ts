@@ -28,6 +28,8 @@ type ReadonlyAuth = ConversationReadonlyAuth
 export interface ConversationCurrentScopeDependencies {
   readonly auth?: ReadonlyAuth
   readonly clinical?: CurrentClinicalStateSource
+  /** The caller's mapping ports must be independent, read-only lookups. */
+  readonly parallelMappingReads?: boolean
 }
 const identitySchema = z
   .object({
@@ -163,15 +165,25 @@ export function createConversationCurrentScope<Scope extends ConversationCurrent
       async capture(request: Parameters<typeof capture>[0]) {
         return snapshot(await capture(request))
       },
-    })
+    }),
+    parallelMappingReads = dependencies.parallelMappingReads === true
   let closed: MobileApiError | null = null,
     previous: bigint | null = null
   const checkMapping = async () => {
     const current = await verified(ports, auth.accessToken)
     if (current.id !== auth.authUserId || current.id !== auth.identity.id)
       throw failure(409, 'conversation_patient_changed')
-    await nonAdmin(ports, current.id)
-    const p = await patient(ports, current.id)
+    let p: MobilePatient
+    if (parallelMappingReads) {
+      const [, verifiedPatient] = await Promise.all([
+        nonAdmin(ports, current.id),
+        patient(ports, current.id),
+      ])
+      p = verifiedPatient
+    } else {
+      await nonAdmin(ports, current.id)
+      p = await patient(ports, current.id)
+    }
     if (p.id !== owner || p.authUserId !== auth.authUserId)
       throw failure(409, 'conversation_patient_changed')
   }

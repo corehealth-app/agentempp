@@ -4,7 +4,7 @@ import { replyFixture } from './__fixtures__/conversation-meal-reply'
 import { createConversationCurrentScope } from './conversation-current-scope'
 import { createConversationMealReplyScope } from './conversation-meal-reply-scope'
 
-function setup() {
+function setup(parallelMappingReads = false) {
   const f = replyFixture(),
     binding = { authUserId: f.auth.authUserId, ownerId: f.auth.userId, epoch: f.identity.epoch },
     auth = {
@@ -16,6 +16,7 @@ function setup() {
     scope = createConversationCurrentScope({} as ServiceClient, f.auth, binding, {
       auth,
       clinical: { capture },
+      parallelMappingReads,
     })
   return { ...f, binding, authPort: auth, capture, scope }
 }
@@ -46,6 +47,58 @@ describe('shared current conversation owner and epoch observation', () => {
       status: 403,
       code: 'patient_admin_account_conflict',
     })
+  })
+
+  it('overlaps only verified mapping reads and still waits for both before observing clinical state', async () => {
+    const f = setup(true)
+    let confirmAuth!: () => void
+    const auth = new Promise<void>((resolve) => {
+      confirmAuth = resolve
+    })
+    let confirmNonAdmin!: () => void
+    const nonAdmin = new Promise<void>((resolve) => {
+      confirmNonAdmin = resolve
+    })
+    f.authPort.verifyAccessToken.mockImplementationOnce(async () => {
+      await auth
+      return f.auth.identity
+    })
+    f.authPort.isAdmin.mockImplementationOnce(async () => {
+      await nonAdmin
+      return false
+    })
+
+    const pending = f.scope.observe(f.binding)
+    try {
+      await vi.waitFor(() => expect(f.authPort.verifyAccessToken).toHaveBeenCalledOnce())
+      expect(f.authPort.isAdmin).not.toHaveBeenCalled()
+      expect(f.authPort.loadPatient).not.toHaveBeenCalled()
+      confirmAuth()
+      await vi.waitFor(() => expect(f.authPort.loadPatient).toHaveBeenCalledWith(f.auth.authUserId))
+      expect(f.authPort.isAdmin).toHaveBeenCalledWith(f.auth.authUserId)
+      expect(f.capture).not.toHaveBeenCalled()
+    } finally {
+      confirmAuth()
+      confirmNonAdmin()
+      await pending
+    }
+    expect(await pending).toEqual(f.profile)
+    expect(f.authPort.verifyAccessToken).toHaveBeenCalledTimes(2)
+    expect(f.authPort.isAdmin).toHaveBeenCalledTimes(2)
+    expect(f.authPort.loadPatient).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses authority and future observations when an overlapping role read discovers an admin', async () => {
+    const f = setup(true)
+    f.authPort.isAdmin.mockResolvedValueOnce(true)
+    await expect(f.scope.observe(f.binding)).rejects.toMatchObject({
+      status: 403,
+      code: 'patient_admin_account_conflict',
+    })
+    expect(f.authPort.loadPatient).toHaveBeenCalledWith(f.auth.authUserId)
+    expect(f.capture).not.toHaveBeenCalled()
+    expect(await f.scope.check(f.binding)).toBe(false)
+    expect(f.authPort.verifyAccessToken).toHaveBeenCalledOnce()
   })
 
   it('serializes observations and permanently refuses a backwards profile clock', async () => {

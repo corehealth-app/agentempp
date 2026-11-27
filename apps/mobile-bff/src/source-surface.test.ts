@@ -493,7 +493,8 @@ function certifyNutritionJournalSplitContent(text: string): void {
     'certified nutrition-shared module contents',
   ).toEqual(
     [
-      '11098:d8cccef169992ad42803f27d81d5b753a50e5798e8f649ad3acd7aea98fa6925',
+      // Only the explicitly opted-in intake lane overlaps its mapping reads.
+      '11098:d4857c703c68cd66c3f72119bbc71906f1789861cc2123935c8f7b12120fc40b',
       '40747:411b3586832f4b981362200d53a3836cff6395e29cee48554464d97d48fa94a9',
       '93639:ce2fe7a229147bad36167351267198cbd255aa881701566612da47ce193e2e04',
       '49634:e0cfd36f17df52ccd53f400f3f6f311cebf661ac8cdf5e5ab1feada0a7114902',
@@ -593,7 +594,7 @@ function restoreWorkoutFacadeLinkR140(body: string): string {
   for (const [name, hash] of [
     [
       'conversation-current-scope.ts',
-      'f8106d2f19e5085c099719c736a396ed428f10349bc25ed9b7b04959e6697aed',
+      '1697025350068f1151c3c83207945c057737c2fb36918991b5d7496d594502c1',
     ],
     [
       'conversation-workout-command-service.ts',
@@ -700,7 +701,7 @@ function certifyExactSharedTable(
 // validated discourse. Pin the complete intake table and its source boundaries.
 function certifyNegotiatedIntakeModule(body: string): void {
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    '83587f6e265d6841ca64fbaa95da4f2dd18dcf13d6dd82f0917ba0467a3162d2',
+    'e9072a21241cfdf19bf62fab2d5c1069219934269615920d3ce1ea63acc8959b',
   )
   for (const marker of [
     'admit_conversation_versioned_media_intake_v2',
@@ -717,7 +718,7 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
   const bodies = certifyExactSharedTable(chunk, [
     ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
     ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-    ['80804', 'b176c0bce9fc7d5ec2d5ca716a35164501638b03c4e8903e0bce4ea678041d0d'],
+    ['80804', 'aab9e94dc0ecdc0beb94df890c2faebe987e38e93706e55b5e10893d5654d5d8'],
   ])
   const body = bodies.get('80804') ?? ''
   certifyNegotiatedIntakeModule(body)
@@ -748,7 +749,7 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
     ],
     [
       'conversation-intake-runtime.ts',
-      '78a348b367c9ffd76c2a8260950cc5eb4971a0806893238a14cfee8d2f4fcb48',
+      'ad3cb43d1eec4b7366f3998cf64da14ee156775e578a7ed6977a8c1774998552',
     ],
     [
       'conversation-intake-store.ts',
@@ -2157,7 +2158,7 @@ describe('authoritative Mobile API source surface', () => {
     ])
     const scope = parse('conversation-current-scope.ts')
     expect(createHash('sha256').update(scope.text).digest('hex')).toBe(
-      'f8106d2f19e5085c099719c736a396ed428f10349bc25ed9b7b04959e6697aed',
+      '1697025350068f1151c3c83207945c057737c2fb36918991b5d7496d594502c1',
     )
     const journal = scope.statements.find(
         (node): node is ts.ImportDeclaration =>

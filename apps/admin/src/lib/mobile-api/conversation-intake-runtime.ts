@@ -198,7 +198,10 @@ export function createConversationIntakeRuntime(
       }),
     }),
     binding = workoutSnapshot({ authUserId: auth.authUserId, ...id }),
-    lane = createConversationCurrentScope(db, auth, binding, dependencies)
+    lane = createConversationCurrentScope(db, auth, binding, {
+      ...dependencies,
+      parallelMappingReads: true,
+    })
   async function checkedAuth<T>(read: () => Promise<T>): Promise<T> {
     available()
     try {

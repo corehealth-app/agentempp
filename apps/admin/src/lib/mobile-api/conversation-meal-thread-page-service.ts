@@ -111,6 +111,7 @@ const cursorSchema = conversationThreadCursorSchema
   .extend({ v: z.literal(2), owner_id: uuid, epoch: uuid })
   .strict()
 export const CONVERSATION_THREAD_PAGE_BYTE_CAP = 240000
+const CONCURRENT_HISTORY_READS = 3
 function changed(): never {
   throw new MobileApiError(
     409,
@@ -256,12 +257,14 @@ export function createConversationMealThreadPageService(
           if (page.action === 'event_conflict') return unavailable()
           return changed()
         }
-        const threads = new Map(page.threads.map((t) => [t.thread_id, t])),
+        const sourceItems = page.items,
+          threads = new Map(page.threads.map((t) => [t.thread_id, t])),
           entries: NegotiatedPublicConversationMealThreadEvent[] = []
-        for (const e of page.items) {
+        async function projectEvent(
+          e: ConversationMealThreadEvent,
+        ): Promise<NegotiatedPublicConversationMealThreadEvent> {
           if (e.kind !== 'report' && e.kind !== 'fulfillment') {
-            entries.push(e)
-            continue
+            return e
           }
           let feedback:
             | ConversationMealFeedbackPresentation
@@ -362,8 +365,24 @@ export function createConversationMealThreadPageService(
           if (!e.feedback_ref && feedback?.schema !== 'conversation.feedback-presentation.v2')
             feedback = null
           const { feedback_ref: _ref, ...visible } = e
-          entries.push(freezeConversationWriter({ ...visible, feedback }))
+          return freezeConversationWriter({ ...visible, feedback })
         }
+
+        // Each receipt has independent proof and policy checks. Keep the source
+        // order so completing a slower enrichment never changes the cursor.
+        let nextIndex = 0
+        async function projectPage() {
+          while (nextIndex < sourceItems.length) {
+            const index = nextIndex++
+            entries[index] = await projectEvent(sourceItems[index])
+          }
+        }
+        await Promise.all(
+          Array.from(
+            { length: Math.min(CONCURRENT_HISTORY_READS, sourceItems.length) },
+            projectPage,
+          ),
+        )
         const after = readCurrentClinicalState(
           await captureCurrentClinicalState(clinical, clinicalRequest),
           owner,

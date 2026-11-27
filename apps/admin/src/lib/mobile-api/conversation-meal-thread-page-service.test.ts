@@ -250,6 +250,56 @@ describe('real public v2 read projection', () => {
     expect(f.capture).toHaveBeenCalledTimes(2)
     expect(f.readHistorical).not.toHaveBeenCalled()
   })
+
+  it('reads a second receipt while the first is waiting and preserves history order', async () => {
+    const newer = threadSavedReport(
+      anotherJournalCommand(
+        '10000000-0000-4000-8000-000000000009',
+        journalCommand().at,
+        'registered',
+      ),
+    )
+    const older = threadSavedReport(journalCommand('registered'))
+    const f = setup({
+      ...threadPage(),
+      threads: [older.descriptor, newer.descriptor],
+      items: [newer.event, older.event],
+    })
+    let releaseFirst: () => void = () => {}
+    const firstWaiting = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const completed: string[] = []
+    f.readHistorical.mockImplementation(async ({ command }) => {
+      const isFirst = command.commandId === newer.descriptor.thread_id
+      if (isFirst) await firstWaiting
+      completed.push(command.commandId)
+      return feedback(isFirst ? newer.event.receipt : older.event.receipt, 'Orientação do registro')
+    })
+
+    const result = f.service.read(journalAuth(), f.request)
+    let completedWhileWaiting: string[]
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      completedWhileWaiting = [...completed]
+    } finally {
+      releaseFirst()
+    }
+
+    const page = await result
+    expect(completedWhileWaiting).toEqual([older.descriptor.thread_id])
+    expect(page.items).toMatchObject([
+      {
+        event_id: newer.event.event_id,
+        feedback: { original: { registration_id: newer.event.receipt.registration_id } },
+      },
+      {
+        event_id: older.event.event_id,
+        feedback: { original: { registration_id: older.event.receipt.registration_id } },
+      },
+    ])
+  })
+
   it('applies the whole 240000-byte UTF8 cap atomically with new descriptors and continues without skipping', async () => {
     const a = threadSavedReport(
         anotherJournalCommand(

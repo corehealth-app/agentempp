@@ -10,6 +10,7 @@ const expectedMobileRouteHash = '22926ab33b91fc36dde1834843c56d38fb6b06fe00de029
 const expectedRouteCount = 94
 const expectedRouteHash = '4ff0c3610291b53b1a8245597f673be4443dcace0b6aae86a819e63a3629c3ab'
 const linkedOriginRoute = '/api/mobile/v1/conversation/meal-commands/[commandId]/origin'
+const flowMealReminderRoute = '/api/mobile/v1/conversation/meal-reminders/[noticeId]'
 const intakeTransports = new Set([
   '/api/mobile/v1/conversation/intakes',
   '/api/mobile/v1/conversation/intakes/[intakeId]',
@@ -524,7 +525,19 @@ function verifyBuildSurface() {
   const buildRoot = resolve(scriptDirectory, '../.next')
   let surface
   try {
-    surface = withoutJourneySocialBuild(inspectBuildSurface(buildRoot), sha256, fail)
+    const current = inspectBuildSurface(buildRoot)
+    if (
+      !current.mobileRoutePaths.includes(flowMealReminderRoute) ||
+      !current.routePaths.includes(flowMealReminderRoute)
+    )
+      fail('FLOW_MEAL_REMINDER_ROUTE')
+    const previousRoutes = current.routePaths.filter((path) => path !== flowMealReminderRoute)
+    const previousMobile = current.mobileRoutePaths.filter((path) => path !== flowMealReminderRoute)
+    surface = withoutJourneySocialBuild(
+      { ...current, routePaths: previousRoutes, mobileRoutePaths: previousMobile },
+      sha256,
+      fail,
+    )
     console.info(
       `BUILD_COMPLETION_CURRENT_MOBILE_ROUTE_PATH_COUNT=${surface.mobileRoutePaths.length}`,
     )

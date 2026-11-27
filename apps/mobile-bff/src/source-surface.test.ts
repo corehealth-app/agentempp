@@ -248,7 +248,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
       'everyday-food-defaults.ts',
       '6ab28a7063eba8ccd3d5a50e1c23165a62da29517883b68edd1fe3d82abb44fb',
     ],
-    ['meal-pipeline.ts', '0dd1e6d2fb66bb0f27084aa4681657b65a26867283bd6374c83ad4634b1fa897'],
+    ['meal-pipeline.ts', '4570fb8cc44c3e13ab557c5add636cb1b0fa2479404784992bb4a3b50e7570e7'],
     ['meal-draft.ts', '965638a77e021257b32021fbda78f72f88a359d8d8dfb14112422b3f1a1afda2'],
     [
       'registration-feedback-v2.ts',
@@ -265,11 +265,11 @@ function certifyOrdinaryPhotoSourcesR102(): void {
         .digest('hex'),
     ).toBe(hash)
   for (const [id, hash] of [
-    ['26432', '15df72527043ee98cd2880c31d9b3da858e09f88e3686f3652a213006384e208'],
+    ['26432', '78dba943a656b4f72cc74802f3de9f2d4e89b340292d530877c2526414d03c2a'],
     ['418', 'b6f37d51d0e565142e530832b760faac2dbb8328acc25a2e129a8a6ab0ffdfb9'],
-    ['69702', '9397539592bfa3fc2efb80c8ccc5e0abe4d52a1843c078fca8c044baa00ee5db'],
+    ['69702', '2cc3570a228d06c69c6f65039216f397bef9389b38be729da4d1cb2d0c14539e'],
     ['53637', 'aba69758fc27c150f8c1ccc0b9fe2b8b1b39be381a02d149f2fef21ee91e9776'],
-    ['7311', 'fb67dab11bb9f98e71b1d76c0ccf92e8a3df51dfca7f42d169ded5025224b697'],
+    ['7311', 'f7f3a086055e312727aa8b3933b4aa84284611224e174ab5af503b08c2404d2a'],
     ['84883', 'fe4ecf65fb57042fa779ed51e572ae817d1226bdd59db349b28d4a5481256b0b'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
@@ -290,7 +290,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-intake-router.ts',
-      'f1b1f96ee9768dc6fc85abf707ac9c61326f85097a5bb4697bde97b4b0773190',
+      '234fa0f2ac265141a6410d6e56d2ce6a1b583690c090a1bd7a02eee3e2147afa',
     ],
     [
       'conversation-meal-interpretation-contracts.ts',
@@ -298,11 +298,15 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-materialization.ts',
-      '1b79fa54a5eea0ac6abb3894c4288161cc3e7915c6c85d19e004754b6a4be458',
+      'b19ddd64351f49b8d7b1d74ac738974ac5a59d7d41b577a84efc66cacc2588bf',
     ],
     [
       'conversation-meal-registration-service.ts',
-      'ec7e74f8b07973bdd08b0054b46b2656abcdaeda5d1d2343c6982b0fe0c9cb04',
+      '88cfd7e030e7c08e75717a46bddc4d5d4d3608bfbbfe3a248605a2db92348a3a',
+    ],
+    [
+      'conversation-meal-edit-contracts.ts',
+      '9c7e0149d014a01466668c5a0f04795385358c25c308f4edce55b531563f3128',
     ],
     [
       'conversation-meal-source.ts',
@@ -387,8 +391,8 @@ const conversationParserLinkPins = {
     alternate: '26b3692e11ee91492552f8efd5e5b6f50f42045f9613d972d8618dbb5044746b',
   },
   '41216': {
-    canonical: 'd8db40868e73c4b3dc32cb29c5d3bb998fe7656e9d0dbbc1e2c65566a8ff5c2c',
-    alternate: '7d4eb312cc09466aa1de3115948f2021b6333b0376eed324a120079c534bf05d',
+    canonical: '5a0a18746e453882f9e82bd83283410b1a02d5230be346a6bc39c4a9eb784deb',
+    alternate: '7f01dbccf7d7e8bfeb08468c0412f77f61e4fefff98b39f74f114942b04423ef',
   },
 } as const
 
@@ -499,7 +503,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
       '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
       `36693:${conversationParserLinkPins['36693'].canonical}`,
-      '52158:1e66a92afaa7ef5143364de5d5de5ba91348905bba80324c5db7738be0fb8847',
+      '52158:35d27882b74b6fafbcd8a22bca776b988285dd32bdf145dc8d94cb05b7864876',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
       '65556:f1a67ad59fd6f76d3b33142c2051372a148ada4d294a812b76309996afccaefd',
@@ -736,7 +740,7 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
     ],
     [
       'conversation-intake-router.ts',
-      'f1b1f96ee9768dc6fc85abf707ac9c61326f85097a5bb4697bde97b4b0773190',
+      '234fa0f2ac265141a6410d6e56d2ce6a1b583690c090a1bd7a02eee3e2147afa',
     ],
     [
       'conversation-intake-routes.ts',
@@ -859,7 +863,7 @@ function certifyStructuredMealHelperT51() {
   expect(providerChunks).toHaveLength(1)
   const providerWireChunk = providerChunks[0] ?? ''
   expect(createHash('sha256').update(readFileSync(providerWireChunk)).digest('hex')).toBe(
-    'a2fb9f90df15c14dc5692f8ea20456cdb55c36708307df119da0cf1f66d03166',
+    'c0c08e84a86761756505e2378af6feaeb9eb7e8cdc7120c67f4a0e09eb0ccf58',
   )
   const interpreter = readFileSync(
     resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),
@@ -1904,16 +1908,25 @@ describe('authoritative Mobile API source surface', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
-  test('keeps the additive 93-route manifest and exact prior88 and prior85 export streams', () => {
+  test('adds the one reminder route and preserves the exact prior export streams', () => {
     const records = sourceRecords()
     const hash = hashRecords(records)
 
     console.info(`SOURCE_ROUTE_EXPORT_COUNT=${records.length}`)
     console.info(`SOURCE_ROUTE_EXPORT_STREAM_SHA256=${hash}`)
 
-    expect(records).toHaveLength(93)
-    expect(hash).toBe('379b260d910f1364041880fb6aab30c458c9a8b511760735a9396aa8a058b5cf')
-    const beforeLinked = records.filter(
+    const reminder = 'conversation/meal-reminders/[noticeId]/route.ts'
+    expect(records).toHaveLength(94)
+    expect(records.find((record) => record.path === reminder)?.exports).toEqual([
+      'GET',
+      'POST',
+      'runtime',
+    ])
+    const prior93 = records.filter((record) => record.path !== reminder)
+    expect(hashRecords(prior93)).toBe(
+      '379b260d910f1364041880fb6aab30c458c9a8b511760735a9396aa8a058b5cf',
+    )
+    const beforeLinked = prior93.filter(
       (record) =>
         record.path !== 'training/window/route.ts' &&
         record.path !== 'conversation/meal-commands/[commandId]/origin/route.ts',
@@ -2215,14 +2228,18 @@ describe('authoritative Mobile API source surface', () => {
 
   test('preserves the prior88 Mobile and prior89 total streams within the additive 93/94 build', () => {
     const currentSurface = inspectBuildSurface(buildRoot)
+    const reminder = '/api/mobile/v1/conversation/meal-reminders/[noticeId]'
+    expect(currentSurface.mobileRoutePaths).toContain(reminder)
     const paths = currentSurface.routePaths.filter(
       (path) =>
+        path !== reminder &&
         !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
         !completionBuildPaths.has(path) &&
         !journeySocialBuildPaths.has(path),
     )
     const mobile = currentSurface.mobileRoutePaths.filter(
       (path) =>
+        path !== reminder &&
         !executionRouteFiles.has(path.replace('/api/mobile/v1/', '') + '/route.ts') &&
         !completionBuildPaths.has(path) &&
         !journeySocialBuildPaths.has(path),
@@ -3137,7 +3154,7 @@ describe('authoritative Mobile API source surface', () => {
   }) => {
     const appPaths = mutate(currentAppPathsManifest())
 
-    expect(Object.keys(appPaths)).toHaveLength(94)
+    expect(Object.keys(appPaths)).toHaveLength(95)
     expect(() => withSyntheticBuild(appPaths, inspectBuildSurface, omittedTargets)).toThrow(
       expectedError,
     )
@@ -3280,7 +3297,7 @@ describe('authoritative Mobile API source surface', () => {
     const currentMobileRoutes = allBuildRoutes.filter((route) =>
       route.startsWith('/api/mobile/v1/'),
     )
-    expect(currentMobileRoutes).toHaveLength(93)
+    expect(currentMobileRoutes).toHaveLength(94)
     expect(
       currentMobileRoutes
         .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
@@ -3288,6 +3305,7 @@ describe('authoritative Mobile API source surface', () => {
     ).toEqual(
       [
         '/api/mobile/v1/conversation/meal-commands/[commandId]/origin/route',
+        '/api/mobile/v1/conversation/meal-reminders/[noticeId]/route',
         ...conversationWorkoutAppPaths,
         ...conversationIntakeAppPaths,
         ...conversationReadEditAdditions.map(
@@ -3609,8 +3627,25 @@ describe('authoritative Mobile API source surface', () => {
     // Historical meal counts are retained with only the explicitly qualified
     // extraction1098 and three new common2279 edges accounted for below.
     const linkedOriginRoute = '/api/mobile/v1/conversation/meal-commands/[commandId]/origin/route'
+    const reminderRoute = '/api/mobile/v1/conversation/meal-reminders/[noticeId]/route'
+    expect(runtimeMarkerRoutes('read_flow_meal_gap_notice')).toEqual([reminderRoute])
+    expect(runtimeMarkerRoutes('skip_flow_meal_gap_notice')).toEqual([reminderRoute])
+    const reminderTargets = tracedTargets(reminderRoute)
+    expect(reminderTargets).toHaveLength(104)
+    const remainingTargets = new Set(
+      Object.keys(JSON.parse(readFileSync(appPathsManifestPath, 'utf8')))
+        .filter((route) => route !== reminderRoute && route.startsWith('/api/'))
+        .flatMap((route) => tracedTargets(route, true)),
+    )
+    expect(reminderTargets.filter((target) => !remainingTargets.has(target))).toEqual([
+      realpathSync(
+        resolve(buildRoot, 'server/app', `${reminderRoute.slice(1)}_client-reference-manifest.js`),
+      ),
+    ])
     const commandRoutes = currentMobileRoutes
-        .filter((route) => route.startsWith('/api/mobile/v1/conversation/'))
+        .filter(
+          (route) => route.startsWith('/api/mobile/v1/conversation/') && route !== reminderRoute,
+        )
         .sort(),
       historicalMealCommandRoutes = commandRoutes.filter(
         (route) =>
@@ -3875,7 +3910,13 @@ describe('authoritative Mobile API source surface', () => {
     // Historical counts project that exact edge only; all raw scans include it.
     // The five separately sealed social routes add5*105 references and six
     // targets. Their entire raw graph remains in every global forbidden scan.
-    expect(surface.nftReferenceCount - 5 * 105 - turnRoutes.length - turnStoreRoutes.length).toBe(
+    expect(
+      surface.nftReferenceCount -
+        reminderTargets.length -
+        5 * 105 -
+        turnRoutes.length -
+        turnStoreRoutes.length,
+    ).toBe(
       8202 +
         104 -
         6 +
@@ -3898,10 +3939,10 @@ describe('authoritative Mobile API source surface', () => {
         3 * 114 + // R136: original execution route traces remain exact.
         5 * 120, // R140: five explicit completion traces; all included in scans.
     )
-    expect(surface.nftUniqueTargetCount - 6 - 2).toBe(
+    expect(surface.nftUniqueTargetCount - 1 - 6 - 2).toBe(
       217 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6,
     )
-    expect(surface.nftRegularFileTargetCount - 6 - 2).toBe(
+    expect(surface.nftRegularFileTargetCount - 1 - 6 - 2).toBe(
       215 + 15 + 7 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 4 + 6,
     )
     expect(surface.nftDirectoryTargetCount).toBe(2)
@@ -4978,11 +5019,16 @@ describe('authoritative Mobile API source surface', () => {
 describe('current96 execution build extension', () => {
   test('builds all three required execution routes and scans their entire transitive graph', () => {
     const surface = inspectBuildSurface(buildRoot)
-    expect(surface.mobileRoutePaths).toHaveLength(106)
-    expect(surface.routePaths).toHaveLength(107)
+    expect(surface.mobileRoutePaths).toHaveLength(107)
+    expect(surface.routePaths).toHaveLength(108)
+    const reminder = '/api/mobile/v1/conversation/meal-reminders/[noticeId]'
+    expect(surface.mobileRoutePaths).toContain(reminder)
     expect(
       surface.mobileRoutePaths.filter(
-        (path) => !completionBuildPaths.has(path) && !journeySocialBuildPaths.has(path),
+        (path) =>
+          path !== reminder &&
+          !completionBuildPaths.has(path) &&
+          !journeySocialBuildPaths.has(path),
       ),
     ).toHaveLength(96)
     for (const path of [...completionBuildPaths, ...journeySocialBuildPaths])

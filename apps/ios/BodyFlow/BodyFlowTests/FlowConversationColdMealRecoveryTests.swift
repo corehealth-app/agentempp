@@ -105,6 +105,38 @@ struct FlowConversationColdMealRecoveryTests {
     #expect(session.model.savedRows.isEmpty)
     await session.close()
   }
+  @Test func historyWithAPublishedRegistrationUndoDoesNotOfferEditing() async throws {
+    let f = try await ColdMealRecoveryFixture()
+    defer { f.disk.remove() }
+    var page = f.publicPage
+    let items = try #require(page["items"] as? [[String: Any]])
+    let report = try #require(items.first)
+    var edit = try #require(
+      (journalV3EditPageUnit(change: "registration_undone")["items"] as? [[String: Any]])?.first)
+    var lineage = try #require(report["lineage"] as? [String: Any])
+    lineage["kind"] = "meal.edit"
+    edit["lineage"] = lineage
+    edit["thread_id"] = report["thread_id"]
+    let at = "2026-11-04T12:01:00.000001Z"
+    edit["at"] = at
+    var outcome = try #require(edit["outcome"] as? [String: Any])
+    var record = try #require(outcome["record"] as? [String: Any])
+    let operation = try #require(record["operation_id"] as? String)
+    edit["event_id"] = "edit/\(f.commandID.uuidString.lowercased())/\(operation)"
+    record["applied_at"] = at
+    outcome["record"] = record
+    edit["outcome"] = outcome
+    page["items"] = [edit] + items
+    await f.install(publicReply: try neutralHTTP(page))
+    let session = try await f.open()
+    await session.model.loadHistory()
+    #expect(session.model.unifiedRows.count == 2)
+    #expect(session.model.canLoadMealDetails(commandID: f.commandID) == false)
+    // The original receipt and its undo are still available in the transcript.
+    #expect(session.model.unifiedRows.contains { $0.kind == .report && $0.commandID == f.commandID })
+    #expect(session.model.unifiedRows.contains { $0.kind == .edit && $0.commandID == f.commandID })
+    await session.close()
+  }
   @Test func reopeningRecoversOwnedOriginalBeforeCurrentGroupWithoutAcknowledgingOrWriting()
     async throws
   {

@@ -1376,7 +1376,13 @@ final class FlowConversationModel {
   }
   /// A public observation can offer a read, but cannot enable an editor.
   func canLoadMealDetails(commandID: UUID) -> Bool {
-    canRequestMealDetails(commandID: commandID)
+    guard knownGroupEdits[commandID]?.kind != .registrationUndone,
+      !unifiedRows.contains(where: { row in
+        guard row.commandID == commandID, case .edit(let edit) = row.record else { return false }
+        return edit.change == .registrationUndone
+      })
+    else { return false }
+    return canRequestMealDetails(commandID: commandID)
       || (hasCurrentScope && mealEditor != nil
         && (coldMealCandidate(commandID: commandID) != nil || coldLinkedMealCandidate(commandID: commandID) != nil))
   }

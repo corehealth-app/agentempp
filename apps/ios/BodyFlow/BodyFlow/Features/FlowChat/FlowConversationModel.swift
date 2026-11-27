@@ -1443,7 +1443,14 @@ final class FlowConversationModel {
             await editor.undoRegistration(group: group)
           }
         }
-      }, isWorking: !editor.canBeginEditing)
+      },
+      changePlacement: { group, date, meal in
+        Task { await editor.changePlacement(group: group, linked: linked, date: date, meal: meal) }
+      },
+      undoPlacement: { group in
+        Task { await editor.undoPlacement(group: group, linked: linked) }
+      },
+      isWorking: !editor.canBeginEditing)
   }
   private func receiveMealReply(
     _ result: ConversationMealReplyResultSnapshot, context: ConversationCommandContext

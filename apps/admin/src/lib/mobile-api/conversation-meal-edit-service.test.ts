@@ -113,6 +113,7 @@ function setup() {
       binding,
       receipt: receiptFor(input),
     })),
+    placement: vi.fn(),
   }
   const clock = vi.fn(() => new Date(now)),
     service = createConversationMealEditService({} as ServiceClient, { store, now: clock })

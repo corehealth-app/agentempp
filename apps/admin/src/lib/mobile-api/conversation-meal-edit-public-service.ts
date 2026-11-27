@@ -96,6 +96,7 @@ export function createConversationMealEditPublicService(
     save: source.save.bind(source),
     undoSave: source.undoSave.bind(source),
     undoRegistration: source.undoRegistration.bind(source),
+    placement: source.placement.bind(source),
   })
   const writer = ports.writer ?? createConversationMealEditService(db, { store }),
     execute = writer.execute.bind(writer)
@@ -104,15 +105,17 @@ export function createConversationMealEditPublicService(
       auth: MobileAuthContext,
       original: ConversationMealEditOriginal,
       photoReview = false,
+      placement = false,
     ) {
       const b = identity(auth, original),
         read = await store.readState(b.binding)
       if (read.action !== 'available') return refuse(read.action)
-      const group = projectConversationMealGroup(b.auth, b.binding, read)
+      const group = projectConversationMealGroup(b.auth, b.binding, read, placement)
       if (
         !photoReview ||
         !group.actions.save.allowed ||
-        group.schema !== 'conversation.meal-group.v1'
+        (group.schema !== 'conversation.meal-group.v1' &&
+          group.schema !== 'conversation.meal-group.v3')
       )
         return group
       const rpc = db.rpc.bind(db) as unknown as (

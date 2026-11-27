@@ -42,6 +42,7 @@ function setup() {
     save: vi.fn(),
     undoSave: vi.fn(),
     undoRegistration: vi.fn(),
+    placement: vi.fn(),
   }
   const execute = vi.fn().mockResolvedValue({
     status: 'saved',

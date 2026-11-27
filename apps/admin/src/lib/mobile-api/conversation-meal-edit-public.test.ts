@@ -4,6 +4,7 @@ import {
   editAuthId,
   editBinding,
   editInput,
+  editNewId,
   editOperationId,
   editReadState,
   editReceipt,
@@ -39,6 +40,49 @@ function preCoverageReadState() {
   return { ...wire, current_state: { ...wire.current_state, snapshot } }
 }
 describe('closed factual command meal group and operation result', () => {
+  it('exposes the current corrected date only through the negotiated group with the original receipt intact', () => {
+    const original = editReadState()
+    const receipt = editReceipt('ab'.repeat(32))
+    const date = '2026-11-03'
+    const snapshot = { ...original.current_state.snapshot, id: editNewId, date }
+    const moved = {
+      ...original,
+      revision: 1,
+      observed_at: '2026-11-04T12:02:00.000004+00:00',
+      current_state: {
+        ...original.current_state,
+        snapshot,
+        items: original.current_state.items.map((item) => ({
+          ...item,
+          snapshot_id: editNewId,
+          consumed_at: `${date}T12:00:00.000004+00:00`,
+          meal_type: 'jantar',
+        })),
+      },
+      last_operation: {
+        ...receipt,
+        kind: 'placement_saved',
+        snapshot: { ...receipt.snapshot, id: editNewId, date },
+        removed_item_ids: [],
+        new_item_ids: [],
+        next_record_id: null,
+      },
+    }
+    const state = parseConversationMealEditState(moved, editBinding())
+    expect(() => projectConversationMealGroup(auth, editBinding(), state)).toThrow()
+    const value = projectConversationMealGroup(auth, editBinding(), state, true)
+    expect(value.original_receipt).toEqual(original.original_receipt)
+    expect(value).toMatchObject({
+      schema: 'conversation.meal-group.v3',
+      current: { local_date: date, items: [{ meal_type: 'jantar' }] },
+      last_operation: { kind: 'placement_saved', removed_item_ids: [], new_item_ids: [] },
+      actions: {
+        change_placement: { allowed: true },
+        undo_placement: { allowed: true },
+        save: { allowed: false, reason: 'not_current_day' },
+      },
+    })
+  })
   it('keeps the exact shared native wire fixtures and PostgreSQL decimal operation hash', () => {
     expect(group(preCoverageReadState())).toEqual(wireFixture.group.data)
     const op = bindConversationMealEdit({

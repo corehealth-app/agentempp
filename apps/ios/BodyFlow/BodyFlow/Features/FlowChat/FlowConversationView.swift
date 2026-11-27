@@ -680,6 +680,10 @@ struct FlowConversationView: View {
     case .saveUndone: english ? "A meal edit was undone." : "Uma edição da refeição foi desfeita."
     case .registrationUndone:
       english ? "The meal registration was undone." : "O registro da refeição foi desfeito."
+    case .placementSaved:
+      english ? "Meal updated." : "Refeição atualizada."
+    case .placementUndone:
+      english ? "The meal change was undone." : "A alteração da refeição foi desfeita."
     }
   }
 

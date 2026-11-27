@@ -23,6 +23,13 @@ enum MobileConversationRequestHeaders: Sendable {
   case mealEdit(epoch: UUID, ownerID: UUID, inputHash: String)
   case mealEditReconciliation(epoch: UUID, ownerID: UUID, inputHash: String)
 
+  var supportsMealPlacement: Bool {
+    switch self {
+    case .mealGroup, .mealEdit, .mealEditReconciliation: true
+    default: false
+    }
+  }
+
   /// Only an original neutral media ticket selects this response codec.
   var intakeMediaProvenance: ConversationIntakeMediaProvenanceSelection? {
     switch self {

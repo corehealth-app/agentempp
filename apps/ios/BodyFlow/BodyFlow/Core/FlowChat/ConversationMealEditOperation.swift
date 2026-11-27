@@ -83,6 +83,8 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
     case save(recordID: UUID, items: [Item])
     case undoSave(targetOperationID: UUID)
     case undoRegistration
+    case placement(localDate: String, mealType: ConversationMealCommand.MealType)
+    case undoPlacement(targetOperationID: UUID)
   }
   let ownerID: UUID
   let commandID: UUID
@@ -117,6 +119,13 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
       object["kind"] = .string("undo_save")
       object["target_operation_id"] = .string(target.uuidString.lowercased())
     case .undoRegistration: object["kind"] = .string("undo_registration")
+    case let .placement(localDate, mealType):
+      object["kind"] = .string("placement")
+      object["local_date"] = .string(localDate)
+      object["meal_type"] = .string(mealType.rawValue)
+    case .undoPlacement(let target):
+      object["kind"] = .string("undo_placement")
+      object["target_operation_id"] = .string(target.uuidString.lowercased())
     }
     if let photoReviewIndex {
       object["photo_review_index"] = .number(Double(photoReviewIndex))
@@ -139,7 +148,8 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
     let keys: Set<String>
     switch kind {
     case "save": keys = base.union(["record_id", "items"])
-    case "undo_save": keys = base.union(["target_operation_id"])
+    case "undo_save", "undo_placement": keys = base.union(["target_operation_id"])
+    case "placement": keys = base.union(["local_date", "meal_type"])
     case "undo_registration": keys = base
     default: throw ConversationMealEditInvalid.value
     }
@@ -162,6 +172,12 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
       action = try .save(recordID: o.required("record_id").uuid(), items: decoded)
     case "undo_save":
       action = try .undoSave(targetOperationID: o.required("target_operation_id").uuid())
+    case "undo_placement":
+      action = try .undoPlacement(targetOperationID: o.required("target_operation_id").uuid())
+    case "placement":
+      guard let meal = try ConversationMealCommand.MealType(rawValue: o.required("meal_type").string())
+      else { throw ConversationMealEditInvalid.value }
+      action = try .placement(localDate: o.required("local_date").civilDate(), mealType: meal)
     default: action = .undoRegistration
     }
     self.ownerID = ownerID

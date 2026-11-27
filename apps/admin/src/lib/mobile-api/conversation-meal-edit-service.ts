@@ -90,6 +90,7 @@ export function createConversationMealEditService(
       save: s.save.bind(s),
       undoSave: s.undoSave.bind(s),
       undoRegistration: s.undoRegistration.bind(s),
+      placement: s.placement.bind(s),
     }),
     prepare = ports.prepare?.bind(ports) ?? prepareConfirmedMealMutation,
     clock = ports.now?.bind(ports) ?? (() => new Date())
@@ -215,7 +216,9 @@ export function createConversationMealEditService(
             quantityChange: prepared.quantityChange,
           })
         } else if (bound.input.kind === 'undo_save') written = await store.undoSave(input)
-        else written = await store.undoRegistration(input)
+        else if (bound.input.kind === 'undo_registration')
+          written = await store.undoRegistration(input)
+        else written = await store.placement(input)
       } catch (error) {
         if (error instanceof MobileApiError && error.status === 409) throw error
         try {

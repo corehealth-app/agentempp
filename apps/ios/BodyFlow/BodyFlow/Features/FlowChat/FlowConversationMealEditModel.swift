@@ -26,6 +26,8 @@ struct FlowConversationMealEditPendingItem: Identifiable, Sendable {
   let editItem: (ConversationMealGroupSnapshot.Item) -> Void
   let undoSave: (ConversationMealGroupSnapshot) -> Void
   let undoRegistration: (ConversationMealGroupSnapshot) -> Void
+  var changePlacement: ((ConversationMealGroupSnapshot, String, ConversationMealCommand.MealType) -> Void)? = nil
+  var undoPlacement: ((ConversationMealGroupSnapshot) -> Void)? = nil
   let isWorking: Bool
 }
 private final class FlowMealEditLifetime: @unchecked Sendable {
@@ -354,6 +356,16 @@ final class FlowConversationMealEditModel {
   ) async {
     guard group.actions.undoRegistration.allowed else { return }
     await execute(linked: linked, group: group, action: .undoRegistration)
+  }
+  func changePlacement(group: ConversationMealGroupSnapshot, linked: ConversationMealLinkedIdentity?,
+                       date: String, meal: ConversationMealCommand.MealType) async {
+    guard group.actions.changePlacement?.allowed == true else { return }
+    await execute(linked: linked, group: group, action: .placement(localDate: date, mealType: meal))
+  }
+  func undoPlacement(group: ConversationMealGroupSnapshot, linked: ConversationMealLinkedIdentity?) async {
+    guard group.actions.undoPlacement?.allowed == true, let target = group.lastOperation?.operationID
+    else { return }
+    await execute(linked: linked, group: group, action: .undoPlacement(targetOperationID: target))
   }
   private func execute(
     linked: ConversationMealLinkedIdentity?, group: ConversationMealGroupSnapshot,

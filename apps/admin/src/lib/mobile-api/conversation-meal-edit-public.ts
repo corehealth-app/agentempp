@@ -41,12 +41,18 @@ const effectSchema = z
     command_id: uuid,
     operation_id: uuid,
     input_hash: hash,
-    kind: z.enum(['saved', 'save_undone', 'registration_undone']),
+    kind: z.enum([
+      'saved',
+      'save_undone',
+      'registration_undone',
+      'placement_saved',
+      'placement_undone',
+    ]),
     revision: revision.refine((n) => n > 0),
     applied_at: clock,
     undo_expires_at: clock.nullable(),
     target_operation_id: uuid.nullable(),
-    removed_item_ids: ids.refine((v) => v.length > 0),
+    removed_item_ids: ids,
     new_item_ids: ids,
     next_record_id: uuid.nullable(),
   })
@@ -96,7 +102,12 @@ const itemSchema = z
   .strict()
 const groupSchema = z
   .object({
-    schema: z.literal('conversation.meal-group.v1'),
+    schema: z.enum([
+      'conversation.meal-group.v1',
+      'conversation.meal-group.v2',
+      'conversation.meal-group.v3',
+      'conversation.meal-group.v4',
+    ]),
     owner_id: uuid,
     command_id: uuid,
     input_hash: hash,
@@ -119,16 +130,18 @@ const groupSchema = z
     last_operation: effectSchema.nullable(),
     registration_undo_expires_at: clock,
     actions: z
-      .object({ save: actionSchema, undo_registration: actionSchema, undo_save: actionSchema })
+      .object({
+        save: actionSchema,
+        undo_registration: actionSchema,
+        undo_save: actionSchema,
+        change_placement: actionSchema.optional(),
+        undo_placement: actionSchema.optional(),
+      })
       .strict(),
   })
   .strict()
-const versionedGroupSchema = z.union([
-  groupSchema,
-  groupSchema.extend({ schema: z.literal('conversation.meal-group.v2') }),
-])
 export type PublicConversationMealGroup = Readonly<
-  Omit<z.infer<typeof versionedGroupSchema>, 'original_receipt'> & {
+  Omit<z.infer<typeof groupSchema>, 'original_receipt'> & {
     original_receipt: ReturnType<typeof parseConversationMealEditState>['originalReceipt']
   }
 >
@@ -228,6 +241,7 @@ export function projectConversationMealGroup(
   auth: MobileAuthContext,
   expected: ConversationMealEditBinding,
   input: unknown,
+  placement = false,
 ): PublicConversationMealGroup {
   try {
     const { who, binding } = original(auth, expected),
@@ -247,8 +261,17 @@ export function projectConversationMealGroup(
       binding,
     )
     const current = s.currentState
+    const last = s.lastOperation
     if (current !== null && current.context.auth_user_id !== who.authUserId) return unavailable()
+    if (
+      !placement &&
+      (last?.kind === 'placement_saved' ||
+        last?.kind === 'placement_undone' ||
+        (current && current.snapshot.date !== s.originalReceipt.local_date))
+    )
+      return unavailable()
     let blocked: z.infer<typeof reason> | null = null
+    let placementBlocked: z.infer<typeof reason> | null = null
     if (current === null) blocked = 'current_group_unavailable'
     else {
       try {
@@ -258,18 +281,24 @@ export function projectConversationMealGroup(
           const today = getLocalDateString(timezone, new Date(s.observedAt))
           if (current.snapshot.day_closed) blocked = 'day_closed'
           else if (
-            current.snapshot.date !== today ||
+            current.snapshot.date > today ||
             current.items.some(
-              (row) => getLocalDateString(timezone, new Date(row.consumed_at)) !== today,
+              (row) =>
+                getLocalDateString(timezone, new Date(row.consumed_at)) !== current.snapshot.date,
             )
           )
             blocked = 'not_current_day'
           else if (s.revision === 2147483647) blocked = 'revision_exhausted'
+          placementBlocked = blocked ?? (!s.lineageCompatible ? 'version_changed' : null)
+          if (blocked === null && current.snapshot.date !== today) blocked = 'not_current_day'
         }
       } catch {
         blocked = 'invalid_timezone'
       }
     }
+    // Invalid or absent state applies to both capabilities. A prior open day
+    // can have its placement corrected while the legacy item editor is off.
+    if (!current || blocked === 'invalid_timezone') placementBlocked = blocked
     const availability = (why: z.infer<typeof reason> | null): Availability =>
       why ? { allowed: false, reason: why } : { allowed: true }
     const undoOriginal =
@@ -279,7 +308,6 @@ export function projectConversationMealGroup(
         : instant(s.registrationUndoExpiresAt) <= instant(s.observedAt)
           ? 'undo_expired'
           : null)
-    const last = s.lastOperation
     const undoSave =
       blocked ??
       (!last || last.kind !== 'saved'
@@ -289,11 +317,22 @@ export function projectConversationMealGroup(
           : last.undo_expires_at === null || instant(last.undo_expires_at) <= instant(s.observedAt)
             ? 'undo_expired'
             : null)
-    const value = closed(versionedGroupSchema, {
+    const undoPlacement =
+      placementBlocked ??
+      (last?.kind !== 'placement_saved'
+        ? 'no_save_to_undo'
+        : last.undo_expires_at === null || instant(last.undo_expires_at) <= instant(s.observedAt)
+          ? 'undo_expired'
+          : null)
+    const value = closed(groupSchema, {
       schema:
         s.binding.command_protocol === 'conversation.clarification.v1'
-          ? 'conversation.meal-group.v2'
-          : 'conversation.meal-group.v1',
+          ? placement
+            ? 'conversation.meal-group.v4'
+            : 'conversation.meal-group.v2'
+          : placement
+            ? 'conversation.meal-group.v3'
+            : 'conversation.meal-group.v1',
       owner_id: binding.ownerId,
       command_id: binding.commandId,
       input_hash: binding.inputHash,
@@ -331,6 +370,12 @@ export function projectConversationMealGroup(
         save: availability(blocked),
         undo_registration: availability(undoOriginal),
         undo_save: availability(undoSave),
+        ...(placement
+          ? {
+              change_placement: availability(placementBlocked),
+              undo_placement: availability(undoPlacement),
+            }
+          : {}),
       },
     })
     return freezeConversationWriter({ ...value, original_receipt: s.originalReceipt })

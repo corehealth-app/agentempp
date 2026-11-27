@@ -278,6 +278,9 @@ struct MobileAPITransport: Sendable {
         if request.conversationTurns {
             urlRequest.setValue("1", forHTTPHeaderField: ConversationTurnReplySelection.header)
         }
+        if request.conversation?.supportsMealPlacement == true {
+            urlRequest.setValue("1", forHTTPHeaderField: "X-Conversation-Meal-Placement")
+        }
         if let owner = request.conversationMediaOwnerID { urlRequest.setValue(owner.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner") }
         let preparedRequest = urlRequest
         let redirectDelegate = MobileAPIRedirectDelegate(configuration: configuration, allowsReadRedirects: request.conversation == nil && request.conversationMediaOwnerID == nil && request.trainingExecution == nil && request.journeySocial == nil)

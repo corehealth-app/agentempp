@@ -110,6 +110,8 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
     let save: Availability
     let undoRegistration: Availability
     let undoSave: Availability
+    let changePlacement: Availability?
+    let undoPlacement: Availability?
   }
   let ownerID: UUID
   let commandID: UUID
@@ -146,14 +148,16 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
         "registration_undo_expires_at", "actions",
       ], optional: ConversationTurnReplySelection.selected(from: decoder) ? ["photo_review"] : [])
       let schema = try o.required("schema").string()
-      try editCheck(["conversation.meal-group.v1", "conversation.meal-group.v2"].contains(schema))
+      let placement = ["conversation.meal-group.v3", "conversation.meal-group.v4"].contains(schema)
+      try editCheck(placement || ["conversation.meal-group.v1", "conversation.meal-group.v2"].contains(schema))
       ownerID = try o.required("owner_id").uuid()
       commandID = try o.required("command_id").uuid()
       originalInputHash = try o.required("input_hash").hash()
       epoch = try o.required("epoch").uuid()
       admittedAt = try o.required("admitted_at").clock()
       observedAt = try o.required("observed_at").clock()
-      if schema == "conversation.meal-group.v1" {
+      let report = ["conversation.meal-group.v1", "conversation.meal-group.v3"].contains(schema)
+      if report {
         originalReceipt = try .report(
           o.required("original_receipt").decode(
             SavedConversationMealCommandResultSnapshot.Receipt.self))
@@ -172,7 +176,7 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
       revision = try o.required("revision").revision()
       lineageCompatible = try o.required("lineage_compatible").bool()
       current = try o.required("current").optional(Self.parseCurrent)
-      if let current { try editCheck(current.localDate == originalReceipt.localDate) }
+      if let current, !placement { try editCheck(current.localDate == originalReceipt.localDate) }
       lastOperation = try o.required("last_operation").optional {
         try $0.decode(ConversationMealEditEffectSnapshot.self)
       }
@@ -195,13 +199,17 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
         try editCheck(
           deadline.seconds - consumed.seconds == 300 && deadline.nanos == consumed.nanos)
       }
-      let a = try o.required("actions").object(["save", "undo_registration", "undo_save"])
+      let baseActions: Set<String> = ["save", "undo_registration", "undo_save"]
+      let a = try o.required("actions").object(
+        placement ? baseActions.union(["change_placement","undo_placement"]) : baseActions)
       actions = try Actions(
         save: Availability(a.required("save")),
         undoRegistration: Availability(a.required("undo_registration")),
-        undoSave: Availability(a.required("undo_save")))
+        undoSave: Availability(a.required("undo_save")),
+        changePlacement: placement ? Availability(a.required("change_placement")) : nil,
+        undoPlacement: placement ? Availability(a.required("undo_placement")) : nil)
       if let rawQuestions = o["photo_review"] {
-        try editCheck(schema == "conversation.meal-group.v1" && actions.save.allowed)
+        try editCheck(report && actions.save.allowed)
         let questions = try rawQuestions.array()
         try editCheck(questions.count <= 29)
         let decoded = try questions.map { raw -> PhotoQuestion in

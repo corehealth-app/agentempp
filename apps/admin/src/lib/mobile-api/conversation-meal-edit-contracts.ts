@@ -67,6 +67,10 @@ const inputSchema = z
         photo_review_index: finite.int().min(0).max(29).optional(),
       })
       .strict(),
+    z
+      .object({ ...base, kind: z.literal('placement'), local_date: date, meal_type: mealType })
+      .strict(),
+    z.object({ ...base, kind: z.literal('undo_placement'), target_operation_id: uuid }).strict(),
     z.object({ ...base, kind: z.literal('undo_save'), target_operation_id: uuid }).strict(),
     z.object({ ...base, kind: z.literal('undo_registration') }).strict(),
   ])
@@ -404,12 +408,18 @@ const receiptSchema = z
     command_id: uuid,
     operation_id: uuid,
     input_hash: hash,
-    kind: z.enum(['saved', 'save_undone', 'registration_undone']),
+    kind: z.enum([
+      'saved',
+      'save_undone',
+      'registration_undone',
+      'placement_saved',
+      'placement_undone',
+    ]),
     revision: revision.refine((n) => n > 0),
     applied_at: clock,
     undo_expires_at: clock.nullable(),
     target_operation_id: uuid.nullable(),
-    removed_item_ids: ids.refine((v) => v.length > 0),
+    removed_item_ids: ids,
     new_item_ids: ids,
     next_record_id: uuid.nullable(),
     snapshot: z
@@ -442,6 +452,27 @@ function receipt(raw: unknown, b: ConversationMealEditBinding): ConversationMeal
     v.new_item_ids.some((id) => v.removed_item_ids.includes(id))
   )
     return conversationMealEditUnavailable()
+  const placement = v.kind === 'placement_saved' || v.kind === 'placement_undone'
+  if (placement) {
+    if (v.removed_item_ids.length || v.new_item_ids.length || v.next_record_id !== null)
+      return conversationMealEditUnavailable()
+    if (v.kind === 'placement_saved') {
+      if (
+        v.target_operation_id !== null ||
+        v.undo_expires_at === null ||
+        instant(v.undo_expires_at) - instant(v.applied_at) !== 300000000000n
+      )
+        return conversationMealEditUnavailable()
+    } else if (
+      v.revision < 2 ||
+      v.undo_expires_at !== null ||
+      v.target_operation_id === null ||
+      v.target_operation_id === v.operation_id
+    )
+      return conversationMealEditUnavailable()
+    return v
+  }
+  if (!v.removed_item_ids.length) return conversationMealEditUnavailable()
   if (v.kind === 'saved') {
     if (
       v.removed_item_ids.length !== 1 ||
@@ -503,9 +534,13 @@ export function parseConversationMealEditReceipt(
   const op = bindConversationMealEdit(operation)
   if (operation.inputHash !== op.inputHash) return conversationMealEditUnavailable()
   const v = receipt(raw, op.binding),
-    kind = { save: 'saved', undo_save: 'save_undone', undo_registration: 'registration_undone' }[
-      op.input.kind
-    ]
+    kind = {
+      save: 'saved',
+      undo_save: 'save_undone',
+      undo_registration: 'registration_undone',
+      placement: 'placement_saved',
+      undo_placement: 'placement_undone',
+    }[op.input.kind]
   if (
     v.operation_id !== op.operationId ||
     v.input_hash !== op.inputHash ||
@@ -513,7 +548,9 @@ export function parseConversationMealEditReceipt(
     v.revision !== op.input.expected_revision + 1 ||
     (op.input.kind === 'save' &&
       (v.removed_item_ids.length !== 1 || v.removed_item_ids[0] !== op.input.record_id)) ||
-    (op.input.kind === 'undo_save' && v.target_operation_id !== op.input.target_operation_id)
+    ((op.input.kind === 'undo_save' || op.input.kind === 'undo_placement') &&
+      v.target_operation_id !== op.input.target_operation_id) ||
+    (op.input.kind === 'placement' && v.snapshot.date !== op.input.local_date)
   )
     return conversationMealEditUnavailable()
   return v
@@ -568,7 +605,9 @@ export function parseConversationMealEditState(
       (last.revision !== v.revision || instant(last.applied_at) > instant(v.observed_at))) ||
     instant(binding.admitted_at) > instant(v.observed_at) ||
     instant(original.consumed_at) > instant(v.observed_at) ||
-    (current !== null && current.snapshot.date !== original.local_date)
+    (current !== null &&
+      (current.snapshot.date !== (last?.snapshot.date ?? original.local_date) ||
+        (last !== null && current.snapshot.id !== last.snapshot.id)))
   )
     return conversationMealEditUnavailable()
   return freezeConversationWriter({

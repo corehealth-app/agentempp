@@ -26,6 +26,7 @@ struct FlowConversationMealGroupView: View {
       )
       .font(BodyFlowTypography.cardTitle).accessibilityAddTraits(.isHeader)
       .accessibilityIdentifier("conversation.meal.current-title")
+      FlowConversationMealPlacementView(group: group, editing: editing, english: english)
       if (showsFacts || showsCurrentQuantity) && group.revision > 0 {
         Label(
           english

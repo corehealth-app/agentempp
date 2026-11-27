@@ -11,6 +11,41 @@ import Testing
 @Suite("Genuine linked meal uses the existing immutable editor")
 @MainActor
 struct ConversationMealLinkedEditorTests {
+  @Test func linkedMealPlacementKeepsTheOriginalCommandAndRequiresNegotiatedGroup() async throws {
+    let f = try LinkedMealEditorFixture()
+    defer { f.base.disk.remove() }
+    var packet = try f.leaf.groupRaw
+    packet["schema"] = "conversation.meal-group.v4"
+    var actions = try #require(packet["actions"] as? [String: Any])
+    actions["change_placement"] = ["allowed": true]
+    actions["undo_placement"] = ["allowed": false, "reason": "no_save_to_undo"]
+    packet["actions"] = actions
+    let group = try ConversationMealGroupSnapshot(data: JSONSerialization.data(withJSONObject: packet))
+    let wire = try linkedEditorEnvelope(packet)
+    await f.base.http.stub.respond { request, _ in
+      request.httpMethod == "GET" ? .init(status: 200, body: wire) : try f.savedReply(request)
+    }
+    let controller = try await f.base.openController()
+    let probe = FlowEditUIProbe()
+    let editor = try await FlowConversationMealEditModel.open(
+      controller: controller, lifecycle: f.base.http.lifecycle,
+      lease: await f.base.http.lifecycle.leaseForRequest()
+    ) { result, _ in probe.saved.append(result) }
+    editor.accept(f.context)
+    await editor.changePlacement(group: group, linked: f.identity, date: "2026-11-03", meal: .jantar)
+    let requests = await f.base.http.stub.requests
+    #expect(requests.count == 2)
+    #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-Conversation-Meal-Placement") == "1" })
+    let original = try f.operation(#require(requests.last))
+    #expect(original.commandID == f.identity.commandID)
+    if case let .placement(date, type) = original.action {
+      #expect(date == "2026-11-03" && type == .jantar)
+    } else { Issue.record("Expected an owned date and meal type change") }
+    #expect(probe.saved.first?.receipt.kind == .placementSaved)
+    #expect(editor.pendingOperation == nil)
+    await controller.close()
+  }
+
   @Test func currentLinkedPrepareCreatesOnlyTheActualChildOperation() async throws {
     let f = try LinkedMealEditorFixture()
     defer { f.base.disk.remove() }
@@ -349,8 +384,15 @@ struct LinkedMealEditorFixture: Sendable {
       kind = "registration_undone"
       removed = [itemID.uuidString.lowercased()]
       target = NSNull()
+    case .placement:
+      undo = false
+      kind = "placement_saved"
+      removed = []
+      target = NSNull()
+    case .undoPlacement:
+      throw ConversationMealEditInvalid.value
     }
-    let registrationUndo = kind == "registration_undone"
+    let noNewItems = kind == "registration_undone" || kind == "placement_saved"
     let nextID = kind == "save_undone" ? "c3c70000-0000-4000-8000-000000000097" : next
     let receipt: [String: Any] = [
       "schema": "conversation.meal-edit-effect-public.v1",
@@ -361,8 +403,8 @@ struct LinkedMealEditorFixture: Sendable {
       "revision": operation.expectedRevision + 1, "applied_at": "2026-11-04T18:16:01.000000Z",
       "undo_expires_at": undo ? NSNull() : "2026-11-04T18:21:01.000000Z",
       "target_operation_id": target, "removed_item_ids": removed,
-      "new_item_ids": registrationUndo ? [] : [nextID],
-      "next_record_id": registrationUndo ? NSNull() : nextID,
+      "new_item_ids": noNewItems ? [] : [nextID],
+      "next_record_id": noNewItems ? NSNull() : nextID,
     ]
     return .init(
       status: 200,

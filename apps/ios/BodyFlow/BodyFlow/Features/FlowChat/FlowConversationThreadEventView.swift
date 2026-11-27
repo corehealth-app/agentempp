@@ -102,6 +102,8 @@ struct FlowConversationThreadEventPresentation {
       case .saved: title = english ? "Edit saved" : "Edição salva"
       case .saveUndone: title = english ? "Edit undone" : "Edição desfeita"
       case .registrationUndone: title = english ? "Registration undone" : "Registro desfeito"
+      case .placementSaved: title = english ? "Meal updated" : "Refeição atualizada"
+      case .placementUndone: title = english ? "Meal change undone" : "Mudança de refeição desfeita"
       }
       lines = [
         english

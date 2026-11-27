@@ -18,6 +18,21 @@ import {
 
 const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u)
 const hash = z.string().regex(/^[a-f0-9]{64}$/u)
+const PLACEMENT_HEADER = 'X-Conversation-Meal-Placement'
+function requestsPlacement(request: Request) {
+  return (
+    process.env.MOBILE_CONVERSATION_MEAL_PLACEMENT_ENABLED === 'true' &&
+    request.headers.get(PLACEMENT_HEADER) === '1'
+  )
+}
+function requirePlacementWhenUsed(request: Request, kind: string) {
+  if ((kind === 'placement' || kind === 'undo_placement') && !requestsPlacement(request))
+    throw new MobileApiError(
+      503,
+      'conversation_meal_placement_unavailable',
+      'Meal placement is unavailable',
+    )
+}
 interface MealRoute {
   params: Promise<{ commandId: string }>
 }
@@ -128,9 +143,11 @@ export function createConversationMealEditPublicRoutes(
       return scopedResponse(
         context,
         () =>
-          turns
-            ? service(context.supabase).readGroup(context.auth, identity, true)
-            : service(context.supabase).readGroup(context.auth, identity),
+          requestsPlacement(context.request)
+            ? service(context.supabase).readGroup(context.auth, identity, turns, true)
+            : turns
+              ? service(context.supabase).readGroup(context.auth, identity, true)
+              : service(context.supabase).readGroup(context.auth, identity),
         turns,
       )
     }, runtime),
@@ -141,6 +158,7 @@ export function createConversationMealEditPublicRoutes(
         identity = original(context.request, params.commandId),
         operationId = uuid.parse(params.operationId),
         body = await editBody(context.request, operationId)
+      requirePlacementWhenUsed(context.request, body.kind)
       if (
         body.kind === 'save' &&
         body.photo_review_index !== undefined &&
@@ -169,6 +187,7 @@ export function createConversationMealEditPublicRoutes(
         identity = original(context.request, params.commandId),
         operationId = uuid.parse(params.operationId),
         body = await editBody(context.request, operationId)
+      requirePlacementWhenUsed(context.request, body.kind)
       return scopedResponse(context, () =>
         service(context.supabase).reconcile(context.auth, identity, operationId, body),
       )

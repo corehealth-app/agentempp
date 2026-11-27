@@ -182,6 +182,14 @@ actor ConversationMealEditController {
             guard group.actions.undoRegistration.allowed else {
               throw ConversationMealEditControllerError.unavailable
             }
+          case .placement:
+            guard group.actions.changePlacement?.allowed == true
+            else { throw ConversationMealEditControllerError.unavailable }
+          case .undoPlacement(let target):
+            guard group.actions.undoPlacement?.allowed == true,
+              group.lastOperation?.kind == .placementSaved,
+              group.lastOperation?.operationID == target
+            else { throw ConversationMealEditControllerError.unavailable }
           }
           let operation = try ConversationMealEditOperation(
             ownerID: context.ownerID,

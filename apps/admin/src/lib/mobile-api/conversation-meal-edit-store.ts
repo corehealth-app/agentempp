@@ -45,6 +45,8 @@ export type ConversationMealEditWriteOutcome =
       | 'day_closed'
       | 'undo_expired'
       | 'in_progress'
+      | 'invalid_date'
+      | 'unchanged'
     >
   | {
       readonly action: 'committed' | 'replay'
@@ -71,6 +73,7 @@ export interface ConversationMealEditStore {
   save(input: ConversationMealEditSaveInput): Promise<ConversationMealEditWriteOutcome>
   undoSave(input: ConversationMealEditWriteInput): Promise<ConversationMealEditWriteOutcome>
   undoRegistration(input: ConversationMealEditWriteInput): Promise<ConversationMealEditWriteOutcome>
+  placement(input: ConversationMealEditWriteInput): Promise<ConversationMealEditWriteOutcome>
 }
 class EditTransportFailure extends MobileApiError {
   constructor(code: 'busy' | 'conflict') {
@@ -105,6 +108,8 @@ const writeRefusal = refusal([
   'day_closed',
   'undo_expired',
   'in_progress',
+  'invalid_date',
+  'unchanged',
 ])
 
 export function createSupabaseConversationMealEditStore(
@@ -117,7 +122,8 @@ export function createSupabaseConversationMealEditStore(
       | 'read_conversation_meal_edit_operation'
       | 'commit_conversation_meal_item_edit'
       | 'undo_conversation_meal_item_edit'
-      | 'undo_conversation_meal_registration',
+      | 'undo_conversation_meal_registration'
+      | 'apply_conversation_meal_placement',
     args: Record<string, Json>,
   ) => PromiseLike<unknown>
   const rpc = db.rpc.bind(db) as RPC
@@ -127,11 +133,12 @@ export function createSupabaseConversationMealEditStore(
   })
   async function write(
     input: ConversationMealEditWriteInput | ConversationMealEditSaveInput,
-    kind: 'save' | 'undo_save' | 'undo_registration',
+    kind: 'save' | 'undo_save' | 'undo_registration' | 'placement' | 'undo_placement',
   ): Promise<ConversationMealEditWriteOutcome> {
     try {
       const op = bindConversationMealEdit(input)
       if (op.input.kind !== kind) return conversationMealEditUnavailable()
+      const placement = kind === 'placement' || kind === 'undo_placement'
       const origin = Object.getOwnPropertyDescriptor(input, 'originalReceipt')
       if (origin && (!origin.enumerable || !('value' in origin)))
         return conversationMealEditUnavailable()
@@ -142,7 +149,7 @@ export function createSupabaseConversationMealEditStore(
         p_operation_id: op.operationId,
         p_input: op.input as Json,
         p_expected_state: detachConversationMealEditJson(input.expectedState),
-        p_request_id: z.string().min(1).max(128).parse(input.requestId),
+        ...(placement ? {} : { p_request_id: z.string().min(1).max(128).parse(input.requestId) }),
       }
       if (kind === 'save') {
         if (!('calculatedItems' in input)) return conversationMealEditUnavailable()
@@ -155,8 +162,9 @@ export function createSupabaseConversationMealEditStore(
       }
       if (originalReceipt !== undefined)
         parseConversationMealEditCurrentState(args.p_expected_state, op.binding, originalReceipt)
-      const name =
-        kind === 'save'
+      const name = placement
+        ? 'apply_conversation_meal_placement'
+        : kind === 'save'
           ? 'commit_conversation_meal_item_edit'
           : kind === 'undo_save'
             ? 'undo_conversation_meal_item_edit'
@@ -176,8 +184,9 @@ export function createSupabaseConversationMealEditStore(
         )
         const previousIds = state.items.map((row) => row.id)
         if (
-          receipt.snapshot.id !== state.snapshot.id ||
-          receipt.snapshot.date !== state.snapshot.date ||
+          (!placement &&
+            (receipt.snapshot.id !== state.snapshot.id ||
+              receipt.snapshot.date !== state.snapshot.date)) ||
           receipt.removed_item_ids.some((id) => !previousIds.includes(id)) ||
           receipt.new_item_ids.some((id) => previousIds.includes(id)) ||
           (kind === 'undo_registration' && receipt.removed_item_ids.length !== previousIds.length)
@@ -253,5 +262,11 @@ export function createSupabaseConversationMealEditStore(
     save: (input: ConversationMealEditSaveInput) => write(input, 'save'),
     undoSave: (input: ConversationMealEditWriteInput) => write(input, 'undo_save'),
     undoRegistration: (input: ConversationMealEditWriteInput) => write(input, 'undo_registration'),
+    placement: (input: ConversationMealEditWriteInput) => {
+      const op = bindConversationMealEdit(input)
+      if (op.input.kind !== 'placement' && op.input.kind !== 'undo_placement')
+        return conversationMealEditUnavailable()
+      return write(input, op.input.kind)
+    },
   })
 }

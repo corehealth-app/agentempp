@@ -65,6 +65,10 @@ struct FlowConversationMealEditorContent: View {
             case .undoSave: Text(english ? "Undo the original edit" : "Desfazer a edição original")
             case .undoRegistration:
               Text(english ? "Undo the original registration" : "Desfazer o registro original")
+            case let .placement(localDate, _):
+              Text(english ? "Move this meal to \(localDate)" : "Mover esta refeição para \(localDate)")
+            case .undoPlacement:
+              Text(english ? "Undo the change to date or meal" : "Desfazer a mudança de data ou refeição")
             }
           }
         } else {

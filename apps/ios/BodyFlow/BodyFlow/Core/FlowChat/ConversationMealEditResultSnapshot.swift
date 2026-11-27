@@ -6,6 +6,8 @@ struct ConversationMealEditEffectSnapshot: Decodable, Sendable {
     case saved
     case saveUndone = "save_undone"
     case registrationUndone = "registration_undone"
+    case placementSaved = "placement_saved"
+    case placementUndone = "placement_undone"
   }
   let ownerID: UUID
   let commandID: UUID
@@ -42,7 +44,8 @@ struct ConversationMealEditEffectSnapshot: Decodable, Sendable {
       appliedAt = try o.required("applied_at").clock()
       undoExpiresAt = try o.required("undo_expires_at").optional { try $0.clock() }
       targetOperationID = try o.required("target_operation_id").optional { try $0.uuid() }
-      removedItemIDs = try o.required("removed_item_ids").ids(nonempty: true)
+      let placement = k == .placementSaved || k == .placementUndone
+      removedItemIDs = try o.required("removed_item_ids").ids(nonempty: !placement)
       newItemIDs = try o.required("new_item_ids").ids()
       nextRecordID = try o.required("next_record_id").optional { try $0.uuid() }
       try editCheck(Set(removedItemIDs).isDisjoint(with: Set(newItemIDs)))
@@ -64,6 +67,17 @@ struct ConversationMealEditEffectSnapshot: Decodable, Sendable {
         try editCheck(
           undoExpiresAt == nil && revision == 1 && targetOperationID == nil && newItemIDs.isEmpty
             && nextRecordID == nil)
+      case .placementSaved:
+        guard let deadline = undoExpiresAt else { throw ConversationMealEditInvalid.value }
+        let start = try editInstant(appliedAt)
+        let end = try editInstant(deadline)
+        try editCheck(removedItemIDs.isEmpty && newItemIDs.isEmpty && nextRecordID == nil
+          && targetOperationID == nil && end.seconds - start.seconds == 300
+          && end.nanos == start.nanos)
+      case .placementUndone:
+        try editCheck(removedItemIDs.isEmpty && newItemIDs.isEmpty && nextRecordID == nil
+          && undoExpiresAt == nil && revision >= 2 && targetOperationID != nil
+          && targetOperationID != operationID)
       }
     } catch { throw editDecodeFailure(decoder) }
   }
@@ -85,6 +99,8 @@ struct ConversationMealEditEffectSnapshot: Decodable, Sendable {
     case .save(let recordID, _): return kind == .saved && removedItemIDs == [recordID]
     case .undoSave(let target): return kind == .saveUndone && targetOperationID == target
     case .undoRegistration: return kind == .registrationUndone && op.expectedRevision == 0
+    case .placement: return kind == .placementSaved
+    case .undoPlacement(let target): return kind == .placementUndone && targetOperationID == target
     }
   }
 }

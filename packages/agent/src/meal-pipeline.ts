@@ -715,6 +715,7 @@ export function consumedIngredientReference(name: string): string | null {
     return 'Pão, trigo, francês'
   if (/^(?:ovo frito|ovos fritos)$/u.test(whole)) return 'Ovo, de galinha, inteiro, frito'
   if (/^(?:ovo mexido|ovos mexidos)$/u.test(whole)) return 'Egg, whole, cooked, scrambled'
+  if (/^banana prata(?: crua)?$/u.test(whole)) return 'Banana, prata, crua'
   if (whole === 'cebola') return 'Cebola, crua'
   return null
 }

@@ -248,7 +248,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
       'everyday-food-defaults.ts',
       '6ab28a7063eba8ccd3d5a50e1c23165a62da29517883b68edd1fe3d82abb44fb',
     ],
-    ['meal-pipeline.ts', '4570fb8cc44c3e13ab557c5add636cb1b0fa2479404784992bb4a3b50e7570e7'],
+    ['meal-pipeline.ts', '9fbebd4e8932f582e7cb33447ff5894a61bc79fe42d75d4f6975b40822b53493'],
     ['meal-draft.ts', '965638a77e021257b32021fbda78f72f88a359d8d8dfb14112422b3f1a1afda2'],
     [
       'registration-feedback-v2.ts',
@@ -267,7 +267,8 @@ function certifyOrdinaryPhotoSourcesR102(): void {
   for (const [id, hash] of [
     ['26432', '78dba943a656b4f72cc74802f3de9f2d4e89b340292d530877c2526414d03c2a'],
     ['418', '1c2da29d3556a3c86a93cbe1139b49ce88081e79c651a21e29620713d57411df'],
-    ['69702', '2cc3570a228d06c69c6f65039216f397bef9389b38be729da4d1cb2d0c14539e'],
+    // Removing the reviewed banana prata alias reproduces the previous body hash.
+    ['69702', '86d8a1ded5634dd2fcd243f46acaea64a5517f2aaa794b75ea1a35dbdf6e393c'],
     ['53637', '24a52b32484ed1661004e044c84360f8b88c831c459c8ceca19878e549256fe3'],
     ['7311', '573bf3689c7ec8a557195140599151dc0313a99be8535b769f644a41b0a63942'],
     ['84883', '2d92f920dc7d68eef20d87309ecd098814392c103ab64ad71642b5a1b4f454b1'],

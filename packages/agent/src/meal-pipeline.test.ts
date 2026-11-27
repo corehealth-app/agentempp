@@ -2618,12 +2618,15 @@ describe('consumed composition identity and mass', () => {
     expect(consumedIngredientReference('pão francês aberto')).toBe('Pão, trigo, francês')
     expect(consumedIngredientReference('ovo frito')).toBe('Ovo, de galinha, inteiro, frito')
     expect(consumedIngredientReference('ovo mexido')).toBe('Egg, whole, cooked, scrambled')
+    expect(consumedIngredientReference('banana prata')).toBe('Banana, prata, crua')
     for (const name of [
       'ovo frito sem óleo',
       'pão francês integral',
       'ovo marca123',
       'ovo frito com molho',
       'ovo cru',
+      'banana prata frita',
+      'banana prata com aveia',
       'não comi ovo frito',
     ])
       expect(consumedIngredientReference(name)).toBeNull()

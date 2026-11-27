@@ -556,6 +556,53 @@ describe('actual command interpretation materialization', () => {
     )
   })
 
+  it('preserves the reported banana variety and uses its verified catalogue nutrients', async () => {
+    const name = 'banana prata'
+    const f = fixture('No café da manhã comi 42 g de banana prata.', [
+      { name, quantity: '42', unit: 'g' },
+    ])
+    const reference = {
+      ...row('Banana, prata, crua', 182),
+      kcal_per_100g: 98.25,
+      protein_g: 1.27,
+      carbs_g: 25.96,
+      fat_g: 0.07,
+      fiber_g: 2.04,
+    }
+    const state = calculationDb([reference])
+    state.rpc.mockImplementation(async (_name, params) => ({
+      data:
+        String(params.search_term).toLowerCase().replaceAll(',', '') === 'banana prata crua'
+          ? [reference]
+          : [],
+      error: null,
+    }))
+
+    const result = prepared(await materialize(f, state))
+    const calculation = await calcMealMacros(
+      state.client,
+      result.inputs.map((input) => input.calculation_input),
+      'BR',
+      OWNER,
+      {
+        consumptionPolicy: 'consumed-meal-v1',
+        preparationAnnotations: 'consumed.preparation.v1',
+        sourceReader: f.capture.sourceReader,
+        auditSink: f.capture.auditSink,
+      },
+    )
+    expect(calculation.items).toMatchObject([
+      {
+        food_name: name,
+        matched_taco_id: 182,
+        matched_taco_name: 'Banana, prata, crua',
+        quantity_g: 42,
+        kcal: 41.3,
+        source: 'canonical_fuzzy',
+      },
+    ])
+  })
+
   it('recognizes a catalogue preparation when the photo describes its qualifiers in a different order', async () => {
     const name = 'pastel frito de queijo'
     const f = visualFixture([{ name, quantity_g_estimate: 120, confidence: 0.91 }])

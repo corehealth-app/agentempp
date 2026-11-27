@@ -4,7 +4,8 @@ SET LOCAL timezone='UTC';
 SET LOCAL datestyle='ISO,YMD';
 \ir fixtures/conversation_meal_atomic_writer_fixture.sql
 
-CREATE FUNCTION pg_temp.earlier_meal_command(u uuid,e uuid,reason text) RETURNS uuid
+CREATE FUNCTION pg_temp.earlier_meal_command(u uuid,e uuid,reason text,
+  message text DEFAULT 'Ontem comi 100 g de arroz sintetico no almoço.') RETURNS uuid
 LANGUAGE plpgsql AS $$
 DECLARE
   id uuid:=gen_random_uuid();
@@ -16,7 +17,7 @@ DECLARE
 BEGIN
   raw:=jsonb_build_object('intake_protocol','conversation.intake.v1','intake_id',id,
     'meal_type_hint','almoco','source',jsonb_build_object('channel','text',
-    'text','Ontem comi 100 g de arroz sintetico no almoço.'));
+    'text',message));
   admission:=public.admit_conversation_intake(u,e,raw);
   captured:=public.capture_conversation_intake_source(u,id,admission#>>'{intake,input_hash}',e);
   claimed:=public.claim_conversation_intake_routing(u,id,admission#>>'{intake,input_hash}',e,captured->>'source_hash');
@@ -45,6 +46,8 @@ DECLARE
   page jsonb;
   saved private.conversation_meal_effects%ROWTYPE;
   cmd private.conversation_meal_command_ids%ROWTYPE;
+  altered_text text;
+  refused boolean;
 BEGIN
   INSERT INTO public.users(id,email,status,timezone,country,country_confirmed) VALUES
     (u,'meal-date-test@example.invalid','active',zone,'BR',true),
@@ -93,6 +96,20 @@ BEGIN
   source:=public.capture_conversation_meal_source(other_owner,child);
   PERFORM pg_temp.writer_ok(source#>>'{context,day,date}'=today::text,
     'legacy selections keep their established current-day authority');
+
+  FOREACH altered_text IN ARRAY ARRAY[
+    'Comi 100 g de arroz que preparei ontem.',
+    'Anteontem comi 100 g de arroz.',
+    'Ontem não comi 100 g de arroz.'
+  ] LOOP
+    child:=pg_temp.earlier_meal_command(other_owner,other_epoch,'verified_meal_yesterday',altered_text);
+    refused:=false;
+    BEGIN
+      PERFORM public.capture_conversation_meal_source(other_owner,child);
+    EXCEPTION WHEN serialization_failure THEN refused:=true;
+    END;
+    PERFORM pg_temp.writer_ok(refused,'a mismatched source cannot authorize yesterday: '||altered_text);
+  END LOOP;
 
   child:=pg_temp.earlier_meal_command(other_owner,other_epoch,'verified_meal_yesterday');
   source:=public.capture_conversation_meal_source(other_owner,child);

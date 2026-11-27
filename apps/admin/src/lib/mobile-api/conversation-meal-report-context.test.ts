@@ -21,7 +21,7 @@ import { registerPersistedConversationMeal } from './conversation-meal-registrat
 
 const originalMilk = 'No café da manhã, consumi 200 mL de leite com 1 medida de whey.'
 const attempt = '10000000-0000-4000-8000-000000000010'
-function fixture(text: string, selected?: 'cafe' | 'almoco' | 'jantar') {
+function fixture(text: string, selected?: 'cafe' | 'almoco' | 'jantar', earlier = false) {
   const command = bindConversationCommand(writerOwner, `cmsg1:${writerCommandId}`, {
     command_protocol: 'conversation.command.v1',
     command_id: writerCommandId,
@@ -33,7 +33,17 @@ function fixture(text: string, selected?: 'cafe' | 'almoco' | 'jantar') {
   const capture = {
     ...prior,
     capturedAt: '2026-11-04T18:00:00.000002Z',
-    context: { ...prior.context, input_hash: command.inputHash, source_input: command.command },
+    context: {
+      ...prior.context,
+      input_hash: command.inputHash,
+      source_input: command.command,
+      ...(earlier
+        ? {
+            clinical: { ...prior.context.clinical, date: '2026-11-04' },
+            day: { ...prior.context.day, date: '2026-11-03' },
+          }
+        : {}),
+    },
   }
   return { command, capture, source: buildConversationMealInterpretationSource(command, capture) }
 }
@@ -117,6 +127,25 @@ function validate(prefix: string, suffix = '') {
 }
 
 describe('closed leading meal context preserves consumption authority', () => {
+  it.each([
+    ['No jantar de ontem, comi ', ''],
+    ['Ontem, comi ', ''],
+    ['Comi ', ' no jantar de ontem'],
+  ])('accounts for a verified original day without changing the food spans: %s%s', (prefix, suffix) => {
+    const text = `${prefix}arroz200g${suffix}`
+    const { source } = fixture(text, undefined, true)
+    expect(source.reported_day).toBe('ontem')
+    const model = riceModel(prefix, suffix)
+    if (suffix) {
+      const last = model.sources[0]?.spans.at(-1)
+      if (!last) throw new Error('Missing suffix span')
+      last.kind = 'other'
+    }
+    expect(validateConversationMealInterpretationModel(model, source)).toEqual(model)
+    expect(validateConversationMealInterpretationModel(model, fixture(text).source).decision).toBe(
+      'clarification_required',
+    )
+  })
   it('accepts the exact original63 UTF16 milk/whey source without modifying text or authority', () => {
     const f = fixture(originalMilk),
       before = structuredClone(f),
@@ -188,9 +217,13 @@ describe('closed leading meal context preserves consumption authority', () => {
 
 // Real registration composition with synthetic ports; this is unit evidence,
 // not an SQL/provider/nutrition qualification. Only the semantic model is real.
-async function registerRice(selected?: 'jantar', prefix = 'No café da manhã, consumi ') {
+async function registerRice(
+  selected?: 'jantar',
+  prefix = 'No café da manhã, consumi ',
+  earlier?: 'captured' | 'expected_without_capture',
+) {
   const text = `${prefix}arroz200g`,
-    f = fixture(text, selected),
+    f = fixture(text, selected, earlier === 'captured'),
     model = riceModel(prefix)
   const value = validateConversationMealInterpretationModel(model, f.source)
   const persisted: ConversationMealInterpretation = {
@@ -220,11 +253,20 @@ async function registerRice(selected?: 'jantar', prefix = 'No café da manhã, c
       receipt: {
         ...writerReceipt(),
         input_hash: f.command.inputHash,
-        meal_type: selected ?? 'cafe',
+        meal_type: selected ?? (earlier === 'captured' ? 'jantar' : 'cafe'),
+        ...(earlier === 'captured'
+          ? {
+              schema: 'conversation.meal-effect.v2',
+              local_date: '2026-11-03',
+              consumed_at: '2026-11-03T12:00:00.000001Z',
+              committed_at: '2026-11-04T12:00:01.000004Z',
+            }
+          : {}),
       },
     }),
   }
   const dependencies = {
+    ...(earlier ? { expectEarlierMeal: true as const } : {}),
     journal: {
       read: vi.fn().mockResolvedValue({ action: 'absent' }),
       admit: vi.fn().mockResolvedValue({
@@ -336,6 +378,28 @@ async function registerRice(selected?: 'jantar', prefix = 'No café da manhã, c
   return { result, dependencies, f }
 }
 describe('actual registration service keeps selected and textual meal authority', () => {
+  it('fails closed if a historical selection is backed by a current-day writer source', async () => {
+    await expect(
+      registerRice(undefined, undefined, 'expected_without_capture'),
+    ).rejects.toMatchObject({
+      status: 503,
+    })
+  })
+  it('uses the reported dinner rather than the hour when a historical report arrives', async () => {
+    const { result, dependencies } = await registerRice(undefined, 'Ontem jantei ', 'captured')
+    expect(result).toMatchObject({
+      status: 'saved',
+      receipt: { local_date: '2026-11-03', meal_type: 'jantar' },
+    })
+    expect(dependencies.writer.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({ resolved: expect.objectContaining({ meal_type: 'jantar' }) }),
+    )
+  })
+  it('asks for the historical meal kind if the original report gives no type', async () => {
+    const { result, dependencies } = await registerRice(undefined, 'Ontem comi ', 'captured')
+    expect(result).toMatchObject({ status: 'not_recorded', reason: 'meal_type_required' })
+    expect(dependencies.writer.prepare).not.toHaveBeenCalled()
+  })
   it('does not prepare or commit a negated report even with a selected meal', async () => {
     const { result, dependencies } = await registerRice('jantar', 'No café da manhã, não consumi ')
     expect(result).toMatchObject({ status: 'not_recorded', reason: 'ambiguous' })

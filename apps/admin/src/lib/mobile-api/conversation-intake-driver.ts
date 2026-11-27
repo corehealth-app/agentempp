@@ -12,6 +12,7 @@ import {
   parseConversationIntakeSelection,
   parseConversationIntakeSource,
   pinConversationIntake,
+  verifiedEarlierMealReason,
 } from './conversation-intake-contracts'
 import type { ConversationIntakeMediaNegotiation } from './conversation-intake-media-negotiation'
 import type { createConversationIntakeRecoveryStore } from './conversation-intake-recovery-store'
@@ -50,6 +51,7 @@ export interface ConversationIntakeLookup {
 export interface ConversationIntakeDriverPorts {
   /** Independent trusted capability. Negotiation alone never enables media. */
   readonly mediaEnabled?: () => boolean
+  readonly earlierMealReceiptsSupported?: boolean
   readonly store: Store
   readonly recovery: ReturnType<typeof createConversationIntakeRecoveryStore>
   readonly turnReplies?: ReturnType<typeof createConversationTurnReplies>
@@ -71,6 +73,7 @@ export interface ConversationIntakeDriverPorts {
         submit(
           child: Child,
           negotiation: ConversationFeedbackPresentationNegotiation,
+          earlierMeal?: true,
         ): Promise<TypedReply>
         read(
           child: Child,
@@ -292,7 +295,10 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       if (selection.schema === 'conversation.intake-selection.v2' && !activateMedia())
         return mediaHold(selection.intake)
       const d = selection.decision,
-        c = selection.command
+        c = selection.command,
+        earlierMeal = d.kind === 'meal.report' && verifiedEarlierMealReason(d.reason)
+      if (earlierMeal && !ports.earlierMealReceiptsSupported)
+        return pending('earlier_meal_client_update_required', selection.intake, 'held')
       if (d.kind === 'not_reported' || d.kind === 'clarification_required') {
         if (c !== null) throw failure('conversation_intake_changed')
         const turns = turnRepliesEnabled ? ports.turnReplies : undefined
@@ -348,7 +354,11 @@ export function createConversationIntakeDriver(ports: ConversationIntakeDriverPo
       }
       if (!c || c.kind !== d.kind) throw failure('conversation_intake_changed')
       const domain = c.kind === 'meal.report' ? domains.meal : domains.workout
-      const raw = await call(() => domain[method](c, negotiation))
+      const raw = await call(() =>
+        earlierMeal && method === 'submit'
+          ? domains.meal.submit(c, negotiation, true)
+          : domain[method](c, negotiation),
+      )
       if (!latest) throw failure('conversation_intake_scope_changed')
       const result = childReply(raw, c, latest),
         { input: _private, ...child } = c

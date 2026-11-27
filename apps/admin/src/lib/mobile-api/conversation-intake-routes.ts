@@ -29,6 +29,8 @@ import { workoutHash, workoutUUID } from './conversation-workout-contracts'
 import { MobileApiError, mobileSuccess, readJsonBody } from './http'
 import { createMobileRoute, createMobileRouteWithContext, type MobileRouteRuntime } from './route'
 
+export const CONVERSATION_MEAL_DATES_HEADER = 'X-Conversation-Meal-Dates'
+
 export function conversationIntakesEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
@@ -46,6 +48,7 @@ export interface ConversationIntakeRoutePorts {
     auth: MobileAuthContext,
     original: ConversationIntakeLookup,
     turns?: boolean,
+    earlierMealReceiptsSupported?: boolean,
   ) => Pick<ReturnType<typeof createConversationIntakeRuntime>, 'submit' | 'read'>
   readonly session?: (
     db: ServiceClient,
@@ -63,6 +66,7 @@ function response(
   selected: ConversationFeedbackPresentationNegotiation,
   selectedMedia: ConversationIntakeMediaNegotiation = 'legacy',
   turns = false,
+  earlierMealReceiptsSupported = false,
 ) {
   const waiting =
     result.status === 'pending' ||
@@ -73,6 +77,7 @@ function response(
     headers.Vary ?? 'Authorization',
     ...(selectedMedia === '1' ? ['X-Conversation-Media-Provenance'] : []),
     ...(turns ? [CONVERSATION_TURNS_HEADER] : []),
+    ...(earlierMealReceiptsSupported ? [CONVERSATION_MEAL_DATES_HEADER] : []),
   ].join(', ')
   return mobileSuccess(result, requestId, waiting ? 202 : 200, {
     'X-Conversation-Protocol': 'intake-v1',
@@ -83,6 +88,7 @@ function response(
         }
       : {}),
     ...(turns ? { [CONVERSATION_TURNS_HEADER]: '1' } : {}),
+    ...(earlierMealReceiptsSupported ? { [CONVERSATION_MEAL_DATES_HEADER]: '1' } : {}),
     Vary: vary,
   })
 }
@@ -103,11 +109,12 @@ export function createConversationIntakeRoutes(
     mediaEnabled = ports.mediaEnabled?.bind(ports) ?? conversationIntakeMediaEnabled,
     service =
       ports.service?.bind(ports) ??
-      ((db, auth, original, turnRepliesEnabled = false) =>
+      ((db, auth, original, turnRepliesEnabled = false, earlierMealReceiptsSupported = false) =>
         createConversationIntakeRuntime(db, auth, original, {
           enabled,
           mediaEnabled,
           turnRepliesEnabled,
+          earlierMealReceiptsSupported,
           privateMediaCatalogEnabled: () =>
             process.env.MOBILE_CONVERSATION_PRIVATE_CATALOG_ENABLED === 'true',
           // Construction is lazy and synchronous. Provider work occurs only after
@@ -118,14 +125,28 @@ export function createConversationIntakeRoutes(
               undefined,
               undefined,
               async (ownerId, date) => {
-                const { data, error } = await db
-                  .from('daily_snapshots')
-                  .select('day_closed')
-                  .eq('user_id', ownerId)
-                  .eq('date', date)
-                  .maybeSingle()
-                return !error && data?.day_closed === true
+                const [snapshot, progress] = await Promise.all([
+                  db
+                    .from('daily_snapshots')
+                    .select('date')
+                    .eq('user_id', ownerId)
+                    .eq('day_closed', true)
+                    .gte('date', date)
+                    .limit(1)
+                    .maybeSingle(),
+                  db
+                    .from('user_progress')
+                    .select('last_active_date')
+                    .eq('user_id', ownerId)
+                    .gte('last_active_date', date)
+                    .maybeSingle(),
+                ])
+                if (snapshot.error || progress.error)
+                  throw new Error('Reported meal day status is unavailable')
+                return snapshot.data !== null || progress.data !== null
               },
+              earlierMealReceiptsSupported &&
+                process.env.MOBILE_CONVERSATION_EARLIER_MEALS_ENABLED === 'true',
             ),
         })),
     session =
@@ -168,27 +189,37 @@ export function createConversationIntakeRoutes(
         },
         selected = negotiateConversationFeedbackPresentation(context.request.headers),
         selectedMedia = negotiateConversationIntakeMedia(context.request.headers),
-        turns = conversationTurnRepliesRequested(context.request.headers)
+        turns = conversationTurnRepliesRequested(context.request.headers),
+        earlierMealReceiptsSupported =
+          context.request.headers.get(CONVERSATION_MEAL_DATES_HEADER) === '1'
       available()
       return response(
-        await (turns
-          ? service(context.supabase, context.auth, original, true).submit(
+        await (earlierMealReceiptsSupported
+          ? service(context.supabase, context.auth, original, turns, true).submit(
               bound,
               selected,
               selectedMedia,
-              true,
+              turns,
             )
-          : selectedMedia === 'legacy'
-            ? service(context.supabase, context.auth, original).submit(bound, selected)
-            : service(context.supabase, context.auth, original).submit(
+          : turns
+            ? service(context.supabase, context.auth, original, true).submit(
                 bound,
                 selected,
                 selectedMedia,
-              )),
+                true,
+              )
+            : selectedMedia === 'legacy'
+              ? service(context.supabase, context.auth, original).submit(bound, selected)
+              : service(context.supabase, context.auth, original).submit(
+                  bound,
+                  selected,
+                  selectedMedia,
+                )),
         context.requestId,
         selected,
         selectedMedia,
         turns,
+        earlierMealReceiptsSupported,
       )
     }, readonlyRuntime),
     GET: createMobileRouteWithContext<IntakeRouteContext>(async (context, route) => {
@@ -200,22 +231,31 @@ export function createConversationIntakeRoutes(
         original = { ownerId: context.auth.userId, intakeId, inputHash, epoch },
         selected = negotiateConversationFeedbackPresentation(context.request.headers),
         selectedMedia = negotiateConversationIntakeMedia(context.request.headers),
-        turns = conversationTurnRepliesRequested(context.request.headers)
+        turns = conversationTurnRepliesRequested(context.request.headers),
+        earlierMealReceiptsSupported =
+          context.request.headers.get(CONVERSATION_MEAL_DATES_HEADER) === '1'
       available()
       return response(
-        await (turns
-          ? service(context.supabase, context.auth, original, true).read(
+        await (earlierMealReceiptsSupported
+          ? service(context.supabase, context.auth, original, turns, true).read(
               selected,
               selectedMedia,
-              true,
+              turns,
             )
-          : selectedMedia === 'legacy'
-            ? service(context.supabase, context.auth, original).read(selected)
-            : service(context.supabase, context.auth, original).read(selected, selectedMedia)),
+          : turns
+            ? service(context.supabase, context.auth, original, true).read(
+                selected,
+                selectedMedia,
+                true,
+              )
+            : selectedMedia === 'legacy'
+              ? service(context.supabase, context.auth, original).read(selected)
+              : service(context.supabase, context.auth, original).read(selected, selectedMedia)),
         context.requestId,
         selected,
         selectedMedia,
         turns,
+        earlierMealReceiptsSupported,
       )
     }, readonlyRuntime),
   })

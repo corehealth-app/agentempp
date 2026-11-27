@@ -209,6 +209,12 @@ export function createConversationTurnReplies(
                   metadata,
                 }
               }
+              if (reason === 'reported_meal_date_unavailable') {
+                return {
+                  text: 'A refeição ficou sem registro. Preciso confirmar a data do diário antes de conseguir salvar.',
+                  metadata,
+                }
+              }
               if (
                 reason === 'explicit_denial' ||
                 reason === 'negacao_de_consumo_sem_relato_positivo'

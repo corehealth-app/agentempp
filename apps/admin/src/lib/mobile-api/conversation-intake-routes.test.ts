@@ -4,6 +4,7 @@ import { candidateAuth } from './__fixtures__/conversation-candidate'
 import { writerEpoch } from './__fixtures__/conversation-meal-writer'
 import { bindConversationIntake } from './conversation-intake-contracts'
 import {
+  CONVERSATION_MEAL_DATES_HEADER,
   conversationIntakesEnabled,
   createConversationIntakeRoutes,
 } from './conversation-intake-routes'
@@ -84,6 +85,21 @@ function request(method = 'POST', body: unknown = bound.input, extra: Record<str
   })
 }
 describe('genuine neutral intake authenticated HTTP routes', () => {
+  it.each([
+    'POST',
+    'GET',
+  ] as const)('negotiates earlier-meal receipt support on %s', async (method) => {
+    const h = fixture()
+    const req = request(method, bound.input, { [CONVERSATION_MEAL_DATES_HEADER]: '1' })
+    const response =
+      method === 'POST'
+        ? await h.routes.POST(req)
+        : await h.routes.GET(req, { params: Promise.resolve({ intakeId: bound.intakeId }) })
+    expect(h.service).toHaveBeenCalledWith(h.db, candidateAuth, identity, false, true)
+    expect(response.headers.get(CONVERSATION_MEAL_DATES_HEADER)).toBe('1')
+    expect(response.headers.get('Vary')).toBe(`Authorization, ${CONVERSATION_MEAL_DATES_HEADER}`)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+  })
   it('requires the enabled server capability and exact request before selecting turn replies', async () => {
     try {
       vi.stubEnv('MOBILE_CONVERSATION_TURN_REPLIES_ENABLED', 'false')

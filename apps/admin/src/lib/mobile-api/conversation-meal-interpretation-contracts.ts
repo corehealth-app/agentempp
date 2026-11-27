@@ -2,6 +2,7 @@
  * SQL consumption proof. Only backend-owned source/identity can build input. */
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
+import { addIsoDateDays } from '@mpp/agent'
 import type { Json } from '@mpp/db'
 import { z } from 'zod'
 import {
@@ -198,6 +199,7 @@ export const mealInterpretationSourceSchema = z
     source_hash: hash,
     epoch: uuid,
     captured_at: z.string().datetime({ offset: true }),
+    reported_day: z.enum(['ontem', 'anteontem']).optional(),
     media_binding: z
       .object({
         asset_id: uuid,
@@ -230,6 +232,16 @@ export interface CapturedMealInterpretationSource {
   readonly capturedAt: string
   readonly epoch: string
   readonly context: Readonly<Record<string, unknown>>
+}
+const capturedCivilDate = z.object({ date: z.string().date() })
+
+function reportedDay(context: Readonly<Record<string, unknown>>) {
+  const day = capturedCivilDate.safeParse(context.day)
+  const clinical = capturedCivilDate.safeParse(context.clinical)
+  if (!day.success || !clinical.success) return undefined
+  if (day.data.date === addIsoDateDays(clinical.data.date, -1)) return 'ontem'
+  if (day.data.date === addIsoDateDays(clinical.data.date, -2)) return 'anteontem'
+  return undefined
 }
 export function interpretationUnavailable(): never {
   throw new MobileApiError(
@@ -417,6 +429,7 @@ export function buildConversationMealInterpretationSource(
         processing_hash: createHash('sha256').update(canonical(m.processing_result)).digest('hex'),
       }
     }
+    const historicalDay = reportedDay(rawContext)
     const packet = mealInterpretationSourceSchema.parse({
       schema: 'conversation.meal-interpretation-source.v1',
       interpreter_version: MEAL_INTERPRETER_VERSION,
@@ -426,6 +439,7 @@ export function buildConversationMealInterpretationSource(
       source_hash: captured.sourceHash,
       epoch: c.epoch,
       captured_at: captured.capturedAt,
+      ...(historicalDay ? { reported_day: historicalDay } : {}),
       media_binding,
       source_units: c.source_units,
       sources,

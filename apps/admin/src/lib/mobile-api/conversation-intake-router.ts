@@ -13,6 +13,7 @@ import {
   intakeSnapshot,
   parseConversationIntakeRoutingDecision,
   parseConversationIntakeSource,
+  verifiedEarlierMealReason,
 } from './conversation-intake-contracts'
 import { workoutText } from './conversation-workout-contracts'
 import { MobileApiError, readJsonBody } from './http'
@@ -291,8 +292,8 @@ function isStandaloneConversationQuestion(text: string): boolean {
 function reportedEarlierMealDay(
   sources: ReturnType<typeof conversationIntakeDiscourse>['sources'],
   localDate: string,
-): string | null {
-  let offset: number | null = null
+) {
+  let offset: -1 | -2 | null = null
   for (const source of sources) {
     if (!source.text) continue
     const text = source.text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim()
@@ -301,7 +302,7 @@ function reportedEarlierMealDay(
     if (!days.size) continue
     if (days.size !== 1) return null
     const opening =
-      /^(ontem|anteontem),?\s+(?:eu\s+)?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei)\b/u.exec(
+      /^(?:(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia) de )?(ontem|anteontem),?\s+(?:eu\s+)?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei)\b/u.exec(
         text,
       )
     const meal =
@@ -318,7 +319,12 @@ function reportedEarlierMealDay(
     if (offset !== null && offset !== candidate) return null
     offset = candidate
   }
-  return offset === null ? null : addIsoDateDays(localDate, offset)
+  return offset === null
+    ? null
+    : {
+        date: addIsoDateDays(localDate, offset),
+        reason: offset === -1 ? 'verified_meal_yesterday' : 'verified_meal_two_days_ago',
+      }
 }
 
 async function decode(result: LLMResult): Promise<ConversationIntakeRoutingDecision> {
@@ -349,8 +355,8 @@ async function decode(result: LLMResult): Promise<ConversationIntakeRoutingDecis
   if (canonical.question === null) delete canonical.question
   if (
     canonical.reason === 'reported_meal_day_closed' ||
-    canonical.reason === 'verified_meal_yesterday' ||
-    canonical.reason === 'verified_meal_two_days_ago'
+    canonical.reason === 'reported_meal_date_unavailable' ||
+    verifiedEarlierMealReason(canonical.reason)
   )
     canonical.reason = 'provider_reason_unavailable'
   try {
@@ -379,6 +385,7 @@ export function createOpenRouterConversationIntakeRouter(
   injected?: Pick<OpenRouterLLM, 'complete'>,
   reportFailure: (diagnostic: ConversationIntakeRoutingDiagnostic) => void = logFailure,
   isDayClosed?: (ownerId: string, date: string) => Promise<boolean>,
+  earlierMeals = false,
 ) {
   if (typeof apiKey !== 'string' || !apiKey.trim()) return unavailable()
   const provider = injected ?? new OpenRouterLLM({ apiKey, appName: 'Performe AI Mobile' }),
@@ -497,14 +504,21 @@ export function createOpenRouterConversationIntakeRouter(
           ? (finish as FinishReason)
           : 'unknown'
         const decision = await decode(result)
-        if (isDayClosed && decision.kind === 'meal.report') {
-          const date = reportedEarlierMealDay(payload.sources, source.context.local_date)
-          if (date && (await isDayClosed(source.binding.owner_id, date).catch(() => false)))
+        if (decision.kind === 'meal.report') {
+          const reported = reportedEarlierMealDay(payload.sources, source.context.local_date)
+          if (reported) {
+            const closed = await isDayClosed?.(source.binding.owner_id, reported.date).catch(
+              () => undefined,
+            )
+            if (earlierMeals && closed === false)
+              return intakeSnapshot({ ...decision, reason: reported.reason })
             return intakeSnapshot({
               schema: 'conversation.intake-routing.v1',
               kind: 'not_reported',
-              reason: 'reported_meal_day_closed',
+              reason:
+                closed === true ? 'reported_meal_day_closed' : 'reported_meal_date_unavailable',
             })
+          }
         }
         return decision
       } catch (error) {

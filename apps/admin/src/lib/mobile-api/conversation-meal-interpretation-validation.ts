@@ -155,8 +155,18 @@ function separator(text: string): boolean {
       .every((w) => ['e', 'com', 'de', 'do', 'da', 'dos', 'das', 'and', 'of'].includes(w))
   )
 }
-function reportMarker(text: string): boolean {
-  const v = plain(text).replace(/[:,]$/u, '').trim()
+type ReportedMealDay = ConversationMealInterpretationSource['reported_day']
+
+function reportMarker(text: string, day?: ReportedMealDay): boolean {
+  let v = plain(text).replace(/[:,]$/u, '').trim()
+  if (day) {
+    v = v
+      .replace(new RegExp(`^${day},? `, 'u'), '')
+      .replace(
+        new RegExp(`^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia) de ${day},? `, 'u'),
+        '',
+      )
+  }
   // One leading meal context is part of the same reporting span. It does not
   // establish consumption without the existing explicit predicate, assign a
   // meal slot/date, or permit any other source text to be omitted. The optional
@@ -172,6 +182,7 @@ function reportMarker(text: string): boolean {
 function leadingMealContextEnd(
   source: MealInterpretationModelResult['sources'][number],
   text: string,
+  day?: ReportedMealDay,
 ): number | null {
   if (source.classification !== 'reported') return null
   const reportIndex = source.spans.findIndex((span) => span.kind === 'report'),
@@ -187,9 +198,15 @@ function leadingMealContextEnd(
   // A separately labeled first-person subject still belongs to this exact
   // prefix. The following report span must independently contain the genuine
   // consumption predicate; negations, quotes and other clauses remain refused.
+  const prefix = plain(text.slice(0, report.start))
   return /^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia)(?: de hoje)?,?(?: eu)?$/u.test(
-    plain(text.slice(0, report.start)),
-  )
+    prefix,
+  ) ||
+    (day &&
+      new RegExp(
+        `^(?:(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia) de )?${day},?(?: eu)?$`,
+        'u',
+      ).test(prefix))
     ? report.start
     : null
 }
@@ -200,6 +217,7 @@ function leadingMealContextEnd(
 function trailingMealContextStart(
   source: MealInterpretationModelResult['sources'][number],
   text: string,
+  day?: ReportedMealDay,
 ): number | null {
   if (!['reported', 'nominal_list'].includes(source.classification)) return null
   const lastFood = source.spans.findLastIndex((span) =>
@@ -219,7 +237,11 @@ function trailingMealContextStart(
     .replace(/^[,;\s]+/u, '')
     .replace(/[.!]+$/u, '')
     .trim()
-  return /^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia)(?: de hoje)?$/u.test(context)
+  return /^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia)(?: de hoje)?$/u.test(context) ||
+    (day &&
+      new RegExp(`^(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia) de ${day}$`, 'u').test(
+        context,
+      ))
     ? first.start
     : null
 }
@@ -234,6 +256,7 @@ function trailingPhotoPointerStart(
   text: string,
   media: ConversationMealInterpretationSource['media_binding'],
   visualCount: number,
+  day?: ReportedMealDay,
 ): number | null {
   if (
     !['media_caption', 'media_context'].includes(source.unit) ||
@@ -245,7 +268,12 @@ function trailingPhotoPointerStart(
     return null
   const reports = source.spans.filter((span) => span.kind === 'report')
   const report = reports[0]
-  if (reports.length !== 1 || !report || !reportMarker(text.slice(report.start, report.end)))
+  if (reports.length !== 1 || !report) return null
+  const predicate = plain(text.slice(report.start, report.end))
+  if (
+    !reportMarker(predicate, day) &&
+    !(day && /^(?:isso|isto|esse|essa|este|esta) foi$/u.test(predicate))
+  )
     return null
   const tail = source.spans.filter((span) => span.start >= report.end)
   if (
@@ -256,7 +284,11 @@ function trailingPhotoPointerStart(
   // A current-time adjunct belongs to the same complete, already reported
   // photo pointer. Only these exact terminal words are inert: questions,
   // quantities, other dates and additional clauses remain fully accounted for.
-  const tailText = plain(text.slice(report.end)).replace(/ (?:agora|hoje)([.!]?)$/u, '$1')
+  const originalTail = plain(text.slice(report.end))
+  const tailText = day
+    ? originalTail.replace(new RegExp(` de ${day}([.!]?)$`, 'u'), '$1')
+    : originalTail.replace(/ (?:agora|hoje)([.!]?)$/u, '$1')
+  if (!reportMarker(predicate, day) && originalTail === tailText) return null
   // A literal reference to this bound photo is inert context, just like
   // "esse prato". Match the entire tail so future/negative/third-party clauses,
   // questions and explicit quantities still require semantic accounting.
@@ -492,13 +524,14 @@ export function validateConversationMealInterpretationModel(
         mark('source_classification')
       let reports = 0
       let hasFood = false
-      const leadingContextEnd = leadingMealContextEnd(s, input.text ?? '')
-      const contextStart = trailingMealContextStart(s, input.text ?? '')
+      const leadingContextEnd = leadingMealContextEnd(s, input.text ?? '', source.reported_day)
+      const contextStart = trailingMealContextStart(s, input.text ?? '', source.reported_day)
       const photoPointerStart = trailingPhotoPointerStart(
         s,
         input.text ?? '',
         source.media_binding,
         visual.size,
+        source.reported_day,
       )
       for (const span of s.spans) {
         const text = (input.text ?? '').slice(span.start, span.end)
@@ -520,7 +553,8 @@ export function validateConversationMealInterpretationModel(
             mark('unaccounted_discourse')
         } else if (span.kind === 'report') {
           reports += 1
-          if (hasFood || !reportMarker(text)) mark('report_prefix')
+          if (hasFood || (!reportMarker(text, source.reported_day) && photoPointerStart === null))
+            mark('report_prefix')
         } else if (span.kind === 'separator' && !separator(text)) mark('separator')
         else if (['food', 'quantity', 'unit'].includes(span.kind) && span.food_index === null)
           mark('unbound_span')

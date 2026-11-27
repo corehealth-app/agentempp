@@ -408,6 +408,32 @@ function savedMeal(f: ReturnType<typeof setup>) {
 }
 
 describe('durable neutral intake orchestration over genuine typed service boundaries', () => {
+  it('keeps a verified prior date on the sealed write and its read-only reconciliation', async () => {
+    const h = setup('Ontem comi arroz no almoço.')
+    h.route.mockResolvedValue({
+      schema: 'conversation.intake-routing.v1',
+      kind: 'meal.report',
+      reason: 'verified_meal_yesterday',
+    })
+    const upgraded = createConversationIntakeDriver({
+      ...h.ports,
+      earlierMealReceiptsSupported: true,
+    })
+    expect(await upgraded.submit(h.command, h.epoch)).toMatchObject({
+      status: 'selected',
+      selection: { kind: 'meal.report' },
+    })
+    expect(h.domains.meal.submit).toHaveBeenCalledWith(expect.any(Object), 'legacy', true)
+    expect(h.domains.workout.submit).not.toHaveBeenCalled()
+    expect(await h.driver.read(h.lookup)).toMatchObject({
+      status: 'held',
+      reason: 'earlier_meal_client_update_required',
+    })
+    expect(h.domains.meal.read).not.toHaveBeenCalled()
+    expect(await upgraded.read(h.lookup)).toMatchObject({ status: 'selected' })
+    expect(h.domains.meal.read).toHaveBeenCalledOnce()
+    expect(h.domains.meal.submit).toHaveBeenCalledOnce()
+  })
   it('stores and reads a opted-in conversation answer without selecting a registration writer', async () => {
     const h = setup('Como foi meu dia?')
     h.route.mockResolvedValue({

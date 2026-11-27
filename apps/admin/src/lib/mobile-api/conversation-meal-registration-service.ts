@@ -78,6 +78,7 @@ export interface ConversationMealRegistrationDependencies {
   journal?: ConversationCommandJournal
   sources?: ConversationMealSourceFactory
   initializeDay?: (auth: MobileAuthContext, command: BoundConversationMealCommand) => Promise<void>
+  expectEarlierMeal?: true
   interpret?: (
     command: BoundConversationMealCommand,
     source: CapturedConversationMealSource,
@@ -101,6 +102,13 @@ export interface ConversationMealRegistrationDependencies {
     ): Promise<OriginalConversationMealFeedback | null>
   }
 }
+
+const earlierMealSlotByVerb = {
+  almocei: 'almoco',
+  jantei: 'jantar',
+  lanchei: 'lanche',
+  ceei: 'ceia',
+} as const
 export type ConversationMealRegistrationResult =
   | {
       readonly status: 'saved'
@@ -542,9 +550,20 @@ export async function registerPersistedConversationMeal(
     if (v.action === 'stale_epoch') return conflict()
     if (v.action !== 'available') return null
     const b = binding(v.binding, command)
+    if (
+      dependencies.expectEarlierMeal &&
+      v.receipt &&
+      v.receipt.schema !== 'conversation.meal-effect.v2'
+    )
+      return unavailable()
     if (v.receipt) return success(v.receipt, b, true)
     if (v.resolved) {
       if (!v.source || v.source.epoch !== b.epoch) return unavailable()
+      if (
+        dependencies.expectEarlierMeal &&
+        !buildConversationMealInterpretationSource(command, v.source).reported_day
+      )
+        return unavailable()
       parseConversationResolvedMeal(v.resolved.value, { command, source: v.source })
       return commit(v.resolved.resolvedHash, b)
     }
@@ -586,6 +605,7 @@ export async function registerPersistedConversationMeal(
     )
       return unavailable()
     const evidence = buildConversationMealInterpretationSource(command, s)
+    if (dependencies.expectEarlierMeal && !evidence.reported_day) return unavailable()
     const rawInterpretation = structuredClone(await interpret(command, s))
     const i = parseConversationMealInterpretation(rawInterpretation, {
       ownerId: owner,
@@ -610,14 +630,21 @@ export async function registerPersistedConversationMeal(
       .filter((source) => source.unit !== 'vision_items')
       .map((source) => source.text ?? '')
       .join('\n')
-    let mealType = command.command.meal_type ?? detectExplicitMealType(text)
+    const reportedSlot = evidence.reported_day
+      ? /^\s*(?:ontem|anteontem),?\s+(?:eu\s+)?(almocei|jantei|lanchei|ceei)\b/imu.exec(text)?.[1]
+      : undefined
+    const reportedMealType = reportedSlot
+      ? earlierMealSlotByVerb[reportedSlot.toLowerCase() as keyof typeof earlierMealSlotByVerb]
+      : undefined
+    let mealType =
+      command.command.meal_type ?? detectExplicitMealType(text) ?? reportedMealType ?? null
     const timezone = s.context.owner.timezone
     const admittedAt = new Date(b.admitted_at)
     // The meal slot is independent of nutrient lookup. Keep the same owned,
     // admission-bounded routine read and only use its result after nutrition
     // has qualified. A failed lookup cannot grant a guessed meal slot.
     const routine =
-      !mealType && typeof timezone === 'string'
+      !mealType && !evidence.reported_day && typeof timezone === 'string'
         ? getPersonalMealWindows(db, owner, timezone, admittedAt, {
             excludeAtOrAfterReference: true,
           }).catch(() => null)

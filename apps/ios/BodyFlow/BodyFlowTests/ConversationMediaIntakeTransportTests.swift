@@ -44,6 +44,7 @@ struct ConversationMediaIntakeTransportTests {
       header.apply(to: &request)
       #expect(request.value(forHTTPHeaderField: "X-Conversation-Media-Provenance") == "1")
       #expect(request.value(forHTTPHeaderField: "X-Conversation-Protocol") == "intake-v1")
+      #expect(request.value(forHTTPHeaderField: "X-Conversation-Meal-Dates") == "1")
     }
     for header in [
       MobileConversationRequestHeaders.intakeSession, .intakeSubmit(try neutralRuntimeTicket()),
@@ -53,6 +54,13 @@ struct ConversationMediaIntakeTransportTests {
       header.apply(to: &request)
       #expect(request.value(forHTTPHeaderField: "X-Conversation-Media-Provenance") == nil)
     }
+    let text = try neutralRuntimeTicket()
+    var ordinary = URLRequest(url: URL(string: "https://unit.invalid")!)
+    MobileConversationRequestHeaders.intakeSubmit(text).apply(to: &ordinary)
+    #expect(ordinary.value(forHTTPHeaderField: "X-Conversation-Meal-Dates") == "1")
+    var unrelated = URLRequest(url: URL(string: "https://unit.invalid")!)
+    MobileConversationRequestHeaders.session.apply(to: &unrelated)
+    #expect(unrelated.value(forHTTPHeaderField: "X-Conversation-Meal-Dates") == nil)
   }
   @Test(arguments: ["meal_photo", "audio_workout"])
   func savedMediaPostAndReadCarryTheSameOriginalBodyAndFactualProjection(_ label: String)

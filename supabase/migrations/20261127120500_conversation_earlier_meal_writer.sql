@@ -14,6 +14,9 @@ DECLARE
   original_day date;
   original_zone text;
   offset_days integer;
+  source_text text;
+  reported_day text;
+  matched boolean:=false;
 BEGIN
   SELECT x.selection,s.context,s.source_hash,n.admitted_local_date,n.admitted_time_zone
     INTO selection,captured,captured_hash,original_day,original_zone
@@ -40,6 +43,33 @@ BEGIN
     OR (admitted AT TIME ZONE zone)::date IS DISTINCT FROM original_day THEN
     RAISE EXCEPTION 'verified_meal_day_binding_changed' USING ERRCODE='40001';
   END IF;
+  reported_day:=CASE offset_days WHEN 1 THEN 'ontem' ELSE 'anteontem' END;
+  -- Recheck the literal witness in the immutable input. A routing reason from
+  -- an older producer or from a model cannot by itself authorize an old day.
+  FOREACH source_text IN ARRAY ARRAY[
+    captured#>>'{source_input,source,text}',
+    captured#>>'{source_input,source,caption}',
+    captured#>>'{media,context_text}',
+    CASE WHEN captured#>>'{media,kind}'='audio_note' THEN captured#>>'{media,processing_result,text}' END
+  ] LOOP
+    IF source_text IS NULL THEN CONTINUE;END IF;
+    source_text:=btrim(lower(regexp_replace(normalize(source_text,NFD),U&'[\0300-\036f]','','g')));
+    IF source_text ~ $rx$[?;]|\m(nao|nunca|nem|amanha|de hoje)\M$rx$ THEN
+      RAISE EXCEPTION 'verified_meal_day_text_changed' USING ERRCODE='40001';
+    END IF;
+    IF source_text !~ $rx$\m(ontem|anteontem)\M$rx$ THEN CONTINUE;END IF;
+    IF source_text ~ ($rx$\m$rx$||(CASE offset_days WHEN 1 THEN 'anteontem' ELSE 'ontem' END)||$rx$\M$rx$)
+      OR NOT (
+        source_text ~ ('^(?:(?:no (?:cafe da manha|almoco|jantar|lanche)|na ceia) de )?'||reported_day||
+          $rx$,?[[:space:]]+(?:eu[[:space:]]+)?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei)\M$rx$)
+        OR (
+          source_text ~ $rx$^(?:(?:eu[[:space:]]+)?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei)|(?:isso|isto|esse|essa|este|esta)[[:space:]]+foi)\M$rx$
+          AND source_text ~ ($rx$\m(?:cafe da manha|almoco|jantar|lanche|ceia|refeicao) de $rx$||reported_day||'[.!]?$')
+        )
+      ) THEN RAISE EXCEPTION 'verified_meal_day_text_changed' USING ERRCODE='40001';END IF;
+    matched:=true;
+  END LOOP;
+  IF NOT matched THEN RAISE EXCEPTION 'verified_meal_day_text_missing' USING ERRCODE='40001';END IF;
   RETURN original_day-offset_days;
 END $$;
 

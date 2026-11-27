@@ -407,6 +407,7 @@ export function createConversationMealCommandService(
       raw: unknown,
       expectedEpoch: string,
       selected: ConversationFeedbackPresentationNegotiation = 'legacy',
+      earlierMeal?: true,
     ): Promise<ConversationMealCommandReply> {
       try {
         const c = context(auth, expectedEpoch),
@@ -417,6 +418,12 @@ export function createConversationMealCommandService(
         if (prior.action === 'stale_epoch') return changed()
         if (prior.action === 'available') {
           const b = validatedBinding(prior.binding, command, c.epoch)
+          if (
+            earlierMeal &&
+            prior.receipt &&
+            prior.receipt.schema !== 'conversation.meal-effect.v2'
+          )
+            return unavailable()
           if (prior.receipt) return saved(c.auth, command, c.epoch, b, prior.receipt, selected)
         }
         const terminal = await readTerminal(command, c.epoch)
@@ -434,6 +441,10 @@ export function createConversationMealCommandService(
           writer: fencedWriter,
           journal,
           interpreter,
+          // The neutral selection binds an explicit earlier civil day. Only
+          // the SQL source capture can apply it. Skip applying today's daily
+          // initialization while processing that historical registration.
+          ...(earlierMeal ? { initializeDay: async () => {}, expectEarlierMeal: true } : {}),
           ...(writeFeedback3
             ? {
                 originalEnrichment: (() => {

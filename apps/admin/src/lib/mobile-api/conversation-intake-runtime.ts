@@ -52,6 +52,7 @@ export interface ConversationIntakeRuntimePorts extends ConversationCurrentScope
   /** Atomic catalog dispatcher capability, selected by server policy only. */
   readonly privateMediaCatalogEnabled?: () => boolean
   readonly turnRepliesEnabled?: boolean
+  readonly earlierMealReceiptsSupported?: boolean
 }
 function unavailable() {
   return new MobileApiError(503, 'conversation_intake_unavailable', 'Intake is unavailable')
@@ -303,6 +304,7 @@ export function createConversationIntakeRuntime(
       recovery,
       scope: { observeCurrentScope: observe },
       createRouter: makeRouter,
+      earlierMealReceiptsSupported: ports.earlierMealReceiptsSupported === true,
       ...(ports.turnRepliesEnabled
         ? {
             turnReplies: createSupabaseConversationTurnReplies(db, auth, {
@@ -327,9 +329,16 @@ export function createConversationIntakeRuntime(
       },
       domains: {
         meal: {
-          submit: (child, negotiation) =>
+          submit: (child, negotiation, earlierMeal) =>
             typed(() =>
-              meal.submit(auth, `cmsg1:${child.command_id}`, child.input, child.epoch, negotiation),
+              meal.submit(
+                auth,
+                `cmsg1:${child.command_id}`,
+                child.input,
+                child.epoch,
+                negotiation,
+                earlierMeal,
+              ),
             ),
           read: (child, negotiation) =>
             typed(() =>

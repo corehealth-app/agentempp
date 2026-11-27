@@ -229,6 +229,7 @@ enum MobileConversationRequestHeaders: Sendable {
     case .intakeSubmit(let ticket), .intakeReconciliation(let ticket):
       request.setValue(ticket.ownerID.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Owner")
       request.setValue(ticket.epoch.uuidString.lowercased(), forHTTPHeaderField: "X-Conversation-Epoch")
+      request.setValue("1", forHTTPHeaderField: "X-Conversation-Meal-Dates")
       if case .intakeReconciliation = self { request.setValue(ticket.input.inputHash, forHTTPHeaderField: "X-Conversation-Input-Hash") }
     case .session: break
     case .mealParentQuestion(let child):

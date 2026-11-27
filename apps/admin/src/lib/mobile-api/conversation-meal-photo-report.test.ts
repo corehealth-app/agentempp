@@ -71,6 +71,23 @@ function photoReport(
 }
 
 describe('completed consumption report referring to a bound meal photograph', () => {
+  it('uses the date verified from the original photo caption and preserves both visual items', () => {
+    const { source, packet, wire } = photoReport('Esse foi', 'meu jantar de ontem.')
+    const model = packet.materialize(wire)
+    expect(validateConversationMealInterpretationModel(model, source).decision).toBe(
+      'clarification_required',
+    )
+    expect(
+      validateConversationMealInterpretationModel(model, { ...source, reported_day: 'anteontem' })
+        .decision,
+    ).toBe('clarification_required')
+    const result = validateConversationMealInterpretationModel(model, {
+      ...source,
+      reported_day: 'ontem',
+    })
+    expect(result.decision).toBe('reported_meal')
+    expect(result.foods.map((food) => food.visual_index)).toEqual([0, 1])
+  })
   it.each([
     ['Almocei', 'o prato da foto agora.'],
     ['Jantei', 'a refeição da foto hoje.'],

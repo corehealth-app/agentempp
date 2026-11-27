@@ -79,6 +79,9 @@ export const conversationIntakeRoutingDecisionSchema = z
 export type ConversationIntakeRoutingDecision = Readonly<
   z.infer<typeof conversationIntakeRoutingDecisionSchema>
 >
+export function verifiedEarlierMealReason(reason: unknown) {
+  return reason === 'verified_meal_yesterday' || reason === 'verified_meal_two_days_ago'
+}
 const mediaSchema = z
   .object({
     asset_id: workoutUUID,

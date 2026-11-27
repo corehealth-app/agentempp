@@ -63,6 +63,7 @@ function reply(content = JSON.stringify(decision)): LLMResult {
 function setup(
   content = JSON.stringify(decision),
   isDayClosed?: (ownerId: string, date: string) => Promise<boolean>,
+  earlierMeals = false,
 ) {
   const complete = vi.fn<(_input: LLMCallParams) => Promise<LLMResult>>(async () => reply(content)),
     provider = { complete },
@@ -72,6 +73,7 @@ function setup(
       provider,
       diagnostic,
       isDayClosed,
+      earlierMeals,
     )
   return { complete, provider, router, diagnostic }
 }
@@ -154,11 +156,49 @@ describe('neutral provider routing without performed or nutrition authority', ()
     expect(isDayClosed).not.toHaveBeenCalled()
   })
 
-  it('retains the meal route when the explicitly earlier date has no verified close', async () => {
+  it('protects an earlier day from being treated as today on the legacy route', async () => {
     const isDayClosed = vi.fn(async () => false)
     const { router } = setup(undefined, isDayClosed)
-    expect(await router.route(source('Anteontem comi arroz.'))).toEqual(decision)
+    expect(await router.route(source('Anteontem comi arroz.'))).toMatchObject({
+      kind: 'not_reported',
+      reason: 'reported_meal_date_unavailable',
+    })
     expect(isDayClosed.mock.calls).toEqual([[owner, '2026-11-03']])
+  })
+  it.each([
+    ['Ontem comi arroz no almoço.', '2026-11-04', 'verified_meal_yesterday'],
+    ['No jantar de ontem, comi arroz.', '2026-11-04', 'verified_meal_yesterday'],
+    ['Anteontem comi arroz.', '2026-11-03', 'verified_meal_two_days_ago'],
+  ])('routes the reported local day when open and supported: %s', async (text, day, reason) => {
+    const isDayClosed = vi.fn(async () => false)
+    const { router } = setup(undefined, isDayClosed, true)
+    expect(await router.route(source(text))).toEqual({ ...decision, reason })
+    expect(isDayClosed.mock.calls).toEqual([[owner, day]])
+  })
+  it.each([
+    mediaSource('audio_note', { text: 'Ontem eu jantei arroz.' }, null, null),
+    mediaSource(
+      'meal_photo',
+      { type: 'meal', items: [{ name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 }] },
+      'Esse foi meu jantar de ontem.',
+      null,
+    ),
+  ])('uses a verified earlier date from the owned media evidence', async (input) => {
+    const { router } = setup(undefined, async () => false, true)
+    expect(await router.route(input)).toEqual({ ...decision, reason: 'verified_meal_yesterday' })
+  })
+  it('never falls back to today when the status of the reported day is unavailable', async () => {
+    const { router } = setup(
+      undefined,
+      async () => {
+        throw new Error('diary unavailable')
+      },
+      true,
+    )
+    expect(await router.route(source('Ontem comi arroz.'))).toMatchObject({
+      kind: 'not_reported',
+      reason: 'reported_meal_date_unavailable',
+    })
   })
 
   it('rejects a model-supplied assertion that a day is closed', async () => {

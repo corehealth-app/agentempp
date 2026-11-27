@@ -54,17 +54,22 @@ export const conversationMealEffectReceiptSchema = z.discriminatedUnion('schema'
 export type ConversationMealEffectReceipt = Readonly<
   z.infer<typeof conversationMealEffectReceiptSchema>
 >
-export function conversationMealCommittedAt(receipt: ConversationMealEffectReceipt): string {
-  return receipt.schema === 'conversation.meal-effect.v2'
-    ? receipt.committed_at
-    : receipt.consumed_at
+export function conversationMealCommittedAt(receipt: {
+  readonly consumed_at: string
+  readonly committed_at?: string
+}): string {
+  return receipt.committed_at ?? receipt.consumed_at
 }
 export function conversationMealMatchesAdmissionDay(
-  receipt: ConversationMealEffectReceipt,
+  receipt: {
+    readonly local_date: string
+    readonly timezone: string
+    readonly committed_at?: string
+  },
   admittedAt: string,
 ): boolean {
   return (
-    receipt.schema !== 'conversation.meal-effect.v2' ||
+    receipt.committed_at === undefined ||
     getLocalDateString(receipt.timezone, new Date(admittedAt)) > receipt.local_date
   )
 }

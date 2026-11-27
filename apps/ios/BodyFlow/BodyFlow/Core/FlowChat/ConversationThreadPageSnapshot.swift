@@ -170,6 +170,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
     let localDate: String
     let timezone: String
     let consumedAt: String
+    let committedAt: String
     let logIDs: [UUID]
     let effectVersion: String
     let parentCommandID: UUID
@@ -187,11 +188,15 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
         && parentInputHash == parent.inputHash && parentDecisionHash == decisionHash
         && providerKey
           == "conversation.clarification/\(ownerID.uuidString.lowercased())/\(parent.commandID.uuidString.lowercased())"
-        && ConversationProtocolInstant(consumedAt).map { consumed in
+        && ConversationProtocolInstant(committedAt).map { committed in
           guard let admitted = ConversationProtocolInstant(child.admittedAt),
             let original = ConversationProtocolInstant(parent.admittedAt)
           else { return false }
-          return consumed >= admitted && admitted >= original
+          guard committed >= admitted && admitted >= original else { return false }
+          if committedAt == consumedAt { return true }
+          guard let originalDay = try? threadCivilDay(timezone: timezone, clock: parent.admittedAt)
+          else { return false }
+          return localDate < originalDay
         } == true
     }
     func boundFeedback(
@@ -211,12 +216,15 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
           admittedAt: binding.admittedAt), current: scope)
     }
     fileprivate init(_ raw: ConversationMealEditJSON) throws {
-      let o = try raw.object([
+      let o = try raw.object(required: [
         "schema", "owner_id", "command_id", "input_hash", "registration_id", "provider_key",
         "meal_type", "local_date", "timezone", "consumed_at", "log_ids", "effect_version",
         "parent_command_id", "parent_input_hash", "parent_decision_hash", "epoch",
-      ])
-      try editCheck(o.required("schema").string() == "conversation.meal-continuation-effect.v1")
+      ], optional: ["committed_at"])
+      let schema = try o.required("schema").string()
+      let earlier = schema == "conversation.meal-continuation-effect.v2"
+      try editCheck((earlier || schema == "conversation.meal-continuation-effect.v1")
+        && earlier == (o["committed_at"] != nil))
       ownerID = try o.required("owner_id").uuid()
       commandID = try o.required("command_id").uuid()
       inputHash = try o.required("input_hash").hash()
@@ -230,6 +238,10 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
       timezone = try o.required("timezone").text(limit: 240)
       consumedAt = try threadClock(o.required("consumed_at"))
       try threadLocalDate(localDate, timezone: timezone, clock: consumedAt)
+      committedAt = try earlier ? threadClock(o.required("committed_at")) : consumedAt
+      if earlier {
+        try editCheck(localDate < threadCivilDay(timezone: timezone, clock: committedAt))
+      }
       logIDs = try o.required("log_ids").ids(nonempty: true)
       effectVersion = try o.required("effect_version").string()
       try editCheck(effectVersion.hasPrefix("cmeal1:") && effectVersion.count == 71)
@@ -520,7 +532,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
         feedback = try optionalFeedback(
           o.required("feedback"), owner: owner, epoch: epoch, binding: parent.parentBinding,
           registrationID: r.registrationID, date: r.localDate, meal: r.mealType, logs: r.logIDs,
-          observed: observed, selection: selection, consumedAt: r.committedAt)
+          observed: observed, selection: selection, committedAt: r.committedAt)
       } else {
         if case .null = try o.required("feedback") {
         } else {
@@ -561,13 +573,13 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
         id == "fulfillment/\(prefix)/\(b.commandID.uuidString.lowercased())"
           && parent.continuation?.fulfilledBy == b.commandID
           && r.matches(child: b, parent: parent.parentBinding, decisionHash: terminal.decisionHash)
-          && at == r.consumedAt)
+          && at == r.committedAt)
       if let meal = parent.originalCommand.mealType { try editCheck(r.mealType == meal) }
       try threadBetween(at, b.admittedAt, observed)
       let feedback = try optionalFeedback(
         o.required("feedback"), owner: owner, epoch: epoch, binding: b,
         registrationID: r.registrationID.uuidString.lowercased(), date: r.localDate,
-        meal: r.mealType, logs: r.logIDs.map { $0.uuidString.lowercased() }, observed: observed, selection: selection, consumedAt: r.consumedAt)
+        meal: r.mealType, logs: r.logIDs.map { $0.uuidString.lowercased() }, observed: observed, selection: selection, committedAt: r.committedAt)
       detail = .fulfillment(.init(binding: b, receipt: r, feedback: feedback))
     default:
       let b = try Binding(o.required("effect_binding"))
@@ -594,7 +606,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
   private static func optionalFeedback(
     _ raw: ConversationMealEditJSON, owner: UUID, epoch: UUID, binding: Binding,
     registrationID: String, date: String, meal: ConversationMealCommand.MealType, logs: [String],
-    observed: String, selection: ConversationFeedbackPresentationSelection?, consumedAt: String
+    observed: String, selection: ConversationFeedbackPresentationSelection?, committedAt: String
   ) throws -> ConversationFeedbackPresentationSnapshot? {
     guard let bytes = try? raw.data(), bytes.count <= 200_000,
       let value = try? ConversationFeedbackPresentationSelection.decoder(selection: selection).decode(
@@ -609,7 +621,7 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
     else { return nil }
     guard value.matchesRecordedMeal(kind: meal.rawValue, logIDs: logs) else { return nil }
     if case .v3Sections = value.content {
-      guard let effect = ConversationProtocolInstant(consumedAt), instant >= effect else { return nil }
+      guard let effect = ConversationProtocolInstant(committedAt), instant >= effect else { return nil }
     }
     return value
   }
@@ -637,6 +649,9 @@ private func threadBetween(_ value: String, _ low: String, _ high: String) throw
   try editCheck(editInstant(value) >= editInstant(low) && editInstant(value) <= editInstant(high))
 }
 private func threadLocalDate(_ date: String, timezone: String, clock: String) throws {
+  try editCheck(date == threadCivilDay(timezone: timezone, clock: clock))
+}
+private func threadCivilDay(timezone: String, clock: String) throws -> String {
   guard let zone = TimeZone(identifier: timezone) else { throw ConversationMealEditInvalid.value }
   var calendar = Calendar(identifier: .iso8601)
   calendar.timeZone = zone
@@ -646,5 +661,5 @@ private func threadLocalDate(_ date: String, timezone: String, clock: String) th
   guard let y = components.year, let m = components.month, let d = components.day else {
     throw ConversationMealEditInvalid.value
   }
-  try editCheck(date == String(format: "%04d-%02d-%02d", y, m, d))
+  return String(format: "%04d-%02d-%02d", y, m, d)
 }

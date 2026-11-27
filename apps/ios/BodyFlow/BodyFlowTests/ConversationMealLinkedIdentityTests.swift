@@ -5,6 +5,31 @@ import Testing
 
 @Suite("Genuine linked meal identity never becomes a v1 report")
 struct ConversationMealLinkedIdentityTests {
+  @Test func earlierMealRequiresItsOriginalDayAndTheRealAnswerClock() throws {
+    let f = try LinkedMealIdentityFixture()
+    let group = try f.groupRaw
+    var raw = try #require(group["original_receipt"] as? [String: Any])
+    raw["schema"] = "conversation.meal-continuation-effect.v2"
+    raw["local_date"] = "2026-11-03"
+    raw["committed_at"] = f.receipt.consumedAt
+    raw["consumed_at"] = "2026-11-03T12:00:00.000000Z"
+    let receipt = try JSONDecoder().decode(
+      ConversationThreadPageSnapshot.LinkedReceipt.self, from: linkedIdentityBytes(raw))
+    #expect(receipt.localDate == "2026-11-03")
+    #expect(receipt.committedAt == f.receipt.consumedAt)
+    #expect(receipt.matches(child: f.child, parent: f.parent, decisionHash: f.decisionHash))
+
+    raw["committed_at"] = f.parent.admittedAt
+    let premature = try JSONDecoder().decode(
+      ConversationThreadPageSnapshot.LinkedReceipt.self, from: linkedIdentityBytes(raw))
+    #expect(!premature.matches(child: f.child, parent: f.parent, decisionHash: f.decisionHash))
+
+    raw.removeValue(forKey: "committed_at")
+    #expect(throws: (any Error).self) {
+      try JSONDecoder().decode(
+        ConversationThreadPageSnapshot.LinkedReceipt.self, from: linkedIdentityBytes(raw))
+    }
+  }
   @Test func actualChildAndDistinctRegistrationBindFullCurrentGroup() throws {
     let f = try LinkedMealIdentityFixture()
     let identity = try f.identity()

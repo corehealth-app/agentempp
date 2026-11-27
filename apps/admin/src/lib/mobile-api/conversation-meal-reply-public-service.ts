@@ -26,6 +26,7 @@ import type {
   ConversationMealContinuationServiceDependencies,
 } from './conversation-meal-continuation-service'
 import { createConversationMealContinuationService } from './conversation-meal-continuation-service'
+import { conversationMealCommittedAt } from './conversation-meal-feedback-store'
 import { freezeInterpretation } from './conversation-meal-interpretation-contracts'
 import { conversationJournalInstant as instant } from './conversation-meal-journal-store'
 import {
@@ -330,7 +331,7 @@ export function createConversationMealReplyPublicService(
         isDeepStrictEqual(policy, current) &&
         at >= instant(state.observed_at) &&
         at <= instant(result.observed_at) &&
-        at >= instant(result.receipt.consumed_at)
+        at >= instant(conversationMealCommittedAt(result.receipt))
       )
         return freezeInterpretation({ ...result, feedback: v2 })
     }

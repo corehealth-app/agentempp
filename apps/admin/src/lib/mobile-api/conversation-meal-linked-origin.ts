@@ -139,7 +139,7 @@ export function createConversationMealLinkedOriginService(
         return unavailable()
       if (
         state.binding.command_protocol !== 'conversation.clarification.v1' ||
-        receipt.schema !== 'conversation.meal-continuation-effect.v1'
+        !('parent_command_id' in receipt)
       )
         return unavailable()
       const identity = {

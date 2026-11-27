@@ -28,7 +28,7 @@ struct ConversationMealLinkedOriginSnapshot: Decodable, Sendable {
       receipt: o.required("receipt").decode(ConversationThreadPageSnapshot.LinkedReceipt.self))
     try editCheck(
       identity.ownerID == ownerID && identity.epoch == epoch
-        && editInstant(identity.receipt.consumedAt) <= editInstant(observedAt))
+        && editInstant(identity.receipt.committedAt) <= editInstant(observedAt))
   }
 }
 
@@ -120,7 +120,7 @@ struct ConversationMealLinkedIdentity: Equatable, Sendable {
       && lhs.registrationID == rhs.registrationID && lhs.providerKey == rhs.providerKey
       && lhs.mealType == rhs.mealType && lhs.localDate == rhs.localDate
       && lhs.timezone == rhs.timezone
-      && lhs.consumedAt == rhs.consumedAt && lhs.logIDs == rhs.logIDs
+      && lhs.consumedAt == rhs.consumedAt && lhs.committedAt == rhs.committedAt && lhs.logIDs == rhs.logIDs
       && lhs.effectVersion == rhs.effectVersion && lhs.parentCommandID == rhs.parentCommandID
       && lhs.parentInputHash == rhs.parentInputHash
       && lhs.parentDecisionHash == rhs.parentDecisionHash

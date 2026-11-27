@@ -193,7 +193,7 @@ export function parseFeedbackV3Capture(
           : parseConversationMealContinuationFeedbackBinding(command.continuation)
       if (continuation && !isDeepStrictEqual(continuation.receipt, command.receipt)) invalid()
       const r = continuation?.receipt ?? conversationMealEffectReceiptSchema.parse(command.receipt)
-      if (r.schema === 'conversation.meal-effect.v2') {
+      if ('committed_at' in r) {
         const committed = conversationJournalInstant(r.committed_at)
         if (
           getLocalDateString(r.timezone, new Date(r.committed_at)) <= r.local_date ||

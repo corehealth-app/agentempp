@@ -88,7 +88,7 @@ struct ConversationMealReplyResultSnapshot: Decodable, Sendable {
           question == nil && reason == nil
             && receipt.matches(
               child: childBinding, parent: parentBinding, decisionHash: parentDecisionHash)
-            && editInstant(receipt.consumedAt) <= editInstant(observedAt))
+            && editInstant(receipt.committedAt) <= editInstant(observedAt))
       case .needsReply:
         try editCheck(childBinding != nil && receipt == nil && question != nil && reason == nil)
       case .held, .reconciliationRequired:
@@ -161,8 +161,8 @@ struct ConversationMealReplyResultSnapshot: Decodable, Sendable {
       value.original.localDate == receipt.localDate,
       let instant = ConversationProtocolInstant(value.provenance.observedAt),
       let observed = ConversationProtocolInstant(observedAt),
-      let consumed = ConversationProtocolInstant(receipt.consumedAt), instant <= observed,
-      instant >= consumed,
+      let committed = ConversationProtocolInstant(receipt.committedAt), instant <= observed,
+      instant >= committed,
       let admitted = ConversationProtocolInstant(child.admittedAt), instant >= admitted
     else { return nil }
     guard value.matchesRecordedMeal(kind: receipt.mealType.rawValue,

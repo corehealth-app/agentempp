@@ -25,7 +25,10 @@ import {
 } from './conversation-current-scope'
 import { parseConversationMealContinuationFeedbackBinding } from './conversation-meal-continuation-read-contracts'
 import { isHistoricalMealFeedbackRestricted } from './conversation-meal-feedback-presentation'
-import { parseConversationMealEffectReceipt } from './conversation-meal-feedback-store'
+import {
+  conversationMealCommittedAt,
+  parseConversationMealEffectReceipt,
+} from './conversation-meal-feedback-store'
 import {
   conversationJournalInstant,
   conversationJournalUUID,
@@ -169,7 +172,7 @@ function bind(input: ConversationFeedbackPresentationV2Input) {
     registrationId = receipt.registration_id
     localDate = receipt.local_date
     admittedAt = server.admitted_at
-    effectAt = receipt.consumed_at
+    effectAt = conversationMealCommittedAt(receipt)
     kind = 'meal'
     logIds = receipt.log_ids
     mealKind = receipt.meal_type
@@ -184,7 +187,7 @@ function bind(input: ConversationFeedbackPresentationV2Input) {
     registrationId = r.registration_id
     localDate = r.local_date
     admittedAt = c.admitted_at
-    effectAt = r.consumed_at
+    effectAt = conversationMealCommittedAt(r)
     kind = 'meal'
     logIds = r.log_ids
     mealKind = r.meal_type

@@ -19,6 +19,7 @@ import {
   renderHistoricalMealFeedbackSections,
 } from './conversation-meal-feedback-presentation'
 import type { OriginalConversationMealFeedback } from './conversation-meal-feedback-service'
+import { conversationMealCommittedAt } from './conversation-meal-feedback-store'
 import { freezeInterpretation } from './conversation-meal-interpretation-contracts'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
 import {
@@ -327,7 +328,7 @@ export function createSupabaseConversationMealContinuationFeedback(
           if (
             before.epoch !== e.epoch ||
             conversationJournalInstant(before.observed_at) <
-              conversationJournalInstant(e.consumed_at)
+              conversationJournalInstant(conversationMealCommittedAt(e))
           )
             return null
           const saved = await readOriginal(s)

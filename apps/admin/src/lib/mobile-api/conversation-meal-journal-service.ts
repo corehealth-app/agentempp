@@ -17,6 +17,7 @@ import {
   type ConversationMealFeedbackPresentationService,
   createSupabaseConversationMealFeedbackPresentation,
 } from './conversation-meal-feedback-presentation'
+import { conversationMealCommittedAt } from './conversation-meal-feedback-store'
 import {
   type ConversationMealJournalCursor,
   type ConversationMealJournalEntry,
@@ -305,7 +306,7 @@ export function createConversationMealJournalService(
           if (entry.kind !== 'command') continue
           if (
             entry.result.status === 'saved' &&
-            conversationJournalInstant(entry.result.receipt.consumed_at) >
+            conversationJournalInstant(conversationMealCommittedAt(entry.result.receipt)) >
               conversationJournalInstant(after.observed_at)
           )
             return changed()

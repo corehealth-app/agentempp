@@ -277,19 +277,28 @@ const earlierOriginalSchema = originalSchema.extend({
   schema: z.literal('conversation.meal-effect.v2'),
   committed_at: clock,
 })
+const earlierLinkedOriginalSchema = linkedOriginalSchema.extend({
+  schema: z.literal('conversation.meal-continuation-effect.v2'),
+  committed_at: clock,
+})
 export type ConversationMealEditOriginalEffect =
   | ConversationMealEffectReceipt
-  | Readonly<z.infer<typeof linkedOriginalSchema>>
+  | Readonly<z.infer<typeof linkedOriginalSchema | typeof earlierLinkedOriginalSchema>>
 function originalReceipt(
   raw: unknown,
   b: ConversationMealEditBinding,
 ): ConversationMealEditOriginalEffect {
   if (b.originalCommand) return parseConversationMealEffectReceipt(raw, b.originalCommand)
   const v = exact(
-    z.discriminatedUnion('schema', [originalSchema, earlierOriginalSchema, linkedOriginalSchema]),
+    z.discriminatedUnion('schema', [
+      originalSchema,
+      earlierOriginalSchema,
+      linkedOriginalSchema,
+      earlierLinkedOriginalSchema,
+    ]),
     raw,
   )
-  const linked = v.schema === 'conversation.meal-continuation-effect.v1'
+  const linked = 'parent_command_id' in v
   if (
     v.owner_id !== b.ownerId ||
     v.command_id !== b.commandId ||
@@ -301,7 +310,7 @@ function originalReceipt(
         : `conversation.meal/${b.ownerId}/${b.commandId}`) ||
     new Set(v.log_ids).size !== v.log_ids.length ||
     getLocalDateString(v.timezone, new Date(v.consumed_at)) !== v.local_date ||
-    (v.schema === 'conversation.meal-effect.v2' &&
+    ('committed_at' in v &&
       getLocalDateString(v.timezone, new Date(v.committed_at)) <= v.local_date)
   )
     return conversationMealEditUnavailable()
@@ -604,14 +613,11 @@ export function parseConversationMealEditState(
         ? null
         : parseConversationMealEditCurrentState(v.current_state, b, original)
   const last = v.last_operation === null ? null : receipt(v.last_operation, b)
-  const committedAt =
-    original.schema === 'conversation.meal-continuation-effect.v1'
-      ? original.consumed_at
-      : conversationMealCommittedAt(original)
+  const committedAt = conversationMealCommittedAt(original)
+  const linked = 'parent_command_id' in original
   if (
-    (binding.command_protocol === 'conversation.clarification.v1') !==
-      (original.schema === 'conversation.meal-continuation-effect.v1') ||
-    (original.schema === 'conversation.meal-continuation-effect.v1' &&
+    (binding.command_protocol === 'conversation.clarification.v1') !== linked ||
+    (linked &&
       (instant(original.consumed_at) < instant(binding.admitted_at) ||
         instant(v.registration_undo_expires_at) - instant(original.consumed_at) !==
           300000000000n)) ||
@@ -620,7 +626,7 @@ export function parseConversationMealEditState(
       (last.revision !== v.revision || instant(last.applied_at) > instant(v.observed_at))) ||
     instant(binding.admitted_at) > instant(v.observed_at) ||
     instant(committedAt) > instant(v.observed_at) ||
-    (original.schema === 'conversation.meal-effect.v2' &&
+    ('committed_at' in original &&
       (instant(committedAt) < instant(binding.admitted_at) ||
         !conversationMealMatchesAdmissionDay(original, binding.admitted_at))) ||
     (current !== null &&

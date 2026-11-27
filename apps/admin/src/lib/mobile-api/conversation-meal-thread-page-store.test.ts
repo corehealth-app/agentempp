@@ -1,3 +1,4 @@
+import { addIsoDateDays } from '@mpp/agent'
 import type { ServiceClient } from '@mpp/db'
 import { describe, expect, it, vi } from 'vitest'
 import { anotherJournalCommand, journalCommand } from './__fixtures__/conversation-journal'
@@ -37,6 +38,23 @@ function admittedPage() {
   }
 }
 describe('closed compact actual thread transport', () => {
+  it('orders an earlier linked meal by the answer commit and refuses a changed clock', () => {
+    const page = threadPage()
+    const fulfillment = fx(page)
+    const localDate = addIsoDateDays(fulfillment.receipt.local_date, -1)
+    Object.assign(fulfillment.receipt, {
+      schema: 'conversation.meal-continuation-effect.v2',
+      local_date: localDate,
+      consumed_at: `${localDate}T15:00:00.000000Z`,
+      committed_at: fulfillment.at,
+    })
+    expect(parseConversationMealThreadPage(page, threadQuery())).toMatchObject({
+      action: 'available',
+      items: [{ receipt: fulfillment.receipt, at: fulfillment.at }, ...page.items.slice(1)],
+    })
+    Object.assign(fulfillment.receipt, { committed_at: fulfillment.receipt.consumed_at })
+    expect(() => parseConversationMealThreadPage(page, threadQuery())).toThrow()
+  })
   it('reads both compatibility views and current name questions from actual transactional SQL output', () => {
     for (const [name, page] of Object.entries(nameSQL.samples)) {
       const decoded = parseConversationMealThreadPage(page, {

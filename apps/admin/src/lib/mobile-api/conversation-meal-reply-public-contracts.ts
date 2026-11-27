@@ -18,6 +18,7 @@ import {
 } from './conversation-meal-continuation-read-contracts'
 import type { ConversationMealContinuationServiceResult } from './conversation-meal-continuation-service'
 import type { ConversationMealFeedbackPresentation } from './conversation-meal-feedback-presentation'
+import { conversationMealCommittedAt } from './conversation-meal-feedback-store'
 import { freezeInterpretation } from './conversation-meal-interpretation-contracts'
 import {
   conversationJournalInstant as instant,
@@ -311,7 +312,7 @@ export function projectConversationMealReplyResult(
         samePolicy(supplied.current_policy, projectCurrentClinicalPublicPolicy(profile)) &&
         instant(supplied.provenance.observed_at) >= instant(state.observed_at) &&
         instant(supplied.provenance.observed_at) <= instant(profile.observed_at) &&
-        instant(supplied.provenance.observed_at) >= instant(receipt.consumed_at)
+        instant(supplied.provenance.observed_at) >= instant(conversationMealCommittedAt(receipt))
       )
         feedback = supplied
     } else {

@@ -19,6 +19,10 @@ import {
 } from './conversation-meal-decision-store'
 import { conversationOperationCanonicalJson } from './conversation-meal-edit-contracts'
 import {
+  conversationMealCommittedAt,
+  conversationMealMatchesAdmissionDay,
+} from './conversation-meal-feedback-store'
+import {
   buildConversationMealInterpretationSource,
   freezeInterpretation,
   interpretationReferenceSchema,
@@ -384,7 +388,7 @@ export function parseConversationMealContinuationPreparationShape(
     return conversationContinuationReadUnavailable()
   }
 }
-const effect = z
+const sameDayEffect = z
   .object({
     schema: z.literal('conversation.meal-continuation-effect.v1'),
     owner_id: uuid,
@@ -408,6 +412,14 @@ const effect = z
     effect_version: z.string().regex(/^cmeal1:[a-f0-9]{64}$/u),
   })
   .strict()
+export const conversationMealContinuationEffectSchema = z.discriminatedUnion('schema', [
+  sameDayEffect,
+  sameDayEffect.extend({
+    schema: z.literal('conversation.meal-continuation-effect.v2'),
+    committed_at: clock,
+  }),
+])
+const effect = conversationMealContinuationEffectSchema
 const feedbackBinding = z
   .object({
     parentBinding: conversationJournalBindingSchema,
@@ -439,7 +451,9 @@ export function parseConversationMealContinuationFeedbackBinding(
     e.parent_decision_hash !== b.parentDecisionHash ||
     e.provider_key !== `conversation.clarification/${p.owner_id}/${p.command_id}` ||
     conversationJournalInstant(c.admitted_at) < conversationJournalInstant(p.admitted_at) ||
-    conversationJournalInstant(e.consumed_at) < conversationJournalInstant(c.admitted_at) ||
+    conversationJournalInstant(conversationMealCommittedAt(e)) <
+      conversationJournalInstant(c.admitted_at) ||
+    !conversationMealMatchesAdmissionDay(e, p.admitted_at) ||
     getLocalDateString(e.timezone, new Date(e.consumed_at)) !== e.local_date
   )
     conversationContinuationReadUnavailable()
@@ -852,8 +866,11 @@ function proveEffect(
     e.local_date !== context.day.date ||
     e.provider_key !== `conversation.clarification/${b.owner_id}/${p.binding.command_id}` ||
     getLocalDateString(e.timezone, new Date(e.consumed_at)) !== e.local_date ||
-    conversationJournalInstant(e.consumed_at) < conversationJournalInstant(b.admitted_at) ||
-    conversationJournalInstant(e.consumed_at) > conversationJournalInstant(observed)
+    !conversationMealMatchesAdmissionDay(e, p.binding.admitted_at) ||
+    conversationJournalInstant(conversationMealCommittedAt(e)) <
+      conversationJournalInstant(b.admitted_at) ||
+    conversationJournalInstant(conversationMealCommittedAt(e)) >
+      conversationJournalInstant(observed)
   )
     conversationContinuationReadUnavailable()
 }
@@ -1094,7 +1111,7 @@ function proveReply(
       !isDeepStrictEqual(v.fulfillment.receipt, r.receipt) ||
       r.receipt.meal_type !== stored.preparation.meal.meal_type ||
       r.receipt.log_ids.length !== stored.preparation.meal.items.length ||
-      conversationJournalInstant(r.receipt.consumed_at) <
+      conversationJournalInstant(conversationMealCommittedAt(r.receipt)) <
         conversationJournalInstant(stored.prepared_at)
     )
       conversationContinuationReadUnavailable()

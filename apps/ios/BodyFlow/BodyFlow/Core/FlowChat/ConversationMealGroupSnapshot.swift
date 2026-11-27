@@ -49,7 +49,7 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
     var committedAt: String {
       switch self {
       case .report(let value): value.committedAt
-      case .linked(let value): value.consumedAt
+      case .linked(let value): value.committedAt
       }
     }
     var localDate: String {
@@ -196,10 +196,10 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
             && receipt.providerKey
               == "conversation.clarification/\(ownerID.uuidString.lowercased())/\(receipt.parentCommandID.uuidString.lowercased())"
         )
-        let consumed = try editInstant(receipt.consumedAt)
+        let committed = try editInstant(receipt.committedAt)
         let deadline = try editInstant(registrationUndoExpiresAt)
         try editCheck(
-          deadline.seconds - consumed.seconds == 300 && deadline.nanos == consumed.nanos)
+          deadline.seconds - committed.seconds == 300 && deadline.nanos == committed.nanos)
       }
       let baseActions: Set<String> = ["save", "undo_registration", "undo_save"]
       let a = try o.required("actions").object(

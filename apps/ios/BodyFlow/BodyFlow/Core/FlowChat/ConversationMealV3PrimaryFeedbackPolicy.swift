@@ -64,7 +64,8 @@ enum ConversationMealV3PrimaryFeedbackPolicy {
       && actual.inputHash == original.inputHash && actual.registrationID == original.registrationID
       && actual.providerKey == original.providerKey && actual.mealType == original.mealType
       && actual.localDate == original.localDate && actual.timezone == original.timezone
-      && actual.consumedAt == original.consumedAt && actual.logIDs == original.logIDs
+      && actual.consumedAt == original.consumedAt && actual.committedAt == original.committedAt
+      && actual.logIDs == original.logIDs
       && actual.effectVersion == original.effectVersion
       && actual.parentCommandID == original.parentCommandID
       && actual.parentInputHash == original.parentInputHash

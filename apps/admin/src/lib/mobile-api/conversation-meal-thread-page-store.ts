@@ -11,6 +11,7 @@ import {
   parseConversationMealReplyBody,
   validateConversationMealReplyQuestion,
 } from './conversation-meal-continuation-input'
+import { conversationMealContinuationEffectSchema as linkedEffect } from './conversation-meal-continuation-read-contracts'
 import {
   conversationMealCommittedAt,
   conversationMealMatchesAdmissionDay,
@@ -111,31 +112,6 @@ const feedbackRef = z
       'registration.feedback.v3',
     ]),
     registration_id: uuid,
-  })
-  .strict()
-const logIds = z
-  .array(uuid)
-  .min(1)
-  .max(30)
-  .refine((a) => new Set(a).size === a.length)
-const linkedEffect = z
-  .object({
-    schema: z.literal('conversation.meal-continuation-effect.v1'),
-    owner_id: uuid,
-    command_id: uuid,
-    input_hash: hash,
-    parent_command_id: uuid,
-    parent_input_hash: hash,
-    parent_decision_hash: hash,
-    epoch: uuid,
-    registration_id: uuid,
-    provider_key: z.string(),
-    meal_type: z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro']),
-    local_date: z.string().date(),
-    timezone: z.string().min(1),
-    consumed_at: clock,
-    log_ids: logIds,
-    effect_version: z.string().regex(/^cmeal1:[a-f0-9]{64}$/u),
   })
   .strict()
 export type ConversationMealThreadLinkedEffect = z.infer<typeof linkedEffect>
@@ -399,11 +375,13 @@ function parseEvent(
       r.parent_input_hash !== b.input_hash ||
       r.parent_decision_hash !== required(t.terminal_receipt).decision_hash ||
       r.provider_key !== `conversation.clarification/${q.ownerId}/${b.command_id}` ||
-      v.at !== r.consumed_at ||
+      v.at !== conversationMealCommittedAt(r) ||
+      !conversationMealMatchesAdmissionDay(r, b.admitted_at) ||
       getLocalDateString(r.timezone, new Date(r.consumed_at)) !== r.local_date ||
       (t.original_command.meal_type !== undefined && t.original_command.meal_type !== r.meal_type)
     )
       unavailable()
+    clock.parse(r.consumed_at)
     between(v.at, c.admitted_at, observed)
     verifyRef(v.feedback_ref, r)
     return v

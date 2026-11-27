@@ -497,8 +497,12 @@ export function createConversationFeedbackPresentationV2Service(
           before = await scope.observe()
         if (conversationJournalInstant(before.observed_at) < conversationJournalInstant(b.effectAt))
           return null
-        const readCanonical = async () =>
-          workoutSnapshot(
+        let raw: unknown,
+          photoReview: readonly string[] = [],
+          failed = false
+        try {
+          // Pin transport data before the post-scope await can invoke callbacks.
+          raw = workoutSnapshot(
             await read(
               workoutSnapshot({
                 auth: b.who,
@@ -514,20 +518,14 @@ export function createConversationFeedbackPresentationV2Service(
               }),
             ),
           )
-        const readReview = async () =>
-          readPhotoReview ? workoutSnapshot(await readPhotoReview(b.proof)) : []
-        // Both reads are pinned before the final scope observation. Wait for
-        // both even when one fails so no lookup outlives that observation.
-        const [canonical, review] = await Promise.allSettled([readCanonical(), readReview()])
+          if (raw && readPhotoReview) photoReview = workoutSnapshot(await readPhotoReview(b.proof))
+        } catch {
+          failed = true
+        }
         const after = await scope.observe()
-        if (
-          canonical.status === 'rejected' ||
-          review.status === 'rejected' ||
-          currentClinicalReadBinding(before) !== currentClinicalReadBinding(after)
-        )
+        if (failed || currentClinicalReadBinding(before) !== currentClinicalReadBinding(after))
           return null
-        const saved = original(canonical.value, b),
-          photoReview = review.value,
+        const saved = original(raw, b),
           policy = projectCurrentClinicalPublicPolicy(after)
         if (!policy.recording_allowed) return null
         return parseConversationFeedbackPresentationV2(

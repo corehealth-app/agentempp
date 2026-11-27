@@ -1,4 +1,3 @@
-import { setImmediate } from 'node:timers/promises'
 import { prepareRegistrationFeedbackV2 } from '@mpp/agent/registration-feedback-v2'
 import {
   parseFeedbackV3Registration,
@@ -152,47 +151,6 @@ function rich() {
 }
 
 describe('new current-safe v3 presentation without modifying wrapper1', () => {
-  it('starts photo review with the canonical read and waits for both before checking scope again', async () => {
-    const h = setup()
-    let startCanonical!: () => void
-    let rejectCanonical!: (error: Error) => void
-    let finishReview!: (foods: readonly string[]) => void
-    const canonicalStarted = new Promise<void>((resolve) => {
-      startCanonical = resolve
-    })
-    const canonicalPending = new Promise<unknown>((_, reject) => {
-      rejectCanonical = reject
-    })
-    const reviewPending = new Promise<readonly string[]>((resolve) => {
-      finishReview = resolve
-    })
-    const readOriginal = vi.fn(() => {
-      startCanonical()
-      return canonicalPending
-    })
-    const readPhotoReview = vi.fn(() => reviewPending)
-    const service = createConversationFeedbackPresentationV2Service({} as ServiceClient, {
-      auth: h.auth,
-      clinical: { capture: h.capture },
-      original: { readOriginal },
-      readPhotoReview,
-    })
-    const result = service.readHistorical({ auth: h.who, proof: h.proof })
-    await canonicalStarted
-    try {
-      expect(readPhotoReview).toHaveBeenCalledOnce()
-      rejectCanonical(new Error('canonical read unavailable'))
-      await setImmediate()
-      expect(h.capture).toHaveBeenCalledOnce()
-    } finally {
-      rejectCanonical(new Error('canonical read unavailable'))
-      finishReview(['queijo ralado'])
-      await result
-    }
-    expect(await result).toBeNull()
-    expect(h.capture).toHaveBeenCalledTimes(2)
-  })
-
   it('shows excluded photo observations on every read without changing the recorded nutrients', async () => {
     const { service, who, proof, canonical } = setup('root', ['queijo ralado'])
     const first = requireValue(await service.readHistorical({ auth: who, proof }))

@@ -266,7 +266,10 @@ import Testing
         ).environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 500)
       defer { host.detach() }
       #expect(
-        host.nodes().contains { $0.identifier == "conversation.neutral.attach" && $0.isEnabled })
+        host.nodes().contains {
+          $0.identifier == "conversation.neutral.attach" && $0.label == "Anexar foto ou áudio"
+            && $0.isEnabled
+        })
       #expect(host.nodes().contains { $0.identifier == "conversation.neutral.record-audio" })
       #expect(!host.nodes().contains { $0.identifier == "conversation.neutral.send" })
       #expect(model.neutralIntake?.inlineVoiceContext != nil)
@@ -279,12 +282,13 @@ import Testing
       neutral.suspendVisibility()
       #expect(neutral.captureContext == nil)
       for _ in 0..<25 {
-        if host.nodes().contains(where: { $0.label == "Opções da refeição" }) { break }
+        if host.nodes().contains(where: { $0.label == "Anexos indisponíveis" }) { break }
         try await Task.sleep(for: .milliseconds(20))
       }
       #expect(
         host.nodes().contains {
-          $0.identifier == "conversation.neutral.attach" && $0.label == "Opções da refeição"
+          $0.identifier == "conversation.neutral.attach" && $0.label == "Anexos indisponíveis"
+            && !$0.isEnabled
         })
       #expect(!host.nodes().contains { $0.label.contains("Sem indicação de refeição") })
       await model.close()
@@ -527,10 +531,18 @@ import Testing
           .environment(\.locale, Locale(identifier: "pt_BR")), width: 390, height: 900)
       defer { expanded.detach() }
       let expandedNodes = expanded.nodes()
-      #expect(expandedNodes.contains {
+      #expect(expandedNodes.contains { $0.label == "Retomar mensagem" && $0.isEnabled })
+      #expect(!expandedNodes.contains {
         $0.label == "O Flow precisa de um esclarecimento. Nenhum registro foi confirmado."
+          || $0.label == "Ver o que faltou"
       })
-      #expect(expandedNodes.contains { $0.label == "Ver o que faltou" })
+      await restored.reconcile(intakeID: pending.input.intakeID)
+      #expect(restored.state(intakeID: pending.input.intakeID)?.question?.text
+        == "O que você já consumiu ou realizou?")
+      #expect(expanded.nodes().contains { $0.label == "O que você já consumiu ou realizou?" })
+      #expect(await f.http.stub.requests.contains {
+        $0.httpMethod == "GET" && $0.url?.path.hasSuffix(pending.input.intakeID.uuidString.lowercased()) == true
+      })
       #expect(await f.http.stub.requests.filter { $0.httpMethod == "POST" }.count == 1)
       await reopened.close()
     }
@@ -599,7 +611,8 @@ import Testing
       #expect(!preview.details.contains { $0.contains("30 min") || $0.contains("A caminhada ajuda") })
     }
 
-    @Test func aSingleFoodDoesNotCompareTheItemToItselfInTheChatComment() throws {
+    @Test(arguments: [false, true])
+    func oneNutrientContributorDoesNotCompareTheItemToItself(includesWater: Bool) throws {
       let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
         "Fixtures/ConversationFeedbackPresentationV2Fixtures.json")
       let root = try #require(
@@ -607,6 +620,18 @@ import Testing
       let fixtures = try #require(root["fixtures"] as? [[String: Any]])
       let fixture = try #require(fixtures.first { $0["case"] as? String == "pg-original-known_meal-pt" })
       var wrapper = try #require(fixture["expected"] as? [String: Any])
+      if includesWater {
+        var recorded = try #require(wrapper["recorded"] as? [String: Any])
+        var items = try #require(recorded["items"] as? [[String: Any]])
+        items.append([
+          "log_id": UUID().uuidString.lowercased(), "food_name": "água", "quantity_g": 150,
+          "quantity": ["value": 150, "unit": "mL", "estimated": false, "reference_id": NSNull()],
+          "nutrition_source": "canonical_exact",
+          "kcal": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0,
+        ])
+        recorded["items"] = items
+        wrapper["recorded"] = recorded
+      }
       var sections = try #require(wrapper["sections"] as? [[String: String]])
       let comment = try #require(sections.firstIndex { $0["key"] == "education" })
       sections[comment]["text"] = """

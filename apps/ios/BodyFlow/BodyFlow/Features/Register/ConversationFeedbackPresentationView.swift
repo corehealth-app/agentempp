@@ -138,7 +138,7 @@ struct FlowFeedbackPreview {
         let sections: [Section]
         var detailLines: [String] = []
         var showsFoodItems = false
-        var singleFoodName: String?
+        var comparisonFood: (name: String, onlyContributor: Bool)?
         var workoutTitle: String?
         let format = FloatingPointFormatStyle<Double>.number
             .precision(.fractionLength(0...1))
@@ -149,6 +149,20 @@ struct FlowFeedbackPreview {
         func mealComposition(_ carbs: Double, _ fat: Double) -> String {
             "Total · \(carbs.formatted(format)) g \(english ? "carbs" : "de carboidratos") · \(fat.formatted(format)) g \(english ? "fat" : "de gorduras")"
         }
+        func sharedContribution(
+            _ foods: [(name: String, nutrients: RegistrationFeedbackSnapshot.Nutrients)]
+        ) -> (name: String, onlyContributor: Bool)? {
+            let contributors = foods.filter { $0.nutrients.kcal > 0 || $0.nutrients.proteinG > 0 }
+            guard let first = contributors.first else { return nil }
+            let byEnergy = contributors.dropFirst().reduce(first) {
+                $0.nutrients.kcal >= $1.nutrients.kcal ? $0 : $1
+            }
+            let byProtein = contributors.dropFirst().reduce(first) {
+                $0.nutrients.proteinG >= $1.nutrients.proteinG ? $0 : $1
+            }
+            guard byEnergy.name == byProtein.name else { return nil }
+            return (byEnergy.name, contributors.count == 1)
+        }
         if case let .legacy(body) = feedback.content { legacy = body } else { legacy = nil }
         switch feedback.content {
         case let .v3Sections(recorded, savedSections):
@@ -156,7 +170,7 @@ struct FlowFeedbackPreview {
             switch recorded {
             case .meal(let meal):
                 showsFoodItems = true
-                if meal.items.count == 1 { singleFoodName = meal.items.first?.foodName }
+                comparisonFood = sharedContribution(meal.items.map { ($0.foodName, $0.nutrients) })
                 summary = mealSummary(meal.totals.kcal, meal.totals.proteinG)
                 detailLines.append(mealComposition(meal.totals.carbsG, meal.totals.fatG))
             case .workout(let workout):
@@ -175,7 +189,7 @@ struct FlowFeedbackPreview {
             }
         case let .sections(meal, savedSections):
             showsFoodItems = true
-            if meal.items.count == 1 { singleFoodName = meal.items.first?.foodName }
+            comparisonFood = sharedContribution(meal.items.map { ($0.foodName, $0.nutrients) })
             sections = savedSections
             summary = mealSummary(meal.totals.kcal, meal.totals.proteinG)
             detailLines.append(mealComposition(meal.totals.carbsG, meal.totals.fatG))
@@ -239,11 +253,17 @@ struct FlowFeedbackPreview {
                 "Entre os itens registrados,",
                 "Among the recorded items,",
             ]
-            if let singleFoodName, comparisonPrefixes.contains(where: { brief.hasPrefix($0) }) {
-                let name = FoodDisplayLocalization.name(singleFoodName, english: english)
-                education = english
-                    ? "The portion of \(name) affects the energy and nutrients you record for the day."
-                    : "A porção de \(name) faz diferença no total de energia e nutrientes do dia."
+            if let food = comparisonFood, comparisonPrefixes.contains(where: { brief.hasPrefix($0) }) {
+                let name = FoodDisplayLocalization.name(food.name, english: english)
+                if food.onlyContributor {
+                    education = english
+                        ? "The portion of \(name) affects the energy and nutrients you record for the day."
+                        : "A porção de \(name) faz diferença no total de energia e nutrientes do dia."
+                } else {
+                    education = english
+                        ? "\(name) contributes the most energy and protein in this meal."
+                        : "\(name) é o alimento que mais contribui para a energia e a proteína desta refeição."
+                }
             } else {
                 education = brief.isEmpty ? nil : brief
             }

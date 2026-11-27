@@ -86,7 +86,9 @@ struct FlowNeutralIntakeComposerContent: View {
           } label: {
             Image(systemName: "plus").frame(width: 44, height: 44)
           }
-          .disabled(model.isWorking || model.isComposerLocked || recordingCaption != nil)
+          .disabled(
+            model.captureContext == nil || model.isWorking || model.isComposerLocked
+              || recordingCaption != nil)
           .accessibilityLabel(attachmentMenuLabel)
           .accessibilityIdentifier("conversation.neutral.attach")
         }

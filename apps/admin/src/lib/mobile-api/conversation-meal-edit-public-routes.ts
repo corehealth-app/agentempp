@@ -19,6 +19,7 @@ import {
 const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u)
 const hash = z.string().regex(/^[a-f0-9]{64}$/u)
 const PLACEMENT_HEADER = 'X-Conversation-Meal-Placement'
+const PHOTO_ESTIMATE_HEADER = 'X-Conversation-Photo-Estimate'
 function requestsPlacement(request: Request) {
   return (
     process.env.MOBILE_CONVERSATION_MEAL_PLACEMENT_ENABLED === 'true' &&
@@ -140,14 +141,23 @@ export function createConversationMealEditPublicRoutes(
       requireOriginalPatient(context.request, context.auth.userId)
       const identity = original(context.request, (await route.params).commandId)
       const turns = conversationTurnRepliesRequested(context.request.headers)
+      const estimates = turns && context.request.headers.get(PHOTO_ESTIMATE_HEADER) === '1'
       return scopedResponse(
         context,
         () =>
-          requestsPlacement(context.request)
-            ? service(context.supabase).readGroup(context.auth, identity, turns, true)
-            : turns
-              ? service(context.supabase).readGroup(context.auth, identity, true)
-              : service(context.supabase).readGroup(context.auth, identity),
+          estimates
+            ? service(context.supabase).readGroup(
+                context.auth,
+                identity,
+                true,
+                requestsPlacement(context.request),
+                true,
+              )
+            : requestsPlacement(context.request)
+              ? service(context.supabase).readGroup(context.auth, identity, turns, true)
+              : turns
+                ? service(context.supabase).readGroup(context.auth, identity, true)
+                : service(context.supabase).readGroup(context.auth, identity),
         turns,
       )
     }, runtime),

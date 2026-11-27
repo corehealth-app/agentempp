@@ -40,15 +40,33 @@ BEGIN
   ALTER TABLE private.conversation_meal_resolved ENABLE TRIGGER immutable_conversation_meal_resolved;
   ALTER TABLE private.conversation_meal_source_captures DISABLE TRIGGER immutable_conversation_meal_source;
   UPDATE private.conversation_meal_source_captures
-    SET context=context || '{"media":{"processing_result":{"analysis":{"items":[{"name":"arroz sintetico"},{"name":"feijao sintetico"}]}}}}'::jsonb
+    SET context=context || '{"media":{"processing_result":{"analysis":{"items":[{"name":"arroz sintetico"},{"name":"feijao sintetico","quantity_g_estimate":50}]}}}}'::jsonb
     WHERE user_id=u AND command_id=c;
   ALTER TABLE private.conversation_meal_source_captures ENABLE TRIGGER immutable_conversation_meal_source;
 
   PERFORM pg_temp.writer_ok(public.read_conversation_meal_photo_review(u,c,input_hash,epoch,0)=
-    '[{"index":1,"name":"feijao sintetico"}]'::jsonb,'only the excluded photo item is offered');
+    '[{"index":1,"name":"feijao sintetico"}]'::jsonb,'the legacy question shape is preserved');
+  PERFORM pg_temp.writer_ok(public.read_conversation_meal_photo_review_v2(u,c,input_hash,epoch,0)=
+    '[{"index":1,"name":"feijao sintetico","estimated_quantity_g":50}]'::jsonb,
+    'the estimated portion belongs only to the excluded observation');
+  input := jsonb_set(input,'{items,0,quantity_basis}','"visual_estimate"');
+  BEGIN
+    PERFORM public.commit_conversation_meal_item_edit(u,c,gen_random_uuid(),
+      jsonb_set(input,'{items,0,quantity_g}','60'),state->'current_state',
+      jsonb_set(answer,'{1,quantity_g}','60'),'recalculated',NULL,'changed-estimate');
+    RAISE EXCEPTION 'the changed estimate was unexpectedly accepted';
+  EXCEPTION WHEN SQLSTATE '40001' THEN
+    IF SQLERRM <> 'conversation_photo_estimate_changed' THEN RAISE; END IF;
+  END;
+  PERFORM pg_temp.writer_ok((pg_temp.edit_fingerprint(u)->'logs')=(before_edit->'logs'),
+    'changing the claimed estimate writes nothing');
   result := public.commit_conversation_meal_item_edit(u,c,op,input,state->'current_state',answer,'recalculated',NULL,'photo-answer');
   PERFORM pg_temp.writer_ok(result->>'action'='committed' AND (SELECT count(*) FROM public.meal_logs WHERE user_id=u)=2,
     'one omitted food joins the original meal');
+  PERFORM pg_temp.writer_ok(EXISTS(
+    SELECT 1 FROM private.conversation_meal_photo_answers a
+    WHERE a.user_id=u AND a.command_id=c AND a.operation_id=op AND a.estimated_quantity_g=50),
+    'the captured portion is kept with its answer lineage');
   PERFORM pg_temp.writer_ok(EXISTS(
     SELECT 1 FROM public.meal_logs m WHERE m.user_id=u
       AND to_jsonb(m)-ARRAY['id','created_at']=(before_edit->'logs'->0)-ARRAY['id','created_at']),
@@ -70,6 +88,9 @@ BEGIN
     'undo removes only the added food and restores the original facts');
   PERFORM pg_temp.writer_ok(public.read_conversation_meal_photo_review(u,c,input_hash,epoch,2)=
     '[{"index":1,"name":"feijao sintetico"}]'::jsonb,'undo reopens the exact unanswered question');
+  PERFORM pg_temp.writer_ok(public.read_conversation_meal_photo_review_v2(u,c,input_hash,epoch,2)=
+    '[{"index":1,"name":"feijao sintetico","estimated_quantity_g":50}]'::jsonb,
+    'undo restores the same captured estimate');
   PERFORM pg_temp.writer_ok((pg_temp.edit_fingerprint(u)->'progress')=(before_edit->'progress'),
     'answer and undo leave rewards unchanged');
   DELETE FROM public.users WHERE id=u;

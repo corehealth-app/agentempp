@@ -56,8 +56,15 @@
         ForEach(questions) { item in
           FlowChatBubble {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
-              Text(english ? "Was that \(item.name)? How much did you eat?"
-                : "Era \(item.name)? Quanto você comeu?")
+              if let grams = item.estimatedQuantityG {
+                let amount = MealProposalNumberParser.format(grams,
+                  language: english ? .englishUnitedStates : .portugueseBrazil)
+                Text(english ? "Was that \(item.name)? I estimated about \(amount) g."
+                  : "Era \(item.name)? Pela foto, estimei cerca de \(amount) g.")
+              } else {
+                Text(english ? "Was that \(item.name)? How much did you eat?"
+                  : "Era \(item.name)? Quanto você comeu?")
+              }
               Button(english ? "Answer Flow" : "Responder ao Flow") {
                 Task { await model.beginPhotoAnswer(commandID: commandID, index: item.id) }
               }

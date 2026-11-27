@@ -8,12 +8,14 @@ struct ConversationMealItemEditDraft: Sendable {
   var foodName: String
   private let originalName: String
   private let originalReference: MealQuantityValue
+  private let addsPhotoItem: Bool
   private var quantityEntry = MealQuantityEntry()
 
   init(_ item: ConversationMealGroupSnapshot.Item) {
     recordID = item.id
     foodName = item.foodName
     originalName = item.foodName
+    addsPhotoItem = false
     let grams = item.quantityG.flatMap { try? editDecimal($0) }
     originalReference = MealQuantityValue(
       grams: grams, metadata: item.quantityDisplay, name: item.foodName)
@@ -23,7 +25,9 @@ struct ConversationMealItemEditDraft: Sendable {
     recordID = anchorID
     foodName = photoQuestion.name
     originalName = photoQuestion.name
-    originalReference = MealQuantityValue(grams: nil, metadata: nil, name: photoQuestion.name)
+    addsPhotoItem = true
+    originalReference = MealQuantityValue(
+      grams: photoQuestion.estimatedQuantityG, metadata: nil, name: photoQuestion.name)
   }
 
   /// A rename cannot carry a milk density or whey scoop to a different food.
@@ -38,6 +42,9 @@ struct ConversationMealItemEditDraft: Sendable {
   }
   var quantityUnit: String { displaysReference ? originalReference.unit : "g" }
   var usesEstimatedReference: Bool { displaysReference }
+  var usesPhotoEstimate: Bool {
+    addsPhotoItem && originalReference.canonicalGrams != nil && quantityEntry.text == nil
+  }
 
   func quantityText(language: SupportedAppLanguage) -> String {
     let grams = quantityEntry.grams(originalReference, language: language)
@@ -47,10 +54,12 @@ struct ConversationMealItemEditDraft: Sendable {
     return originalReference.presenting(grams: grams, inGrams: !displaysReference)
       .displayText(language: language)
   }
-  mutating func setQuantityText(_ text: String, language: SupportedAppLanguage) {
+  mutating func setQuantityText(
+    _ text: String, language: SupportedAppLanguage, explicitlyAuthored: Bool = false
+  ) {
     // SwiftUI may echo a formatted conversion. Preserve the unrounded source
     // and unit of authorship until the person actually changes that text.
-    guard text != quantityText(language: language) else { return }
+    guard explicitlyAuthored || text != quantityText(language: language) else { return }
     quantityEntry.setText(text, usesReference: displaysReference)
   }
   func canToggleQuantityUnit(language: SupportedAppLanguage) -> Bool {
@@ -61,17 +70,16 @@ struct ConversationMealItemEditDraft: Sendable {
     quantityEntry.toggle(originalReference, language: language)
   }
   func hasChanges(language: SupportedAppLanguage) -> Bool {
-    editECMATrim(foodName) != originalName
+    usesPhotoEstimate || editECMATrim(foodName) != originalName
       || quantityEntry.grams(originalReference, language: language)
         != originalReference.canonicalGrams
   }
   func request(language: SupportedAppLanguage) -> ConversationMealEditOperation.Item? {
     guard let grams = quantityEntry.grams(originalReference, language: language) else { return nil }
     let basis: ConversationMealEditOperation.Item.QuantityBasis? =
-      quantityEntry.text == nil
+      usesPhotoEstimate ? .visualEstimate : quantityEntry.text == nil
       ? nil : (quantityEntry.typedUsingReference ? .portionReference : .stated)
-    // Public current items contain no candidate attribution. Do not manufacture
-    // one, infer a visual basis, copy calculated kcal, or require manual kcal.
+    // Only the captured photo question can supply a visual quantity basis.
     return try? ConversationMealEditOperation.Item(
       foodName: editECMATrim(foodName), quantityG: grams, quantityBasis: basis)
   }

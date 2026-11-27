@@ -166,7 +166,8 @@ struct ConversationMealEditOperation: Sendable, CustomStringConvertible, CustomR
       let decoded = try items.map { try Item($0) }
       if let photoReviewIndex {
         try editCheck(photoReviewIndex < 30 && decoded.count == 1
-          && decoded[0].quantityBasis == .stated && decoded[0].userKcal == nil
+          && (decoded[0].quantityBasis == .stated || decoded[0].quantityBasis == .visualEstimate)
+          && decoded[0].userKcal == nil
           && decoded[0].candidateID == nil)
       }
       action = try .save(recordID: o.required("record_id").uuid(), items: decoded)

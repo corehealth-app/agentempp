@@ -132,6 +132,7 @@ final class FlowConversationMealEditModel {
   }
   var quantityUnit: String { hasScope ? draft?.quantityUnit ?? "g" : "" }
   var usesEstimatedReference: Bool { hasScope && draft?.usesEstimatedReference == true }
+  var usesPhotoEstimate: Bool { hasScope && draft?.usesPhotoEstimate == true }
   var referenceChanged: Bool { hasScope && draft?.referenceChanged == true }
   var pendingItems: [FlowConversationMealEditPendingItem] {
     guard hasScope, case .save(_, let items) = intent?.action else { return [] }
@@ -294,9 +295,11 @@ final class FlowConversationMealEditModel {
     if let draft { return draft.quantityText(language: language) }
     return pendingItems.first.map { NSDecimalNumber(decimal: $0.grams).stringValue } ?? ""
   }
-  func setQuantityText(_ text: String, language: SupportedAppLanguage) {
+  func setQuantityText(
+    _ text: String, language: SupportedAppLanguage, explicitlyAuthored: Bool = false
+  ) {
     guard hasScope, !isLocked, var draft else { return }
-    draft.setQuantityText(text, language: language)
+    draft.setQuantityText(text, language: language, explicitlyAuthored: explicitlyAuthored)
     self.draft = draft
   }
   func canToggleQuantityUnit(language: SupportedAppLanguage) -> Bool {
@@ -340,7 +343,8 @@ final class FlowConversationMealEditModel {
       default: throw MealCaptureFailure.invalidInput
       }
       guard grams <= 9_999 else { throw MealCaptureFailure.invalidInput }
-      setQuantityText(MealProposalNumberParser.format(grams, language: language), language: language)
+      setQuantityText(MealProposalNumberParser.format(grams, language: language), language: language,
+        explicitlyAuthored: true)
     }
     if let name = answer.name { foodName = name }
     // Only the same item's already-authored quantity may complete a name-only answer.

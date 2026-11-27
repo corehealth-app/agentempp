@@ -60,6 +60,27 @@ const params = () => ({
   params: Promise.resolve({ commandId: b.commandId, operationId: editOperationId }),
 })
 describe('dormant authenticated group/direct edit/read-only reconcile routes', () => {
+  it('negotiates photo estimates only for a client that requests Flow questions and estimates', async () => {
+    const f = setup()
+    vi.stubEnv('MOBILE_CONVERSATION_TURN_REPLIES_ENABLED', 'true')
+    vi.stubEnv('MOBILE_CONVERSATION_MEAL_PLACEMENT_ENABLED', 'true')
+    try {
+      const photo = { 'X-Conversation-Photo-Estimate': '1' }
+      const turns = { 'X-Conversation-Turns': '1', 'X-Conversation-Meal-Placement': '1' }
+      expect((await f.routes.GROUP(request('GET', undefined, photo), params())).status).toBe(200)
+      expect(f.readGroup).toHaveBeenLastCalledWith(candidateAuth, original)
+      expect((await f.routes.GROUP(request('GET', undefined, turns), params())).status).toBe(200)
+      expect(f.readGroup).toHaveBeenLastCalledWith(candidateAuth, original, true, true)
+      expect(
+        (await f.routes.GROUP(request('GET', undefined, { ...photo, ...turns }), params())).status,
+      ).toBe(200)
+      expect(f.readGroup).toHaveBeenLastCalledWith(candidateAuth, original, true, true, true)
+      expect(f.execute).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('reads the existing group with original identity and no edit request', async () => {
     const f = setup(),
       response = await f.routes.GROUP(request('GET'), params())

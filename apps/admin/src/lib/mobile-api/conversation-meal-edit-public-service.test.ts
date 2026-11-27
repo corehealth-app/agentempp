@@ -80,6 +80,29 @@ describe('public factual command edit service without implicit effects', () => {
     })
     expect(f.execute).not.toHaveBeenCalled()
   })
+  it('only includes the captured estimate on the negotiated photo question', async () => {
+    const f = setup()
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ index: 3, name: 'feijão', estimated_quantity_g: 150 }],
+      error: null,
+    })
+    const service = createConversationMealEditPublicService({ rpc } as unknown as ServiceClient, {
+      store: f.store,
+      writer: { execute: f.execute },
+    })
+    expect(await service.readGroup(auth, original(), true)).toHaveProperty('photo_review', [
+      { index: 3, name: 'feijão' },
+    ])
+    expect(await service.readGroup(auth, original(), true, true, true)).toHaveProperty(
+      'photo_review',
+      [{ index: 3, name: 'feijão', estimated_quantity_g: 150 }],
+    )
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'read_conversation_meal_photo_review',
+      'read_conversation_meal_photo_review_v2',
+    ])
+    expect(f.execute).not.toHaveBeenCalled()
+  })
   it('reads a group once and projects its actual binding and private version', async () => {
     const f = setup(),
       value = await f.service.readGroup(auth, original())

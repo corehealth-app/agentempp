@@ -116,6 +116,10 @@ struct FlowConversationMealEditorContent: View {
                 : "Quantidade preservada em gramas pela referência do alimento original."
             )
             .foregroundStyle(BodyFlowColor.secondaryText)
+          } else if model.usesPhotoEstimate {
+            Text(english ? "Estimated from the photo. Adjust if needed."
+              : "Estimativa da foto. Ajuste se precisar.")
+              .foregroundStyle(BodyFlowColor.secondaryText)
           } else if model.usesEstimatedReference {
             Text(
               english

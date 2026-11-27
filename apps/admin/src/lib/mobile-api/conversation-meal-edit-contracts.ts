@@ -80,7 +80,7 @@ const inputSchema = z
     return (
       input.items.length === 1 &&
       answer !== undefined &&
-      answer.quantity_basis === 'stated' &&
+      (answer.quantity_basis === 'stated' || answer.quantity_basis === 'visual_estimate') &&
       answer.user_kcal === undefined &&
       answer.candidate_id === undefined
     )

@@ -129,6 +129,7 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
   struct PhotoQuestion: Sendable, Identifiable {
     let id: Int
     let name: String
+    let estimatedQuantityG: Decimal?
   }
   /// Nil when the server has not negotiated photo review. Empty means no
   /// questions are available at this exact current revision.
@@ -213,11 +214,14 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
         let questions = try rawQuestions.array()
         try editCheck(questions.count <= 29)
         let decoded = try questions.map { raw -> PhotoQuestion in
-          let item = try raw.object(["index", "name"])
+          let item = try raw.object(required: ["index", "name"], optional: ["estimated_quantity_g"])
           let id = try item.required("index").revision()
           let name = try item.required("name").string()
           try editCheck(id < 30 && neutralText(name, limit: 160))
-          return .init(id: id, name: name)
+          let estimate = try item["estimated_quantity_g"].map {
+            try editDecimal($0.amount(max: 9999, positive: true))
+          }
+          return .init(id: id, name: name, estimatedQuantityG: estimate)
         }
         try editCheck(zip(decoded, decoded.dropFirst()).allSatisfy { $0.0.id < $0.1.id })
         photoReview = decoded

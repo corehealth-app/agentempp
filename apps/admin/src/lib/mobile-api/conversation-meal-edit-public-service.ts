@@ -38,6 +38,7 @@ const reviewItems = z
       .object({
         index: z.number().int().min(0).max(29),
         name: workoutText(240),
+        estimated_quantity_g: z.number().finite().positive().max(9999).optional(),
       })
       .strict(),
   )
@@ -106,6 +107,7 @@ export function createConversationMealEditPublicService(
       original: ConversationMealEditOriginal,
       photoReview = false,
       placement = false,
+      photoEstimates = false,
     ) {
       const b = identity(auth, original),
         read = await store.readState(b.binding)
@@ -119,22 +121,39 @@ export function createConversationMealEditPublicService(
       )
         return group
       const rpc = db.rpc.bind(db) as unknown as (
-        name: 'read_conversation_meal_photo_review',
+        name: 'read_conversation_meal_photo_review' | 'read_conversation_meal_photo_review_v2',
         args: Record<string, string | number>,
       ) => PromiseLike<{ data: unknown; error: unknown }>
-      const { data, error } = await rpc('read_conversation_meal_photo_review', {
+      const args = {
         p_user_id: b.binding.ownerId,
         p_command_id: b.binding.commandId,
         p_input_hash: b.binding.inputHash,
         p_expected_epoch: b.binding.epoch,
         p_revision: group.revision,
-      })
+      }
+      const versioned = photoEstimates
+        ? await rpc('read_conversation_meal_photo_review_v2', args)
+        : null
+      const { data, error } =
+        versioned && !versioned.error
+          ? versioned
+          : await rpc('read_conversation_meal_photo_review', args)
       if (error) return group
       const pending = reviewItems.safeParse(data)
       if (!pending.success) return group
       const questions = pending.data.flatMap((item) => {
         const name = workoutText(160).safeParse(visionFoodIdentity(item.name).name.trim())
-        return name.success ? [{ index: item.index, name: name.data }] : []
+        return name.success
+          ? [
+              {
+                index: item.index,
+                name: name.data,
+                ...(photoEstimates && item.estimated_quantity_g !== undefined
+                  ? { estimated_quantity_g: item.estimated_quantity_g }
+                  : {}),
+              },
+            ]
+          : []
       })
       return freezeConversationWriter({ ...group, photo_review: questions })
     },

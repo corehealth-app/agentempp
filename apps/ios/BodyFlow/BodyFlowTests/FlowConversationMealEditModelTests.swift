@@ -12,8 +12,10 @@ import Testing
 @Suite("Actual Flow item editor preserves one original operation")
 @MainActor
 struct FlowConversationMealEditModelTests {
-  @Test(arguments: [false, true])
-  func photoAnswerBindsTheOmittedItemAndCannotBeSentAgainAfterReload(byVoice: Bool) async throws {
+  @Test(arguments: [false, true], [false, true])
+  func photoAnswerBindsTheOmittedItemAndCannotBeSentAgainAfterReload(
+    byVoice: Bool, hasEstimate: Bool
+  ) async throws {
     let f = try FlowEditUIFixture("milk")
     defer { f.base.disk.remove() }
     let root = try #require(JSONSerialization.jsonObject(with: f.groupBody) as? [String: Any])
@@ -24,7 +26,9 @@ struct FlowConversationMealEditModelTests {
       envelope["data"] = data
       return try JSONSerialization.data(withJSONObject: envelope)
     }
-    let pending = try packet([["index": 1, "name": "feijão"]])
+    var question: [String: Any] = ["index": 1, "name": "feijão"]
+    if hasEstimate { question["estimated_quantity_g"] = 50 }
+    let pending = try packet([question])
     let answered = try packet([])
     let decoder = JSONDecoder()
     ConversationTurnReplySelection.configure(decoder, requested: true, echo: "1")
@@ -40,16 +44,19 @@ struct FlowConversationMealEditModelTests {
     }
     try model.beginPhotoAnswer(group: group, index: 1)
     #expect(model.isPhotoAnswerForm && model.foodName == "feijão")
-    #expect(!model.canSave(language: .portugueseBrazil))
+    #expect(model.canSave(language: .portugueseBrazil) == hasEstimate)
+    #expect(model.usesPhotoEstimate == hasEstimate)
     if byVoice {
       let form = try #require(model.photoVoiceAnswerFormID)
       try await model.submitPhotoVoiceAnswer("Era feijão.", for: form, language: .portugueseBrazil)
-      #expect(model.photoVoiceNeedsQuantity)
-      #expect(await f.base.http.stub.requests.isEmpty)
-      try await model.submitPhotoVoiceAnswer("Cinquenta gramas.", for: form, language: .portugueseBrazil)
+      if !hasEstimate {
+        #expect(model.photoVoiceNeedsQuantity)
+        #expect(await f.base.http.stub.requests.isEmpty)
+        try await model.submitPhotoVoiceAnswer("Cinquenta gramas.", for: form, language: .portugueseBrazil)
+      }
       #expect(!model.photoVoiceNeedsQuantity)
     } else {
-      model.setQuantityText("50", language: .portugueseBrazil)
+      if !hasEstimate { model.setQuantityText("50", language: .portugueseBrazil) }
       await model.save(language: .portugueseBrazil)
     }
     #expect(model.lastSaved != nil && model.pendingOperation == nil)
@@ -60,7 +67,8 @@ struct FlowConversationMealEditModelTests {
     if case .save(let anchor, let items) = operation.action {
       #expect(anchor == group.current?.items.first?.id)
       #expect(items.count == 1 && items[0].foodName == "feijão")
-      #expect(items[0].quantityG == 50 && items[0].quantityBasis == .stated)
+      #expect(items[0].quantityG == 50
+        && items[0].quantityBasis == (hasEstimate ? .visualEstimate : .stated))
     }
     #expect(throws: ConversationMealEditControllerError.changed) {
       try model.beginPhotoAnswer(group: latest, index: 1)

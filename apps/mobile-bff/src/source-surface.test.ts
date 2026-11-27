@@ -306,7 +306,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-edit-contracts.ts',
-      '9c7e0149d014a01466668c5a0f04795385358c25c308f4edce55b531563f3128',
+      '57dfaa94c0a082dc3ee03d9461546143beb9a23c1ea495ccaac1de21537154b5',
     ],
     [
       'conversation-meal-source.ts',
@@ -504,7 +504,7 @@ function certifyNutritionJournalSplitContent(text: string): void {
       '20853:5e5378aa0bd0fb541859f4fa6a9dc8c853525dcb697ac43864a72c61837772e9',
       '21378:3666116fbbe020c4e11038c8dca63660d541b8bd16140556f52cf892fcebb2f5',
       `36693:${conversationParserLinkPins['36693'].canonical}`,
-      '52158:35d27882b74b6fafbcd8a22bca776b988285dd32bdf145dc8d94cb05b7864876',
+      '52158:003311e0209b0a25f0014d77ec873519377d4dcd2854ae4a585f75acf9222f9a',
       '61104:a5837ab85a3c9a5854d506aa241669b72c961101c6b69234a59e42576cfb4037',
       '63980:f72ee9fa08b0b391b72a08dd315418ae96759089e54bc5ed728d37806082807e',
       '65556:f1a67ad59fd6f76d3b33142c2051372a148ada4d294a812b76309996afccaefd',

@@ -132,10 +132,13 @@ import Testing
         width: 390, height: 900)
       defer { questionHost.detach() }
       let questionNodes = questionHost.nodes()
-      #expect(
-        questionNodes.contains {
-          $0.label.contains(english ? "Which meal was it?" : "Qual foi a refeição?")
-        })
+      let questionBubble = try #require(questionNodes.first {
+        $0.label.contains(english ? "Which meal was it?" : "Qual foi a refeição?")
+      })
+      let answerBubble = try #require(questionNodes.first {
+        $0.identifier == "conversation.journal3.source"
+      })
+      #expect(questionBubble.frame.minY < answerBubble.frame.minY)
       #expect(
         !questionNodes.contains {
           $0.label.contains(
@@ -149,6 +152,27 @@ import Testing
         })
 
     }
+    @Test func completedMealKeepsOriginalSourceWithoutStaleFailure() throws {
+      let pages = try publicJournalV3Pages()
+      let entries = try decodePublicJournalV3(pages[5]).items
+      let report = try #require(entries.first { $0.kind == .report })
+      let original = try #require(try decodePublicJournalV3(pages[7]).items.first)
+      let completedMeals = FlowConversationJournalV3Presentation.CompletedMeals(entries: entries)
+      #expect(!completedMeals.showsOutcome(for: original))
+      #expect(!completedMeals.showsOutcome(for: report))
+      let incomplete = FlowConversationJournalV3Presentation.CompletedMeals(entries: [original])
+      #expect(incomplete.showsOutcome(for: original))
+      let host = SignUpRenderingProbe.host(
+        FlowConversationJournalV3Content(
+          entry: original, feedback: nil, english: false,
+          showsOutcome: completedMeals.showsOutcome(for: original)),
+        width: 390, height: 700)
+      defer { host.detach() }
+      let nodes = host.nodes()
+      #expect(nodes.contains { $0.identifier == "conversation.journal3.source" })
+      #expect(!nodes.contains { $0.identifier == "conversation.journal3.status" })
+    }
+
     @Test(arguments: ["saved", "save_undone", "registration_undone"])
     func actualHistoricalEditVariantsRemainReadonlyInPTEN(_ change: String) throws {
       let entry = try decodePublicJournalV3(journalV3EditPageUnit(change: change)).items[0]

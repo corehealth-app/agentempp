@@ -3,6 +3,32 @@ import Foundation
 /// Display of observed public fields only. No command/question/editor metadata
 /// is recreated from history, and unknown expenditure remains unknown.
 struct FlowConversationJournalV3Presentation {
+  struct CompletedMeals {
+    private struct Parent: Hashable {
+      let commandID: UUID
+      let epoch: UUID
+    }
+
+    private let parents: Set<Parent>
+
+    init(entries: [ConversationJournalV3PageSnapshot.Entry]) {
+      parents = Set(entries.compactMap { entry in
+        guard entry.kind == .fulfillment, entry.status == .registered,
+          case .meal = entry.record, let parent = entry.parentCommandID
+        else { return nil }
+        return Parent(commandID: parent, epoch: entry.originEpoch)
+      })
+    }
+
+    func showsOutcome(for entry: ConversationJournalV3PageSnapshot.Entry) -> Bool {
+      guard entry.kind == .intake || entry.kind == .report,
+        entry.status == .notRecorded, entry.question == nil,
+        entry.input != nil, let commandID = entry.commandID
+      else { return true }
+      return !parents.contains(Parent(commandID: commandID, epoch: entry.originEpoch))
+    }
+  }
+
   let title: String
   let source: String?
   let lines: [String]
@@ -129,11 +155,14 @@ struct FlowConversationJournalV3Presentation {
     let english: Bool
     var media: FlowChatMediaPreview? = nil
     var showsPhotoQuestion = true
+    var showsOutcome = true
     var answerQuestion: (() -> Void)? = nil
 
     var body: some View {
       let text = FlowConversationJournalV3Presentation(entry: entry, english: english)
+      let questionPrecedesAnswer = entry.kind == .reply && entry.question != nil
       VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+        if showsOutcome && questionPrecedesAnswer { outcomeBubble(text) }
         if case .media(let caption) = entry.input {
           FlowChatBubble(outgoing: true) {
             VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
@@ -148,34 +177,38 @@ struct FlowConversationJournalV3Presentation {
               .accessibilityIdentifier("conversation.journal3.source")
           }
         }
-        if entry.kind != .reply || !text.lines.isEmpty {
-          FlowChatBubble {
-            if let reply = entry.turnReply {
-              Text(FlowChatPresentation.turnReplyText(reply))
-                .accessibilityIdentifier("conversation.turn.reply")
-            } else if let feedback {
-              ConversationFeedbackPresentationView(
-                feedback: feedback, compact: true, showsPhotoQuestion: showsPhotoQuestion)
-            } else {
-              VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
-                if entry.question == nil {
-                  Text(verbatim: text.title).font(BodyFlowTypography.headline)
-                    .accessibilityIdentifier("conversation.journal3.status")
-                }
-                ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in
-                  Text(verbatim: line)
-                }
-                if let answerQuestion {
-                  Button(english ? "Reply" : "Responder", action: answerQuestion)
-                    .accessibilityIdentifier("conversation.neutral.answer-meal")
-                }
-              }
-            }
-          }
+        if showsOutcome && entry.kind != .reply {
+          outcomeBubble(text)
         }
       }
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("conversation.journal3.\(entry.eventID)")
+    }
+
+    private func outcomeBubble(_ text: FlowConversationJournalV3Presentation) -> some View {
+      FlowChatBubble {
+        if let reply = entry.turnReply {
+          Text(FlowChatPresentation.turnReplyText(reply))
+            .accessibilityIdentifier("conversation.turn.reply")
+        } else if let feedback {
+          ConversationFeedbackPresentationView(
+            feedback: feedback, compact: true, showsPhotoQuestion: showsPhotoQuestion)
+        } else {
+          VStack(alignment: .leading, spacing: BodyFlowSpacing.xs) {
+            if entry.question == nil {
+              Text(verbatim: text.title).font(BodyFlowTypography.headline)
+                .accessibilityIdentifier("conversation.journal3.status")
+            }
+            ForEach(Array(text.lines.enumerated()), id: \.offset) { _, line in
+              Text(verbatim: line)
+            }
+            if let answerQuestion {
+              Button(english ? "Reply" : "Responder", action: answerQuestion)
+                .accessibilityIdentifier("conversation.neutral.answer-meal")
+            }
+          }
+        }
+      }
     }
   }
 #endif

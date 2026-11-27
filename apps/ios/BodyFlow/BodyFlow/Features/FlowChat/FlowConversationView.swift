@@ -475,7 +475,9 @@ struct FlowConversationView: View {
           identifier: "conversation.earlier-loading")
       }
     }
-    ForEach(Array(model.unifiedRows.reversed().filter {
+    let unifiedRows = model.unifiedRows
+    let completedMeals = FlowConversationJournalV3Presentation.CompletedMeals(entries: unifiedRows)
+    ForEach(Array(unifiedRows.reversed().filter {
       $0.kind != .replyResult || $0.status != .pending || $0.question != nil
     }), id: \.eventID) { entry in
       let feedback = model.unifiedHistory.feedback(for: entry)
@@ -486,6 +488,7 @@ struct FlowConversationView: View {
           entry: entry, feedback: feedback, english: english,
           media: model.neutralIntake?.mediaPreview(for: entry.intakeID),
           showsPhotoQuestion: commandID.flatMap { model.currentGroup(commandID: $0)?.photoReview } == nil,
+          showsOutcome: completedMeals.showsOutcome(for: entry),
           answerQuestion: answerAction(for: entry))
         if let commandID {
           FlowConversationMealControlsContent(

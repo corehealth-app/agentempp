@@ -329,6 +329,24 @@ struct LocalReminderRoutingTests {
         #expect(LocalReminderTap(userInfo: ["pai.owner": owner, "flow_meal_gap": id.uuidString]) == nil)
     }
 
+    @Test("a cold-launch notification completes on the main thread after queuing its route")
+    func completesColdLaunchOnMainThread() async {
+        let tap = LocalReminderTap(ownerKey: "a123bcde", destination: .flowMealGap(noticeID: UUID()))
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                LocalReminderNotificationDelegate.completeTap(tap) {
+                    #expect(Thread.isMainThread)
+                    MainActor.assumeIsolated {
+                        #expect(LocalReminderRouteInbox.shared.take(
+                            ownerKey: "local", flowOwnerKey: tap.ownerKey
+                        ) == tap)
+                    }
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
     @MainActor
     @Test("a Flow push uses the canonical Auth identifier without changing local reminder ownership")
     func takesFlowPushForCanonicalOwner() throws {

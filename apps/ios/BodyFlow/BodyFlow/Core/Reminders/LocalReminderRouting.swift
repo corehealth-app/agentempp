@@ -91,21 +91,34 @@ final class LocalReminderNotificationDelegate: NSObject, UNUserNotificationCente
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        guard let tap = LocalReminderTap(userInfo: response.notification.request.content.userInfo) else {
-            return
-        }
-        await MainActor.run {
-            LocalReminderRouteInbox.shared.receive(tap)
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
+        Self.completeTap(
+            LocalReminderTap(userInfo: response.notification.request.content.userInfo),
+            completion: completionHandler
+        )
+    }
+
+    static func completeTap(_ tap: LocalReminderTap?, completion: @escaping @Sendable () -> Void) {
+        // UIKit performs scene restoration inside this callback on a cold launch.
+        // The completion itself, as well as routing the tap, must be on the main queue.
+        DispatchQueue.main.async {
+            if let tap {
+                LocalReminderRouteInbox.shared.receive(tap)
+            }
+            completion()
         }
     }
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        DispatchQueue.main.async {
+            completionHandler([.banner, .list, .sound])
+        }
     }
 }
 

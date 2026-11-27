@@ -939,6 +939,63 @@ extension ConversationMealParentQuestionTests {
 
 @MainActor @Suite("Cold meal question origins remain lookup-only", .serialized)
 struct ConversationMealQuestionOriginsTests {
+  @Test func foregroundRefreshRevalidatesAndKeepsTheSelectedQuestionDraft() async throws {
+    let f = try ReplyControllerFixture()
+    defer { f.disk.remove() }
+    await f.http.lifecycle.replace(f.disk.lease)
+    let server = try NeutralParentQuestionUnitServer()
+    let page = try coldOriginsContractUnitPage()
+    let originHTTP = try coldOriginsContractUnitHTTP(page)
+    await f.http.stub.respond { request, _ in
+      if request.httpMethod == "GET",
+        request.url?.path == "/api/mobile/v1/conversation/intakes"
+      {
+        return originHTTP
+      }
+      return try await server.reply(request)
+    }
+    let model = try await FlowConversationModel.open(
+      transport: f.http.transport, lifecycle: f.http.lifecycle, store: f.disk.store,
+      keyVault: .init(security: f.keys), linkedReplies: true, historyVersion: .v3,
+      neutralIntakeEnabled: true)
+    await model.refreshConversation()
+    let original = try #require(model.recoveredMealQuestionOrigins.first?.id)
+    await model.beginNeutralMealReply(intakeID: original)
+    let reply = try #require(model.mealReplies)
+    let formID = try #require(reply.voiceAnswerFormID)
+    let questionKey = try #require(reply.question?.questionKey)
+    reply.amountText = "85"
+
+    await model.refreshConversation()
+
+    #expect(reply.voiceAnswerFormID == formID)
+    #expect(reply.question?.questionKey == questionKey)
+    #expect(reply.amountText == "85")
+    let requests = await f.http.stub.requests
+    #expect(requests.filter { $0.url?.path.hasSuffix("/replies") == true }.count == 2)
+    #expect(requests.allSatisfy { $0.httpMethod == "GET" })
+
+    let closedHead = try parentReadHTTP(frozenParentQuestionUnit("fulfilled"))
+    await f.http.stub.respond { request, _ in
+      if request.httpMethod == "GET", request.url?.path.hasSuffix("/replies") == true {
+        return closedHead
+      }
+      if request.httpMethod == "GET",
+        request.url?.path == "/api/mobile/v1/conversation/intakes"
+      {
+        return originHTTP
+      }
+      return try await server.reply(request)
+    }
+    await model.refreshConversation()
+    #expect(reply.needsQuestionRevalidation && reply.failure == .changed)
+    #expect(reply.presentation == nil && reply.voiceAnswerFormID == nil && !reply.canSubmit)
+    #expect(await f.http.stub.requests.allSatisfy { $0.httpMethod == "GET" })
+    reply.dismiss()
+    #expect(!reply.needsQuestionRevalidation && reply.question == nil)
+    await model.close()
+  }
+
   @Test func coldEmptyOutboxAndRAMRecoverCurrentQuantityWithoutAnotherReport() async throws {
     let f = try ReplyControllerFixture(); defer { f.disk.remove() }
     await f.http.lifecycle.replace(f.disk.lease)

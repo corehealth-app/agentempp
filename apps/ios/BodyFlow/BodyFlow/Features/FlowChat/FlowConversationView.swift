@@ -50,6 +50,8 @@ struct FlowConversationView: View {
               }
               .padding(BodyFlowSpacing.md)
               .id(reply.id)
+            } else if let reply = model.mealReplies, reply.needsQuestionRevalidation {
+              questionRevalidation(reply)
             } else if let editor = model.mealEditor, editor.isPhotoAnswerForm,
               let presentation = editor.presentation
             {
@@ -170,6 +172,27 @@ struct FlowConversationView: View {
           ? "Only a report that was never dispatched can be discarded."
           : "Somente um relato que nunca foi enviado pode ser descartado.")
     }
+  }
+
+  private func questionRevalidation(_ reply: FlowConversationMealReplyModel) -> some View {
+    VStack(alignment: .leading, spacing: BodyFlowSpacing.sm) {
+      if reply.failure == .changed {
+        Text(english ? "This question has changed." : "Essa pergunta mudou.")
+      } else if reply.failure != nil || model.failure != nil {
+        Button(english ? "Retry loading the question" : "Tentar abrir a pergunta novamente") {
+          Task { await model.refreshConversation() }
+        }
+        .disabled(model.isRefreshing)
+      } else {
+        ProgressView(english ? "Opening question…" : "Abrindo pergunta…")
+      }
+      Button(english ? "Back to conversation" : "Voltar à conversa") {
+        reply.dismiss()
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(BodyFlowSpacing.md)
+    .accessibilityIdentifier("conversation.reply.revalidate")
   }
 
   @ViewBuilder private func linkedVoiceControls(for destination: FlowVoiceCaptureTarget.Destination)

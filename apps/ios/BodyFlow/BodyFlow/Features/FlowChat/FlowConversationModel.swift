@@ -253,7 +253,12 @@ final class FlowConversationModel {
       throw ConversationOutboxError.staleObservation
     }
     linkedVoiceInProgress = true
-    defer { linkedVoiceInProgress = false }
+    defer {
+      linkedVoiceInProgress = false
+      if deferredConversationRefresh {
+        Task { [weak self] in await self?.refreshConversation() }
+      }
+    }
     let transcript = try await mediaService.transcribeLinkedAnswer(staged, context: context)
     try Task.checkCancellation()
     guard linkedVoiceTarget == target, self.context?.observation.isSameGrant(as: context.observation) == true
@@ -391,7 +396,9 @@ final class FlowConversationModel {
     if reset {
       parentQuestionRequests.removeAll()
       parentQuestionReads.removeAll()
-      if mealReplies?.canBegin == true { mealReplies?.dismiss() }
+      if mealReplies?.canBegin == true && mealReplies?.presentation == nil {
+        mealReplies?.dismiss()
+      }
     }
     await mealQuestionOrigins.load(context: context, lease: lease, limit: historyPageSize, reset: reset) { [weak self] incoming in
       self?.hasCurrentScope == true && self?.context?.observation.isSameGrant(as: incoming.observation) == true
@@ -429,7 +436,8 @@ final class FlowConversationModel {
           }
           self.parentQuestionReads[intakeID] = read
           try self.mealReplies?.begin(parentBinding: read.parentBinding,
-            parentDecisionHash: read.parentDecisionHash, question: question)
+            parentDecisionHash: read.parentDecisionHash, question: question,
+            neutralChild: reference.child)
         }
       }
     } catch {
@@ -1720,7 +1728,7 @@ final class FlowConversationModel {
     guard !isClosed else { return }
     // Foreground/permission refresh must not revoke an original's active grant
     // halfway through upload/processing. Auth invalidation remains synchronous.
-    if neutralIntake?.isWorking == true {
+    if neutralIntake?.isWorking == true || linkedVoiceInProgress {
       deferredConversationRefresh = true
       return
     }
@@ -1756,6 +1764,9 @@ final class FlowConversationModel {
     await mealEditor?.restore()
     await mealReplies?.restore()
     await loadMealQuestionOrigins()
+    if let parentQuestionRepository {
+      await mealReplies?.revalidateOpenQuestion(using: parentQuestionRepository)
+    }
   }
   func submit() async {
     guard canSubmit, let identity = lastIdentity else { return }
@@ -2027,7 +2038,7 @@ final class FlowConversationModel {
       parentQuestionReads.removeAll()
       mealQuestionOrigins?.suspend()
       mealEditor?.suspend()
-      mealReplies?.suspend()
+      mealReplies?.suspend(preservingOpenQuestion: true)
       resetHistory()
       currentGroups.removeAll()
       groupRequests.removeAll()

@@ -29,6 +29,7 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     let parent: ConversationThreadPageSnapshot.Binding
     let decisionHash: String
     let question: ConversationThreadPageSnapshot.Question
+    var neutralChild: FlowNeutralIntakeChild? = nil
   }
   private let controller: ConversationMealReplyController
   private let lifecycle: any SessionLifecycleProviding
@@ -59,6 +60,7 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
   private var task: Task<Void, Never>?
   private var taskID: UUID?
   private(set) var isWorking = false
+  private(set) var needsQuestionRevalidation = false
   private var hasScope: Bool {
     guard let context, !context.observation.isEnqueueOnly, let lease,
       (try? lifetime.check()) != nil,
@@ -67,9 +69,11 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     else { return false }
     return (try? context.withCurrentAuthority { true }) == true
   }
-  var question: ConversationThreadPageSnapshot.Question? { hasScope ? offer?.question : nil }
+  var question: ConversationThreadPageSnapshot.Question? {
+    hasScope && !needsQuestionRevalidation ? offer?.question : nil
+  }
   var presentation: FlowConversationMealReplyPresentation? {
-    guard hasScope, presented, let formID else { return nil }
+    guard hasScope, !needsQuestionRevalidation, presented, let formID else { return nil }
     return .init(id: formID, model: self)
   }
   var failure: FlowConversationFailure? { hasScope ? storedFailure : nil }
@@ -79,7 +83,9 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
   var heldCount: Int { hasScope ? held.count : 0 }
   var heldEntries: [ConversationMealReplyOutboxViewSnapshot.Held] { hasScope ? held : [] }
   var isLocked: Bool { hasScope && (requestedID != nil || isWorking) }
-  var canBegin: Bool { hasScope && !isWorking && requestedID == nil && entries.isEmpty }
+  var canBegin: Bool {
+    hasScope && !needsQuestionRevalidation && !isWorking && requestedID == nil && entries.isEmpty
+  }
   var amountText: String {
     get { hasScope ? text : "" }
     set {
@@ -104,7 +110,9 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     }
   }
   var canSubmit: Bool {
-    guard hasScope, !isWorking, let offer, accepts(offer) else { return false }
+    guard hasScope, !needsQuestionRevalidation, !isWorking, let offer, accepts(offer) else {
+      return false
+    }
     if requestedID != nil {
       if let intent, let row = entries.first(where: { $0.intent.replyID == intent.replyID }) {
         return row.state == .queued && row.hold == nil && !mayHaveDispatched
@@ -183,7 +191,7 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
       storedFailure = nil
     }
     if context?.observation.isSameGrant(as: value.observation) != true {
-      if requestedID == nil { clearForm() }
+      if requestedID == nil && !needsQuestionRevalidation { clearForm() }
       replay.removeAll()
       hasSnapshot = false
       acknowledgement = acknowledgement?.withoutFeedback()
@@ -191,8 +199,15 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     context = value
     identity = value.identity
   }
-  func suspend() {
-    if requestedID == nil { clearForm() }
+  func suspend(preservingOpenQuestion: Bool = false) {
+    if requestedID == nil {
+      if preservingOpenQuestion, presented, offer?.neutralChild != nil {
+        needsQuestionRevalidation = true
+        storedFailure = nil
+      } else {
+        clearForm()
+      }
+    }
     acknowledgement = acknowledgement?.withoutFeedback()
     context = nil
     replay.removeAll()
@@ -203,9 +218,33 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     do { try await controller.publishSnapshot(context: context, publish: publisher(context)) } catch
     { if current(context) { storedFailure = failure(error) } }
   }
+  func revalidateOpenQuestion(using repository: MobileConversationMealReplyRepository) async {
+    guard hasScope, needsQuestionRevalidation, let context, let offer,
+      let child = offer.neutralChild, let formID
+    else { return }
+    do {
+      let read = try await repository.readParent(child: child, context: context)
+      guard current(context), self.formID == formID, needsQuestionRevalidation else { return }
+      observeParentHead(read)
+      guard read.status == .needsReply, read.parentBinding == offer.parent,
+        read.parentDecisionHash == offer.decisionHash,
+        read.question?.hasSameContent(as: offer.question) == true, accepts(offer)
+      else {
+        storedFailure = .changed
+        return
+      }
+      needsQuestionRevalidation = false
+      storedFailure = nil
+    } catch {
+      guard !Task.isCancelled, current(context), self.formID == formID,
+        needsQuestionRevalidation else { return }
+      storedFailure = failure(error)
+    }
+  }
   func begin(
     parentBinding: ConversationThreadPageSnapshot.Binding, parentDecisionHash: String,
-    question: ConversationThreadPageSnapshot.Question, replyID: UUID? = nil
+    question: ConversationThreadPageSnapshot.Question, replyID: UUID? = nil,
+    neutralChild: FlowNeutralIntakeChild? = nil
   ) throws {
     guard canBegin, let context, parentBinding.ownerID == context.ownerID,
       parentBinding.epoch == context.epoch, !parentBinding.isChild
@@ -216,8 +255,15 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
         question.revision != next.revision || question.hasSameContent(as: next)
       else { throw ConversationMealReplyControllerError.changed }
     }
+    if let child = neutralChild {
+      guard child.kind == .meal, child.ownerID == parentBinding.ownerID,
+        child.commandID == parentBinding.commandID, child.inputHash == parentBinding.inputHash,
+        child.epoch == parentBinding.epoch, child.admittedAt == parentBinding.admittedAt
+      else { throw ConversationMealReplyControllerError.changed }
+    }
     let proposed = Offer(
-      parent: parentBinding, decisionHash: parentDecisionHash, question: question)
+      parent: parentBinding, decisionHash: parentDecisionHash, question: question,
+      neutralChild: neutralChild)
     guard accepts(proposed) else { throw ConversationMealReplyControllerError.changed }
     offer = proposed
     // A supplied ID is used only by a controlled fixture/caller preparing an
@@ -512,6 +558,7 @@ private final class FlowMealReplyLifetime: @unchecked Sendable {
     selectedMeal = nil
     presented = false
     formID = nil
+    needsQuestionRevalidation = false
     mayHaveDispatched = false
   }
   private func current(_ value: ConversationCommandContext) -> Bool {

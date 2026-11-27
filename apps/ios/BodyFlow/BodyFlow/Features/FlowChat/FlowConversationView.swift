@@ -283,8 +283,12 @@ struct FlowConversationView: View {
     scrollTranscript(to: anchor)
   }
 
+  private var isHistoryLoading: Bool {
+    isOpeningConversation || model.isLoadingUnifiedHistory || model.isLoadingHistory
+  }
+
   private var showsOpeningSkeleton: Bool {
-    isOpeningConversation && model.unifiedRows.isEmpty && model.journalRows.isEmpty
+    isHistoryLoading && model.unifiedRows.isEmpty && model.journalRows.isEmpty
       && model.threadRows.isEmpty
       && model.failure == nil && model.neutralIntake?.respondingIntakeID == nil
   }
@@ -649,7 +653,7 @@ struct FlowConversationView: View {
       owner: ObjectIdentifier(model),
       historyIDs: model.unifiedRows.map(\.eventID) + model.journalRows.map(\.eventID)
         + model.threadRows.map(\.eventID),
-      historyLoading: isOpeningConversation || model.isLoadingUnifiedHistory || model.isLoadingHistory,
+      historyLoading: isHistoryLoading,
       localResultIDs: results, historicalAnchors: history,
       activeSendID: model.neutralIntake?.respondingIntakeID, opening: showsOpeningSkeleton)
   }

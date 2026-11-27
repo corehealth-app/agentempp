@@ -10,6 +10,77 @@ import Testing
   @MainActor @Suite("Cold reopened actual historical content")
   struct FlowConversationJournalV3RenderingTests {
     @Test
+    func showsTheConversationLoaderDuringAnEmptyHistoryRefresh() async throws {
+      let fixture = try await journalV3HTTPFixture()
+      defer { fixture.disk.remove() }
+      var empty = try #require(
+        JSONSerialization.jsonObject(with: fixture.page) as? [String: Any])
+      empty["items"] = []
+      empty["has_more"] = false
+      empty["next_cursor"] = NSNull()
+      let lease = await fixture.http.lifecycle.leaseForRequest()
+      let session = try await FlowConversationSessionSource(
+        transport: fixture.http.transport, lifecycle: fixture.http.lifecycle, media: nil,
+        store: fixture.disk.store, keyVault: fixture.vault, editing: fixture.editing,
+        neutralIntakeEnabled: true
+      ).open(expectedUserID: lease.userID)
+      defer { session.invalidateSynchronously() }
+      let emptyReply = try neutralHTTP(empty)
+      await fixture.http.stub.respond { request, _ in
+        switch request.url?.path {
+        case "/api/mobile/v1/conversation/journal": return emptyReply
+        case "/api/mobile/v1/conversation/intakes/session": return fixture.intakeSession
+        default: return fixture.mealSession
+        }
+      }
+      let model = session.model
+      let host = PremiumRenderingTestSupport.liveAccessibilityHost(
+        FlowConversationView(model: model)
+          .environment(\.locale, Locale(identifier: "pt_BR"))
+          .environment(\.bodyFlowReduceMotion, false)
+          .environment(\.scenePhase, .active),
+        width: 390)
+      defer { host.detach() }
+      for _ in 0..<100 {
+        if await fixture.http.stub.requests.contains(where: {
+          $0.url?.path == "/api/mobile/v1/conversation/journal"
+        }), !model.isLoadingUnifiedHistory, host.nativeViews(FlowLoaderMotionView.self).isEmpty {
+          break
+        }
+        try await Task.sleep(for: .milliseconds(20))
+      }
+      #expect(model.unifiedRows.isEmpty && !model.isLoadingUnifiedHistory)
+      #expect(host.nativeViews(FlowLoaderMotionView.self).isEmpty)
+
+      let next = try #require(
+        JSONSerialization.jsonObject(with: fixture.page) as? [String: Any])
+      let reply = try neutralHTTP(next)
+      let loading = ConversationControllerBarrier()
+      await fixture.http.stub.respond { request, _ in
+        switch request.url?.path {
+        case "/api/mobile/v1/conversation/journal":
+          await loading.enter()
+          return reply
+        case "/api/mobile/v1/conversation/intakes/session":
+          return fixture.intakeSession
+        default:
+          return fixture.mealSession
+        }
+      }
+      let refresh = Task {
+        await model.loadHistory()
+        await loading.finish()
+      }
+      #expect(await loading.waitEnteredOrFinished())
+      #expect(model.unifiedRows.isEmpty && model.isLoadingUnifiedHistory)
+      try? await Task.sleep(for: .milliseconds(200))
+      #expect(host.nativeViews(FlowLoaderMotionView.self).count == 1)
+      await loading.release()
+      await refresh.value
+      #expect(!model.isLoadingUnifiedHistory && model.unifiedRows.count == 1)
+    }
+
+    @Test
     func reopenedConversationReplyRendersEmphasisWithoutMarkupOrLinks() throws {
       var page = try journalV3PendingUnit(publicJournalV3Pages()[0], child: nil, reason: "question")
       var rows = try #require(page["items"] as? [[String: Any]])

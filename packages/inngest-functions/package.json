@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
+    "./flow-meal-gap-push": "./src/functions/flow-meal-gap-push.ts",
     "./reevaluation-photo-disposition": "./src/lib/reevaluation-photo-disposition.ts",
     "./supabase-reevaluation-photo-disposition": "./src/lib/supabase-reevaluation-photo-disposition.ts",
     "./private-media-processing-transport": "./src/lib/private-conversation-media-transport.ts"

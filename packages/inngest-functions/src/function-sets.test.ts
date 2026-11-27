@@ -51,6 +51,8 @@ describe('functionsForSet', () => {
     expect(ids(functionsForSet(name))).not.toContain(reminder)
     vi.stubEnv('MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED', 'true')
     expect(ids(functionsForSet(name))).toContain(reminder)
+    vi.stubEnv('MOBILE_FLOW_MEAL_GAP_TRANSPORT', 'supabase-cron')
+    expect(ids(functionsForSet(name))).not.toContain(reminder)
     expect(ids(functionsForSet('media-staging'))).not.toContain(reminder)
     expect(ids(functionsForSet(undefined))).not.toContain(reminder)
     vi.stubEnv('SUPABASE_URL', 'https://xuxehkhdvjivitduarvb.supabase.co')

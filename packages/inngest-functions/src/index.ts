@@ -105,7 +105,11 @@ export function functionsForSet(name: string | undefined): readonly ServedFuncti
   if (name === 'media-clinical-staging' || name === 'media-conversation-staging')
     assertClinicalStagingWorkerTarget(process.env, name)
   if (name !== 'media-conversation-staging') return selected
-  const push = process.env.MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED === 'true' ? [flowMealGapPushFn] : []
+  const push =
+    process.env.MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED === 'true' &&
+    process.env.MOBILE_FLOW_MEAL_GAP_TRANSPORT !== 'supabase-cron'
+      ? [flowMealGapPushFn]
+      : []
   const cleanup = privateConversationMediaCleanupEnabled()
   const processing = privateConversationMediaWorkerEnabled()
   // Opt in only after the independent SQL/Edge dispatcher is qualified and

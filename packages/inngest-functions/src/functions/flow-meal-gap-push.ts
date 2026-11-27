@@ -174,62 +174,86 @@ async function deliverToTarget(
   return outcome === 'accepted'
 }
 
+interface BatchResult {
+  fetched: number
+  after: string | null
+  accepted: number
+  failed: number
+}
+
+type RunBatch = (name: string, execute: () => Promise<BatchResult>) => Promise<BatchResult>
+
+export async function runFlowMealGapPush(runBatch: RunBatch = (_, execute) => execute()) {
+  assertClinicalStagingWorkerTarget(process.env, 'media-conversation-staging')
+  if (process.env.MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED !== 'true') return { accepted: 0, failed: 0 }
+  const topic = process.env.MOBILE_FLOW_APNS_TOPIC
+  const teamId = process.env.MOBILE_FLOW_APNS_TEAM_ID
+  if (!topic || !teamId) throw new Error('Flow push is not configured')
+  const send = new Map<'sandbox' | 'production', SendPush>()
+  for (const environment of ['sandbox', 'production'] as const) {
+    const prefix = `MOBILE_FLOW_APNS_${environment.toUpperCase()}`
+    const keyId = process.env[`${prefix}_KEY_ID`]
+    const privateKey = process.env[`${prefix}_PRIVATE_KEY`]
+    if (keyId && privateKey)
+      send.set(environment, createFlowMealGapPush({ topic, privateKey, teamId, keyId }))
+    else if (keyId || privateKey) throw new Error('Flow push credential is incomplete')
+  }
+  if (send.size === 0) throw new Error('Flow push is not configured')
+  let after: string | null = null
+  let accepted = 0
+  let failed = 0
+  for (let batch = 0; batch < 20; batch++) {
+    const result: BatchResult = await runBatch(`flow-meal-gap-batch-${batch}`, async () => {
+      const db = createWorkerSupabase()
+      const rpc = gapRpc(db)
+      const page = targets.parse(
+        await rpc('list_flow_meal_gap_targets', {
+          p_topic: topic,
+          p_after: after,
+          p_limit: 16,
+        }),
+      )
+      let accepted = 0
+      let failed = 0
+      for (let index = 0; index < page.length; index += 4) {
+        const now = new Date()
+        const results = await Promise.allSettled(
+          page
+            .slice(index, index + 4)
+            .map((target) => deliverToTarget(db, target, topic, send, now)),
+        )
+        accepted += results.filter((r) => r.status === 'fulfilled' && r.value).length
+        failed += results.filter((r) => r.status === 'rejected').length
+      }
+      return { fetched: page.length, after: page.at(-1)?.user_id ?? null, accepted, failed }
+    })
+    accepted += result.accepted
+    failed += result.failed
+    if (!result.after || result.fetched < 16) break
+    if (after === result.after) throw new Error('Flow reminder batch did not advance')
+    after = result.after
+    if (batch === 19) throw new Error('Flow reminder batch limit exceeded')
+  }
+  return { accepted, failed }
+}
+
+export async function claimFlowMealGapCron(host: string, token: string) {
+  const digest = createHash('sha256').update(token).digest('hex')
+  return (
+    (await gapRpc(createWorkerSupabase())('claim_flow_meal_gap_cron', {
+      p_host: host,
+      p_token_sha256: digest,
+    })) === true
+  )
+}
+
 export const flowMealGapPushFn = inngest.createFunction(
   { id: 'performe-flow-meal-gap-push', retries: 1, concurrency: { limit: 1 } },
   { cron: '0 * * * *' },
   async ({ step, logger }) => {
-    assertClinicalStagingWorkerTarget(process.env, 'media-conversation-staging')
-    if (process.env.MOBILE_FLOW_MEAL_GAP_PUSH_ENABLED !== 'true') return { accepted: 0 }
-    const topic = process.env.MOBILE_FLOW_APNS_TOPIC
-    const teamId = process.env.MOBILE_FLOW_APNS_TEAM_ID
-    if (!topic || !teamId) throw new Error('Flow push is not configured')
-    const send = new Map<'sandbox' | 'production', SendPush>()
-    for (const environment of ['sandbox', 'production'] as const) {
-      const prefix = `MOBILE_FLOW_APNS_${environment.toUpperCase()}`
-      const keyId = process.env[`${prefix}_KEY_ID`]
-      const privateKey = process.env[`${prefix}_PRIVATE_KEY`]
-      if (keyId && privateKey)
-        send.set(environment, createFlowMealGapPush({ topic, privateKey, teamId, keyId }))
-      else if (keyId || privateKey) throw new Error('Flow push credential is incomplete')
-    }
-    if (send.size === 0) throw new Error('Flow push is not configured')
-    let after: string | null = null
-    let accepted = 0
-    let failed = 0
-    for (let batch = 0; batch < 20; batch++) {
-      const result: { fetched: number; after: string | null; accepted: number; failed: number } =
-        await step.run(`flow-meal-gap-batch-${batch}`, async () => {
-          const db = createWorkerSupabase()
-          const rpc = gapRpc(db)
-          const page = targets.parse(
-            await rpc('list_flow_meal_gap_targets', {
-              p_topic: topic,
-              p_after: after,
-              p_limit: 16,
-            }),
-          )
-          let accepted = 0
-          let failed = 0
-          for (let index = 0; index < page.length; index += 4) {
-            const now = new Date()
-            const results = await Promise.allSettled(
-              page
-                .slice(index, index + 4)
-                .map((target) => deliverToTarget(db, target, topic, send, now)),
-            )
-            accepted += results.filter((r) => r.status === 'fulfilled' && r.value).length
-            failed += results.filter((r) => r.status === 'rejected').length
-          }
-          return { fetched: page.length, after: page.at(-1)?.user_id ?? null, accepted, failed }
-        })
-      accepted += result.accepted
-      failed += result.failed
-      if (!result.after || result.fetched < 16) break
-      if (after === result.after) throw new Error('Flow reminder batch did not advance')
-      after = result.after
-      if (batch === 19) throw new Error('Flow reminder batch limit exceeded')
-    }
-    logger.info('flow meal reminder tick', { accepted, failed })
-    return { accepted, failed }
+    if (process.env.MOBILE_FLOW_MEAL_GAP_TRANSPORT === 'supabase-cron') return { accepted: 0 }
+    const result = await runFlowMealGapPush((name, execute) => step.run(name, execute))
+    logger.info('flow meal reminder tick', result)
+    return result
   },
 )

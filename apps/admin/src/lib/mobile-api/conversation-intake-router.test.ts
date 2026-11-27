@@ -174,6 +174,16 @@ describe('neutral provider routing without performed or nutrition authority', ()
     expect(isDayClosed).not.toHaveBeenCalled()
   })
   it.each([
+    'verified_meal_yesterday',
+    'verified_meal_two_days_ago',
+  ])('does not accept a model-supplied directive to write to a past day: %s', async (reason) => {
+    const { router } = setup(JSON.stringify({ ...decision, reason }))
+    expect(await router.route(source())).toEqual({
+      ...decision,
+      reason: 'provider_reason_unavailable',
+    })
+  })
+  it.each([
     'E como foi meu dia de treino?',
     'E quantos foram mesmo?',
   ])('sends the standalone question to conversation without guessing a record: %s', async (text) => {

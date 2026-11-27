@@ -214,7 +214,7 @@ struct ConversationJournalPageSnapshot: Decodable, Sendable {
           && terminal == nil)
       try editCheck(
         editInstant(at) == editInstant(saved.admittedAt)
-          && editInstant(saved.receipt.consumedAt) <= editInstant(observedAt))
+          && editInstant(saved.receipt.committedAt) <= editInstant(observedAt))
       if let feedback = saved.feedback {
         try editCheck(editInstant(feedback.provenance.observedAt) <= editInstant(observedAt))
       }

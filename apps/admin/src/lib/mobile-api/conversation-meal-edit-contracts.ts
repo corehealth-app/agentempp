@@ -10,6 +10,8 @@ import { conversationJournalBindingSchema } from './conversation-command-candida
 import type { BoundConversationMealCommand } from './conversation-command-contracts'
 import {
   type ConversationMealEffectReceipt,
+  conversationMealCommittedAt,
+  conversationMealMatchesAdmissionDay,
   parseConversationMealEffectReceipt,
 } from './conversation-meal-feedback-store'
 import {
@@ -271,6 +273,10 @@ const linkedOriginalSchema = originalSchema.extend({
   parent_decision_hash: hash,
   epoch: uuid,
 })
+const earlierOriginalSchema = originalSchema.extend({
+  schema: z.literal('conversation.meal-effect.v2'),
+  committed_at: clock,
+})
 export type ConversationMealEditOriginalEffect =
   | ConversationMealEffectReceipt
   | Readonly<z.infer<typeof linkedOriginalSchema>>
@@ -279,7 +285,10 @@ function originalReceipt(
   b: ConversationMealEditBinding,
 ): ConversationMealEditOriginalEffect {
   if (b.originalCommand) return parseConversationMealEffectReceipt(raw, b.originalCommand)
-  const v = exact(z.union([originalSchema, linkedOriginalSchema]), raw)
+  const v = exact(
+    z.discriminatedUnion('schema', [originalSchema, earlierOriginalSchema, linkedOriginalSchema]),
+    raw,
+  )
   const linked = v.schema === 'conversation.meal-continuation-effect.v1'
   if (
     v.owner_id !== b.ownerId ||
@@ -291,7 +300,9 @@ function originalReceipt(
         ? `conversation.clarification/${b.ownerId}/${v.parent_command_id}`
         : `conversation.meal/${b.ownerId}/${b.commandId}`) ||
     new Set(v.log_ids).size !== v.log_ids.length ||
-    getLocalDateString(v.timezone, new Date(v.consumed_at)) !== v.local_date
+    getLocalDateString(v.timezone, new Date(v.consumed_at)) !== v.local_date ||
+    (v.schema === 'conversation.meal-effect.v2' &&
+      getLocalDateString(v.timezone, new Date(v.committed_at)) <= v.local_date)
   )
     return conversationMealEditUnavailable()
   return v
@@ -593,6 +604,10 @@ export function parseConversationMealEditState(
         ? null
         : parseConversationMealEditCurrentState(v.current_state, b, original)
   const last = v.last_operation === null ? null : receipt(v.last_operation, b)
+  const committedAt =
+    original.schema === 'conversation.meal-continuation-effect.v1'
+      ? original.consumed_at
+      : conversationMealCommittedAt(original)
   if (
     (binding.command_protocol === 'conversation.clarification.v1') !==
       (original.schema === 'conversation.meal-continuation-effect.v1') ||
@@ -604,7 +619,10 @@ export function parseConversationMealEditState(
     (last !== null &&
       (last.revision !== v.revision || instant(last.applied_at) > instant(v.observed_at))) ||
     instant(binding.admitted_at) > instant(v.observed_at) ||
-    instant(original.consumed_at) > instant(v.observed_at) ||
+    instant(committedAt) > instant(v.observed_at) ||
+    (original.schema === 'conversation.meal-effect.v2' &&
+      (instant(committedAt) < instant(binding.admitted_at) ||
+        !conversationMealMatchesAdmissionDay(original, binding.admitted_at))) ||
     (current !== null &&
       (current.snapshot.date !== (last?.snapshot.date ?? original.local_date) ||
         (last !== null && current.snapshot.id !== last.snapshot.id)))

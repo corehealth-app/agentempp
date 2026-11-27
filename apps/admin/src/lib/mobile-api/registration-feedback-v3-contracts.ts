@@ -17,6 +17,7 @@ import { exerciseEnergyComplete } from '@mpp/core'
 import type { Json } from '@mpp/db'
 import { z } from 'zod'
 import { parseConversationMealContinuationFeedbackBinding } from './conversation-meal-continuation-read-contracts'
+import { conversationMealEffectReceiptSchema } from './conversation-meal-feedback-store'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
 import {
   bindConversationWorkoutCommand,
@@ -191,25 +192,19 @@ export function parseFeedbackV3Capture(
           ? null
           : parseConversationMealContinuationFeedbackBinding(command.continuation)
       if (continuation && !isDeepStrictEqual(continuation.receipt, command.receipt)) invalid()
-      const r =
-        continuation?.receipt ??
-        z
-          .object({
-            schema: z.literal('conversation.meal-effect.v1'),
-            owner_id: uuid,
-            command_id: uuid,
-            input_hash: z.string().regex(/^[a-f0-9]{64}$/u),
-            registration_id: uuid,
-            provider_key: z.string(),
-            meal_type: z.enum(['cafe', 'almoco', 'lanche', 'jantar', 'ceia', 'outro']),
-            local_date: z.string().date(),
-            timezone: z.string().min(1),
-            consumed_at: z.string().datetime({ offset: true }),
-            log_ids: z.array(uuid).min(1).max(30),
-            effect_version: z.string().regex(/^cmeal1:[a-f0-9]{64}$/u),
-          })
-          .strict()
-          .parse(command.receipt)
+      const r = continuation?.receipt ?? conversationMealEffectReceiptSchema.parse(command.receipt)
+      if (r.schema === 'conversation.meal-effect.v2') {
+        const committed = conversationJournalInstant(r.committed_at)
+        if (
+          getLocalDateString(r.timezone, new Date(r.committed_at)) <= r.local_date ||
+          c.logs.some(
+            (log) =>
+              typeof log.created_at !== 'string' ||
+              conversationJournalInstant(log.created_at) !== committed,
+          )
+        )
+          invalid()
+      }
       if (
         registration.kind !== 'meal' ||
         command.epoch !== original.clinical.epoch ||

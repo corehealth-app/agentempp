@@ -11,7 +11,11 @@ import {
   parseConversationMealReplyBody,
   validateConversationMealReplyQuestion,
 } from './conversation-meal-continuation-input'
-import { parseConversationMealEffectReceipt } from './conversation-meal-feedback-store'
+import {
+  conversationMealCommittedAt,
+  conversationMealMatchesAdmissionDay,
+  parseConversationMealEffectReceipt,
+} from './conversation-meal-feedback-store'
 import {
   conversationJournalExact as exact,
   conversationJournalInstant as instant,
@@ -308,7 +312,8 @@ function parseEvent(
       unavailable()
     if (r) {
       clock.parse(r.consumed_at)
-      between(r.consumed_at, b.admitted_at, observed)
+      between(conversationMealCommittedAt(r), b.admitted_at, observed)
+      if (!conversationMealMatchesAdmissionDay(r, b.admitted_at)) unavailable()
     }
     verifyRef(v.feedback_ref, r)
     return { ...v, receipt: r }

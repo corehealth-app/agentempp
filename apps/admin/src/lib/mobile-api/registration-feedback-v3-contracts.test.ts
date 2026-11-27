@@ -93,6 +93,31 @@ describe('feedback v3 authoritative source boundary', () => {
 })
 
 describe('frozen conversational meal source stays historical', () => {
+  function earlierMeal() {
+    const f = frozenMealV3Capture()
+    const command = f.context.source.command
+    const committedAt = '2026-11-04T10:00:00.000002Z'
+    for (const log of [...f.context.logs, ...f.context.source.capture.logs]) {
+      Object.assign(log, { created_at: committedAt })
+    }
+    Object.assign(command.receipt, {
+      schema: 'conversation.meal-effect.v2',
+      committed_at: committedAt,
+    })
+    return f
+  }
+  it('accepts the earlier meal receipt while preserving the reported civil day', () => {
+    const f = earlierMeal()
+    expect(parseFeedbackV3Capture(f.context, f.who).localDate).toBe(f.context.local_date)
+  })
+  it.each([
+    '2026-11-03T12:00:00.000001Z',
+    '2026-11-04T10:00:00.000001Z',
+  ])('rejects an earlier meal feedback receipt with an unproved commit time: %s', (committedAt) => {
+    const f = earlierMeal()
+    Object.assign(f.context.source.command.receipt, { committed_at: committedAt })
+    expect(() => parseFeedbackV3Capture(f.context, f.who)).toThrow()
+  })
   it('retains unproved historical coverage instead of inheriting the current SQL default', () => {
     const f = frozenMealV3Capture()
     delete (f.context.snapshot as Record<string, unknown>).exercise_energy_complete

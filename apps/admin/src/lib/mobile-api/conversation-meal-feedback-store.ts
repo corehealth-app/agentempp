@@ -27,7 +27,7 @@ const uuid = z
 const json: z.ZodType<Json> = z.lazy(() =>
   z.union([z.null(), z.boolean(), z.string(), z.number().finite(), z.array(json), z.record(json)]),
 )
-const receiptSchema = z
+const currentDayReceipt = z
   .object({
     schema: z.literal('conversation.meal-effect.v1'),
     owner_id: uuid,
@@ -43,7 +43,31 @@ const receiptSchema = z
     effect_version: z.string().regex(/^cmeal1:[a-f0-9]{64}$/u),
   })
   .strict()
-export type ConversationMealEffectReceipt = Readonly<z.infer<typeof receiptSchema>>
+const earlierDayReceipt = currentDayReceipt.extend({
+  schema: z.literal('conversation.meal-effect.v2'),
+  committed_at: z.string().datetime({ offset: true }),
+})
+export const conversationMealEffectReceiptSchema = z.discriminatedUnion('schema', [
+  currentDayReceipt,
+  earlierDayReceipt,
+])
+export type ConversationMealEffectReceipt = Readonly<
+  z.infer<typeof conversationMealEffectReceiptSchema>
+>
+export function conversationMealCommittedAt(receipt: ConversationMealEffectReceipt): string {
+  return receipt.schema === 'conversation.meal-effect.v2'
+    ? receipt.committed_at
+    : receipt.consumed_at
+}
+export function conversationMealMatchesAdmissionDay(
+  receipt: ConversationMealEffectReceipt,
+  admittedAt: string,
+): boolean {
+  return (
+    receipt.schema !== 'conversation.meal-effect.v2' ||
+    getLocalDateString(receipt.timezone, new Date(admittedAt)) > receipt.local_date
+  )
+}
 export interface ConversationMealFeedbackBinding {
   readonly command: BoundConversationMealCommand
   /** Actual mandatory SQL effect receipt; never accepted from a mobile body. */
@@ -110,7 +134,7 @@ function effect(
   command: BoundConversationMealCommand,
 ): ConversationMealEffectReceipt {
   const copy = structuredClone(raw),
-    value = receiptSchema.parse(copy)
+    value = conversationMealEffectReceiptSchema.parse(copy)
   if (
     !isDeepStrictEqual(copy, value) ||
     value.owner_id !== command.ownerId ||
@@ -119,7 +143,9 @@ function effect(
     value.provider_key !== `conversation.meal/${command.ownerId}/${command.commandId}` ||
     new Set(value.log_ids).size !== value.log_ids.length ||
     (command.command.meal_type !== undefined && value.meal_type !== command.command.meal_type) ||
-    getLocalDateString(value.timezone, new Date(value.consumed_at)) !== value.local_date
+    getLocalDateString(value.timezone, new Date(value.consumed_at)) !== value.local_date ||
+    (value.schema === 'conversation.meal-effect.v2' &&
+      getLocalDateString(value.timezone, new Date(value.committed_at)) <= value.local_date)
   )
     return invalid()
   return freeze(value)

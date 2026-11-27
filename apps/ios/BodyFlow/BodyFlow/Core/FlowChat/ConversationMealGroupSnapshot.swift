@@ -46,9 +46,9 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
       case .linked(let value): value.providerKey
       }
     }
-    var consumedAt: String {
+    var committedAt: String {
       switch self {
-      case .report(let value): value.consumedAt
+      case .report(let value): value.committedAt
       case .linked(let value): value.consumedAt
       }
     }
@@ -172,8 +172,9 @@ struct ConversationMealGroupSnapshot: Decodable, Sendable {
           && originalReceipt.commandID == commandID.uuidString.lowercased()
           && originalReceipt.inputHash == originalInputHash)
       try editCheck(
-        editInstant(admittedAt) <= editInstant(originalReceipt.consumedAt)
-          && editInstant(originalReceipt.consumedAt) <= editInstant(observedAt))
+        editInstant(admittedAt) <= editInstant(originalReceipt.committedAt)
+          && editInstant(originalReceipt.committedAt) <= editInstant(observedAt))
+      if let receipt = originalReceipt.report { try editCheck(receipt.matchesAdmissionDay(admittedAt)) }
       revision = try o.required("revision").revision()
       lineageCompatible = try o.required("lineage_compatible").bool()
       current = try o.required("current").optional(Self.parseCurrent)

@@ -347,7 +347,11 @@ async function decode(result: LLMResult): Promise<ConversationIntakeRoutingDecis
   // Translate the provider's required wire null without removing any other keys.
   const canonical = { ...value } as Record<string, unknown>
   if (canonical.question === null) delete canonical.question
-  if (canonical.reason === 'reported_meal_day_closed')
+  if (
+    canonical.reason === 'reported_meal_day_closed' ||
+    canonical.reason === 'verified_meal_yesterday' ||
+    canonical.reason === 'verified_meal_two_days_ago'
+  )
     canonical.reason = 'provider_reason_unavailable'
   try {
     return parseConversationIntakeRoutingDecision(canonical)

@@ -20,6 +20,7 @@ import {
   type createConversationIntakeStore,
 } from './conversation-intake-store'
 import type { createConversationMealCommandService } from './conversation-meal-command-service'
+import { conversationMealCommittedAt } from './conversation-meal-feedback-store'
 import { conversationJournalInstant } from './conversation-meal-journal-store'
 import {
   type ConversationTurnReply,
@@ -111,7 +112,7 @@ function currentFeedback(reply: TypedReply, now: CurrentClinicalSnapshot): Typed
       at = conversationJournalInstant(shown.provenance.observed_at),
       effectAt =
         reply.schema === 'conversation.meal-command-result.v1'
-          ? reply.receipt.consumed_at
+          ? conversationMealCommittedAt(reply.receipt)
           : reply.registration.committed_at
     if (
       isDeepStrictEqual(actual, policy) &&

@@ -23,6 +23,30 @@ struct ConversationMealCommandResultTests {
         }
     }
 
+    @Test func previousMealDayAndCurrentCommitClockDecodeTogether() throws {
+        var p = try payload()
+        p["admitted_at"] = "2026-11-03T10:00:00Z"
+        p["feedback"] = NSNull()
+        try mutate(&p, ["receipt", "schema"], "conversation.meal-effect.v2")
+        try mutate(&p, ["receipt", "timezone"], "America/Sao_Paulo")
+        try mutate(&p, ["receipt", "local_date"], "2026-11-02")
+        try mutate(&p, ["receipt", "consumed_at"], "2026-11-03T02:15:00Z")
+        var r = try #require(p["receipt"] as? [String: Any])
+        r["committed_at"] = "2026-11-03T10:00:01Z"
+        p["receipt"] = r
+        let decoded = try decode(p)
+        #expect(decoded.receipt.localDate == "2026-11-02")
+        #expect(decoded.receipt.consumedAt == "2026-11-03T02:15:00Z")
+        #expect(decoded.receipt.committedAt == "2026-11-03T10:00:01Z")
+        try mutate(&p, ["receipt", "committed_at"], "2026-11-03T09:59:59.999999999Z")
+        #expect(throws: (any Error).self) { try decode(p) }
+        try mutate(&p, ["receipt", "committed_at"], "2026-11-03T02:45:00Z")
+        p["admitted_at"] = "2026-11-03T02:00:00Z"
+        #expect(throws: (any Error).self) { try decode(p) }
+        try mutate(&p, ["receipt", "committed_at"], "2026-11-03T10:00:01Z")
+        #expect(throws: (any Error).self) { try decode(p) }
+    }
+
     @Test("principal errors never acknowledge a command", arguments: [
         "schema", "status", "extra", "owner", "owner-case", "command", "hash", "epoch", "admitted", "admitted-year-zero", "missing-feedback", "missing-receipt", "receipt-schema", "receipt-extra", "receipt-owner", "receipt-command", "receipt-hash", "registration", "provider", "meal", "date", "timezone", "consumed", "consumed-before-admitted", "consumed-nanosecond-before", "log-id", "empty-logs", "duplicate-logs", "too-many-logs", "effect-version",
     ])

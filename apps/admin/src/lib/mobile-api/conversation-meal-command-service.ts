@@ -39,7 +39,10 @@ import {
   type ConversationMealFeedbackPresentationService,
   createSupabaseConversationMealFeedbackPresentation,
 } from './conversation-meal-feedback-presentation'
-import type { ConversationMealEffectReceipt } from './conversation-meal-feedback-store'
+import {
+  type ConversationMealEffectReceipt,
+  conversationMealCommittedAt,
+} from './conversation-meal-feedback-store'
 import { freezeInterpretation } from './conversation-meal-interpretation-contracts'
 import {
   type ConversationMealInterpreterPort,
@@ -330,7 +333,7 @@ export function createConversationMealCommandService(
           at = conversationJournalInstant(v2.provenance.observed_at)
         if (
           !isDeepStrictEqual(latest, shown) ||
-          at < conversationJournalInstant(receipt.consumed_at) ||
+          at < conversationJournalInstant(conversationMealCommittedAt(receipt)) ||
           at < conversationJournalInstant(serverBinding.admitted_at) ||
           at > conversationJournalInstant(final.observed_at)
         )

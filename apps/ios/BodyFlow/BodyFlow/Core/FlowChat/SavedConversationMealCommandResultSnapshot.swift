@@ -13,19 +13,24 @@ struct SavedConversationMealCommandResultSnapshot: Decodable, Sendable {
         let localDate: String
         let timezone: String
         let consumedAt: String
+        let committedAt: String
         let logIDs: [String]
         let effectVersion: String
 
         private enum CodingKeys: String, CodingKey {
             case schema, ownerID = "owner_id", commandID = "command_id", inputHash = "input_hash"
             case registrationID = "registration_id", providerKey = "provider_key", mealType = "meal_type"
-            case localDate = "local_date", timezone, consumedAt = "consumed_at", logIDs = "log_ids", effectVersion = "effect_version"
+            case localDate = "local_date", timezone, consumedAt = "consumed_at", committedAt = "committed_at"
+            case logIDs = "log_ids", effectVersion = "effect_version"
         }
         init(from decoder: any Decoder) throws {
-            try savedKeys(decoder, ["schema", "owner_id", "command_id", "input_hash", "registration_id", "provider_key",
-                "meal_type", "local_date", "timezone", "consumed_at", "log_ids", "effect_version"])
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            try savedCheck(c.decode(String.self, forKey: .schema) == "conversation.meal-effect.v1")
+            let schema = try c.decode(String.self, forKey: .schema)
+            let earlierMeal = schema == "conversation.meal-effect.v2"
+            try savedCheck(earlierMeal || schema == "conversation.meal-effect.v1")
+            let keys: Set<String> = ["schema", "owner_id", "command_id", "input_hash", "registration_id", "provider_key",
+                "meal_type", "local_date", "timezone", "consumed_at", "log_ids", "effect_version"]
+            try savedKeys(decoder, earlierMeal ? keys.union(["committed_at"]) : keys)
             ownerID = try savedUUID(c.decode(String.self, forKey: .ownerID))
             commandID = try savedUUID(c.decode(String.self, forKey: .commandID))
             inputHash = try savedHash(c.decode(String.self, forKey: .inputHash))
@@ -38,17 +43,26 @@ struct SavedConversationMealCommandResultSnapshot: Decodable, Sendable {
             try savedCheck(savedCivilDate(localDate))
             timezone = try c.decode(String.self, forKey: .timezone)
             consumedAt = try c.decode(String.self, forKey: .consumedAt)
+            committedAt = try earlierMeal ? c.decode(String.self, forKey: .committedAt) : consumedAt
             guard let consumed = SavedPacketInstant(consumedAt), let zone = TimeZone(identifier: timezone) else { throw InvalidSavedPacket.value }
-            var calendar = Calendar(identifier: .iso8601); calendar.timeZone = zone
-            let day = calendar.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: Double(consumed.seconds)))
-            guard let year = day.year, let month = day.month, let date = day.day else { throw InvalidSavedPacket.value }
-            try savedCheck(localDate == String(format: "%04d-%02d-%02d", year, month, date))
+            try savedCheck(localDate == savedLocalDay(consumed, zone: zone))
+            if earlierMeal {
+                guard let committed = SavedPacketInstant(committedAt) else { throw InvalidSavedPacket.value }
+                try savedCheck(consumed < committed && localDate < savedLocalDay(committed, zone: zone))
+            }
             logIDs = try c.decode([String].self, forKey: .logIDs)
             try savedCheck((1...30).contains(logIDs.count) && Set(logIDs).count == logIDs.count)
             for id in logIDs { _ = try savedUUID(id) }
             effectVersion = try c.decode(String.self, forKey: .effectVersion)
             try savedCheck(effectVersion.hasPrefix("cmeal1:") && effectVersion.count == 71)
             _ = try savedHash(String(effectVersion.dropFirst(7)))
+        }
+
+        func matchesAdmissionDay(_ admittedAt: String) -> Bool {
+            if committedAt == consumedAt { return true }
+            guard let admitted = SavedPacketInstant(admittedAt), let zone = TimeZone(identifier: timezone),
+                  let day = try? savedLocalDay(admitted, zone: zone) else { return false }
+            return localDate < day
         }
     }
 
@@ -76,8 +90,9 @@ struct SavedConversationMealCommandResultSnapshot: Decodable, Sendable {
             epoch = try savedUUID(c.decode(String.self, forKey: .epoch))
             admittedAt = try c.decode(String.self, forKey: .admittedAt)
             receipt = try c.decode(Receipt.self, forKey: .receipt)
-            guard let admitted = SavedPacketInstant(admittedAt), let consumed = SavedPacketInstant(receipt.consumedAt) else { throw InvalidSavedPacket.value }
-            try savedCheck(receipt.ownerID == ownerID && receipt.commandID == commandID && receipt.inputHash == inputHash && admitted <= consumed)
+            guard let admitted = SavedPacketInstant(admittedAt), let committed = SavedPacketInstant(receipt.committedAt) else { throw InvalidSavedPacket.value }
+            try savedCheck(receipt.ownerID == ownerID && receipt.commandID == commandID && receipt.inputHash == inputHash
+                && admitted <= committed && receipt.matchesAdmissionDay(admittedAt))
             // The actual BFF drops malformed optional presentation. Do the same
             // without turning enrichment failure into lost factual success.
             if let raw = try? c.decode(SavedPacketValue.self, forKey: .feedback),
@@ -107,7 +122,7 @@ struct SavedConversationMealCommandResultSnapshot: Decodable, Sendable {
             return recorded.mealKind == receipt.mealType.rawValue && Set(recorded.items.map(\.logID)) == Set(receipt.logIDs) &&
                 sections.allSatisfy { $0.text.utf16.count <= 64_000 }
         case let .v3Sections(_, sections):
-            guard let effect = SavedPacketInstant(receipt.consumedAt), observed >= effect else { return false }
+            guard let effect = SavedPacketInstant(receipt.committedAt), observed >= effect else { return false }
             return value.matchesRecordedMeal(kind: receipt.mealType.rawValue, logIDs: receipt.logIDs) &&
                 sections.allSatisfy { $0.text.utf16.count <= 64_000 }
         case let .placeholder(sections): return sections.allSatisfy { $0.text.utf16.count <= 64_000 }
@@ -123,6 +138,13 @@ struct ConversationOutboxSavedPublication: Sendable {
 }
 
 private enum InvalidSavedPacket: Error { case value }
+private func savedLocalDay(_ instant: SavedPacketInstant, zone: TimeZone) throws -> String {
+    var calendar = Calendar(identifier: .iso8601)
+    calendar.timeZone = zone
+    let day = calendar.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: Double(instant.seconds)))
+    guard let year = day.year, let month = day.month, let date = day.day else { throw InvalidSavedPacket.value }
+    return String(format: "%04d-%02d-%02d", year, month, date)
+}
 private func savedCheck(_ condition: Bool) throws { if !condition { throw InvalidSavedPacket.value } }
 private func savedUUID(_ value: String) throws -> String {
     try savedCheck(value.range(of: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", options: .regularExpression) != nil && UUID(uuidString: value) != nil)

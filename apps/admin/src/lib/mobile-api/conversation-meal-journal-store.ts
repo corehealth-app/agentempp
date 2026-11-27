@@ -22,6 +22,8 @@ import {
 } from './conversation-meal-edit-contracts'
 import {
   type ConversationMealEffectReceipt,
+  conversationMealCommittedAt,
+  conversationMealMatchesAdmissionDay,
   parseConversationMealEffectReceipt,
 } from './conversation-meal-feedback-store'
 import {
@@ -161,7 +163,9 @@ function entry(raw: unknown, expected: ConversationMealJournalQuery): Conversati
     return conversationJournalUnavailable()
   if (
     receipt &&
-    conversationJournalInstant(receipt.consumed_at) < conversationJournalInstant(b.admitted_at)
+    (conversationJournalInstant(conversationMealCommittedAt(receipt)) <
+      conversationJournalInstant(b.admitted_at) ||
+      !conversationMealMatchesAdmissionDay(receipt, b.admitted_at))
   )
     return conversationJournalUnavailable()
   return freezeConversationWriter({

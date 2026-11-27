@@ -166,6 +166,40 @@ describe('closed saved meal result for authenticated transport, not a database p
     i.receipt.consumed_at = '2026-11-03T11:00:00.000000001Z'
     expect(() => project(i)).toThrow()
   })
+  it('projects a previous meal day using the separate commit time for admission checks', () => {
+    const i = input()
+    const receipt = {
+      ...i.receipt,
+      schema: 'conversation.meal-effect.v2',
+      timezone: 'America/Sao_Paulo',
+      local_date: '2026-11-02',
+      consumed_at: '2026-11-03T02:15:00Z',
+      committed_at: '2026-11-03T11:00:01Z',
+    }
+    const value = { ...i, receipt, feedback: null }
+    expect(projectSavedConversationMealCommandResult(value)).toMatchObject({
+      status: 'saved',
+      receipt,
+    })
+    for (const changed of [
+      { committed_at: '2026-11-03T09:59:59.999999999Z' },
+      { committed_at: '2026-11-03T02:45:00Z' },
+      { schema: 'conversation.meal-effect.v1' },
+    ]) {
+      expect(() =>
+        projectSavedConversationMealCommandResult({
+          ...value,
+          receipt: { ...receipt, ...changed },
+        }),
+      ).toThrow()
+    }
+    expect(() =>
+      projectSavedConversationMealCommandResult({
+        ...value,
+        serverBinding: { ...value.serverBinding, admitted_at: '2026-11-03T02:00:00Z' },
+      }),
+    ).toThrow()
+  })
   it('requires original expected epoch and owner/command binding, never retags', () => {
     const i = input()
     i.expectedEpoch = '10000000-0000-4000-8000-000000000099'

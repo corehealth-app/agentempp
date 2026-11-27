@@ -10,6 +10,8 @@ import { detachConversationMealEditJson } from './conversation-meal-edit-contrac
 import type { ConversationMealFeedbackPresentation } from './conversation-meal-feedback-presentation'
 import {
   type ConversationMealEffectReceipt,
+  conversationMealCommittedAt,
+  conversationMealMatchesAdmissionDay,
   parseConversationMealEffectReceipt,
 } from './conversation-meal-feedback-store'
 import { freezeInterpretation } from './conversation-meal-interpretation-contracts'
@@ -326,14 +328,16 @@ export function projectSavedConversationMealCommandResult(
       b.command_id !== command.commandId ||
       b.input_hash !== command.inputHash ||
       b.epoch !== epoch ||
-      instant(receipt.consumed_at) < instant(b.admitted_at)
+      instant(conversationMealCommittedAt(receipt)) < instant(b.admitted_at) ||
+      !conversationMealMatchesAdmissionDay(receipt, b.admitted_at)
     )
       return invalid()
     const feedback = guardedFeedback(input.feedback, {
       owner,
       epoch,
       commandId: command.commandId,
-      admittedAt: b.admitted_at,
+      admittedAt:
+        receipt.schema === 'conversation.meal-effect.v2' ? receipt.committed_at : b.admitted_at,
       receipt,
     })
     return freezeInterpretation({

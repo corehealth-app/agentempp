@@ -514,12 +514,13 @@ struct ConversationThreadPageSnapshot: Decodable, Sendable {
           r.ownerID == owner.uuidString.lowercased() && r.commandID == prefix
             && r.inputHash == parent.parentBinding.inputHash)
         if let meal = parent.originalCommand.mealType { try editCheck(r.mealType == meal) }
-        _ = try threadClock(.string(r.consumedAt))
-        try threadBetween(r.consumedAt, at, observed)
+        _ = try threadClock(.string(r.committedAt))
+        try threadBetween(r.committedAt, at, observed)
+        try editCheck(r.matchesAdmissionDay(at))
         feedback = try optionalFeedback(
           o.required("feedback"), owner: owner, epoch: epoch, binding: parent.parentBinding,
           registrationID: r.registrationID, date: r.localDate, meal: r.mealType, logs: r.logIDs,
-          observed: observed, selection: selection, consumedAt: r.consumedAt)
+          observed: observed, selection: selection, consumedAt: r.committedAt)
       } else {
         if case .null = try o.required("feedback") {
         } else {

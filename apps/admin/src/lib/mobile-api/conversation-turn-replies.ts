@@ -203,6 +203,12 @@ export function createConversationTurnReplies(
               if (reason === 'greeting_only') {
                 return { text: 'Oi! Como posso ajudar?', metadata }
               }
+              if (reason === 'reported_meal_day_closed') {
+                return {
+                  text: 'Esse dia já foi fechado, então não registrei essa refeição. Posso te mostrar o que ficou no diário daquele dia.',
+                  metadata,
+                }
+              }
               if (
                 reason === 'explicit_denial' ||
                 reason === 'negacao_de_consumo_sem_relato_positivo'

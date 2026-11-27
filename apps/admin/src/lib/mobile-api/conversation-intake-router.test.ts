@@ -60,11 +60,19 @@ function reply(content = JSON.stringify(decision)): LLMResult {
     latencyMs: 5,
   }
 }
-function setup(content = JSON.stringify(decision)) {
+function setup(
+  content = JSON.stringify(decision),
+  isDayClosed?: (ownerId: string, date: string) => Promise<boolean>,
+) {
   const complete = vi.fn<(_input: LLMCallParams) => Promise<LLMResult>>(async () => reply(content)),
     provider = { complete },
     diagnostic = vi.fn(),
-    router = createOpenRouterConversationIntakeRouter('synthetic-private-key', provider, diagnostic)
+    router = createOpenRouterConversationIntakeRouter(
+      'synthetic-private-key',
+      provider,
+      diagnostic,
+      isDayClosed,
+    )
   return { complete, provider, router, diagnostic }
 }
 function mediaSource(
@@ -115,6 +123,56 @@ function mediaSource(
   })
 }
 describe('neutral provider routing without performed or nutrition authority', () => {
+  it.each([
+    source('Comi 100 g de banana no jantar de ontem.'),
+    mediaSource('audio_note', { text: 'Ontem eu jantei arroz.' }, null, null),
+    mediaSource(
+      'meal_photo',
+      { type: 'meal', items: [{ name: 'arroz', quantity_g_estimate: 100, confidence: 0.9 }] },
+      'Esse foi meu jantar de ontem.',
+      null,
+    ),
+  ])('checks an explicitly earlier meal against the owned calendar', async (input) => {
+    const isDayClosed = vi.fn(async () => true)
+    const { router } = setup(undefined, isDayClosed)
+    expect(await router.route(input)).toMatchObject({
+      kind: 'not_reported',
+      reason: 'reported_meal_day_closed',
+    })
+    expect(isDayClosed.mock.calls).toEqual([[owner, '2026-11-04']])
+  })
+
+  it.each([
+    'Comi arroz que preparei ontem.',
+    'Não comi arroz no jantar de ontem.',
+    'Comi no jantar de ontem e no café da manhã de hoje.',
+    'Ontem comi no jantar de anteontem.',
+  ])('does not infer a closed meal day from a different or conflicting reference: %s', async (text) => {
+    const isDayClosed = vi.fn(async () => true)
+    const { router } = setup(undefined, isDayClosed)
+    await router.route(source(text))
+    expect(isDayClosed).not.toHaveBeenCalled()
+  })
+
+  it('retains the meal route when the explicitly earlier date has no verified close', async () => {
+    const isDayClosed = vi.fn(async () => false)
+    const { router } = setup(undefined, isDayClosed)
+    expect(await router.route(source('Anteontem comi arroz.'))).toEqual(decision)
+    expect(isDayClosed.mock.calls).toEqual([[owner, '2026-11-03']])
+  })
+
+  it('rejects a model-supplied assertion that a day is closed', async () => {
+    const isDayClosed = vi.fn(async () => false)
+    const { router } = setup(
+      JSON.stringify({ ...decision, kind: 'not_reported', reason: 'reported_meal_day_closed' }),
+      isDayClosed,
+    )
+    expect(await router.route(source())).toMatchObject({
+      kind: 'not_reported',
+      reason: 'provider_reason_unavailable',
+    })
+    expect(isDayClosed).not.toHaveBeenCalled()
+  })
   it.each([
     'E como foi meu dia de treino?',
     'E quantos foram mesmo?',

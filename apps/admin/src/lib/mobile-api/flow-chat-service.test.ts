@@ -456,6 +456,11 @@ const userB = '00000000-0000-4000-8000-00000000000b'
 it.each([
   ['explicit_denial', 'Hoje não comi 100 g de arroz.', 'Entendi. Essa mensagem não gerou um registro.'],
   ['greeting_only', 'Oi.', 'Oi! Como posso ajudar?'],
+  [
+    'reported_meal_day_closed',
+    'Comi 100 g de banana no jantar de ontem.',
+    'Esse dia já foi fechado, então não registrei essa refeição. Posso te mostrar o que ficou no diário daquele dia.',
+  ],
 ])('handles %s without guessing context or repeating the turn', async (reason, messageText, expected) => {
   const intakeId = '00000000-0000-4000-8000-000000000090'
   const intake = bindConversationIntake(userA, `cintake1:${intakeId}`, {

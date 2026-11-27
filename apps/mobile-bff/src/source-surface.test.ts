@@ -290,7 +290,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-intake-router.ts',
-      '234fa0f2ac265141a6410d6e56d2ce6a1b583690c090a1bd7a02eee3e2147afa',
+      '5bc90ab6ea6e926d6c738848bb899f52d292e31cceadd011770623b013a8c53a',
     ],
     [
       'conversation-meal-interpretation-contracts.ts',
@@ -391,8 +391,8 @@ const conversationParserLinkPins = {
     alternate: '26b3692e11ee91492552f8efd5e5b6f50f42045f9613d972d8618dbb5044746b',
   },
   '41216': {
-    canonical: '5a0a18746e453882f9e82bd83283410b1a02d5230be346a6bc39c4a9eb784deb',
-    alternate: '7f01dbccf7d7e8bfeb08468c0412f77f61e4fefff98b39f74f114942b04423ef',
+    canonical: '564ded8824c22fff0b05f31115aed1b5bea64c6ca0d33b0fe54b88538645d82b',
+    alternate: '4448de0b644b6d1a7184ac5a5d25df7358b55c8bce719aa88f544f2d0281fd03',
   },
 } as const
 
@@ -701,7 +701,7 @@ function certifyExactSharedTable(
 // validated discourse. Pin the complete intake table and its source boundaries.
 function certifyNegotiatedIntakeModule(body: string): void {
   expect(createHash('sha256').update(body).digest('hex')).toBe(
-    'e9072a21241cfdf19bf62fab2d5c1069219934269615920d3ce1ea63acc8959b',
+    '8964e90d90633d091e3b31a390ad7b94cf43dfa1739d12876b76ce11b0246860',
   )
   for (const marker of [
     'admit_conversation_versioned_media_intake_v2',
@@ -718,7 +718,7 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
   const bodies = certifyExactSharedTable(chunk, [
     ['34168', '5c180f5861365e95d2485fc2d0348dd3b1405695cbb1441dad80341cf593a67b'],
     ['47804', '5d69e37d38dfebebad9a617cc333686fdeee9e6797e6640d8c595b97f1b7d209'],
-    ['80804', 'aab9e94dc0ecdc0beb94df890c2faebe987e38e93706e55b5e10893d5654d5d8'],
+    ['80804', '09c86eeba660bb044e7f284f4141b6d2c6147083f3622b4289e605bde56c50c7'],
   ])
   const body = bodies.get('80804') ?? ''
   certifyNegotiatedIntakeModule(body)
@@ -741,11 +741,11 @@ function certifyNegotiatedIntakeTable(chunk: string): string {
     ],
     [
       'conversation-intake-router.ts',
-      '234fa0f2ac265141a6410d6e56d2ce6a1b583690c090a1bd7a02eee3e2147afa',
+      '5bc90ab6ea6e926d6c738848bb899f52d292e31cceadd011770623b013a8c53a',
     ],
     [
       'conversation-intake-routes.ts',
-      '933c6b1f9af03059a97baf8a1e0e48f3ab066b5c367a21ae1409056534ab330f',
+      'a84fa3c875caa4cd5104feb3ba231c27b3ed0a4d2e979f021e3b2774c6d9b4ac',
     ],
     [
       'conversation-intake-runtime.ts',
@@ -773,7 +773,7 @@ function certifyConversationTurnTable(chunk: string): string {
   const bodies = certifyExactSharedTable(
     chunk,
     [
-      ['1358', 'e7a379f7ad2f605b70f72fb190f5dad751e6f44f9efc1b1662db05396e893015'],
+      ['1358', 'f4d3db9eed3cf57c60e15f4f9603d10107ee39a9df607840eb411ecec9a582c3'],
       ['41216', conversationParserLinkPins['41216'].canonical],
       ['50522', '0039979f25f5e30108abbe1d31a3d4a07b3ffabd719dc826bedc78469faf349f'],
     ],

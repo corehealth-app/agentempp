@@ -1,6 +1,7 @@
 /** A single permissionless routing hint. The caller owns the durable claim and
  * selection; only the genuine domain service can establish a saved record. */
 import { isDeepStrictEqual } from 'node:util'
+import { addIsoDateDays } from '@mpp/agent'
 import { type LLMResult, OpenRouterLLM } from '@mpp/providers'
 import { parseConversationImageResult } from '@mpp/providers/vision/conversation-image-result'
 import { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai'
@@ -287,6 +288,39 @@ function isStandaloneConversationQuestion(text: string): boolean {
   )
 }
 
+function reportedEarlierMealDay(
+  sources: ReturnType<typeof conversationIntakeDiscourse>['sources'],
+  localDate: string,
+): string | null {
+  let offset: number | null = null
+  for (const source of sources) {
+    if (!source.text) continue
+    const text = source.text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim()
+    if (/[?;]|\b(?:nao|nunca|nem|amanha|de hoje)\b/u.test(text)) return null
+    const days = new Set(text.match(/\b(?:ontem|anteontem)\b/gu))
+    if (!days.size) continue
+    if (days.size !== 1) return null
+    const opening =
+      /^(ontem|anteontem),?\s+(?:eu\s+)?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei)\b/u.exec(
+        text,
+      )
+    const meal =
+      /\b(?:cafe da manha|almoco|jantar|lanche|ceia|refeicao)\s+de\s+(ontem|anteontem)[.!]?$/u.exec(
+        text,
+      )
+    const described =
+      /^(?:(?:eu\s+)?(?:comi|bebi|tomei|almocei|jantei|lanchei|ceei)|(?:isso|isto|esse|essa|este|esta)\s+foi)\b/u.test(
+        text,
+      )
+    const day = opening?.[1] ?? (described ? meal?.[1] : undefined)
+    if (!day) return null
+    const candidate = day === 'ontem' ? -1 : -2
+    if (offset !== null && offset !== candidate) return null
+    offset = candidate
+  }
+  return offset === null ? null : addIsoDateDays(localDate, offset)
+}
+
 async function decode(result: LLMResult): Promise<ConversationIntakeRoutingDecision> {
   if (
     result.finishReason !== 'stop' ||
@@ -313,6 +347,8 @@ async function decode(result: LLMResult): Promise<ConversationIntakeRoutingDecis
   // Translate the provider's required wire null without removing any other keys.
   const canonical = { ...value } as Record<string, unknown>
   if (canonical.question === null) delete canonical.question
+  if (canonical.reason === 'reported_meal_day_closed')
+    canonical.reason = 'provider_reason_unavailable'
   try {
     return parseConversationIntakeRoutingDecision(canonical)
   } catch (error) {
@@ -338,6 +374,7 @@ export function createOpenRouterConversationIntakeRouter(
   apiKey: string,
   injected?: Pick<OpenRouterLLM, 'complete'>,
   reportFailure: (diagnostic: ConversationIntakeRoutingDiagnostic) => void = logFailure,
+  isDayClosed?: (ownerId: string, date: string) => Promise<boolean>,
 ) {
   if (typeof apiKey !== 'string' || !apiKey.trim()) return unavailable()
   const provider = injected ?? new OpenRouterLLM({ apiKey, appName: 'Performe AI Mobile' }),
@@ -455,7 +492,17 @@ export function createOpenRouterConversationIntakeRouter(
         finishReason = FINISH_REASONS.includes(finish as FinishReason)
           ? (finish as FinishReason)
           : 'unknown'
-        return await decode(result)
+        const decision = await decode(result)
+        if (isDayClosed && decision.kind === 'meal.report') {
+          const date = reportedEarlierMealDay(payload.sources, source.context.local_date)
+          if (date && (await isDayClosed(source.binding.owner_id, date).catch(() => false)))
+            return intakeSnapshot({
+              schema: 'conversation.intake-routing.v1',
+              kind: 'not_reported',
+              reason: 'reported_meal_day_closed',
+            })
+        }
+        return decision
       } catch (error) {
         try {
           reportFailure(failureDiagnostic(phase, performance.now() - started, error, finishReason))

@@ -113,7 +113,20 @@ export function createConversationIntakeRoutes(
           // Construction is lazy and synchronous. Provider work occurs only after
           // the actual intake driver's durable routing claim, never on GET/session.
           createRouter: () =>
-            createOpenRouterConversationIntakeRouter(process.env.OPENROUTER_API_KEY ?? ''),
+            createOpenRouterConversationIntakeRouter(
+              process.env.OPENROUTER_API_KEY ?? '',
+              undefined,
+              undefined,
+              async (ownerId, date) => {
+                const { data, error } = await db
+                  .from('daily_snapshots')
+                  .select('day_closed')
+                  .eq('user_id', ownerId)
+                  .eq('date', date)
+                  .maybeSingle()
+                return !error && data?.day_closed === true
+              },
+            ),
         })),
     session =
       ports.session?.bind(ports) ??

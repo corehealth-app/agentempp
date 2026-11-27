@@ -269,7 +269,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ['418', 'b6f37d51d0e565142e530832b760faac2dbb8328acc25a2e129a8a6ab0ffdfb9'],
     ['69702', '2cc3570a228d06c69c6f65039216f397bef9389b38be729da4d1cb2d0c14539e'],
     ['53637', 'aba69758fc27c150f8c1ccc0b9fe2b8b1b39be381a02d149f2fef21ee91e9776'],
-    ['7311', 'f7f3a086055e312727aa8b3933b4aa84284611224e174ab5af503b08c2404d2a'],
+    ['7311', 'd763797dbd0054c54d60fd7d56a159875f32f9883d554fc7b87e55c5dddcef94'],
     ['84883', 'fe4ecf65fb57042fa779ed51e572ae817d1226bdd59db349b28d4a5481256b0b'],
   ]) {
     const copies = walkFiles(resolve(buildRoot, 'server/chunks')).filter(
@@ -302,7 +302,7 @@ function certifyOrdinaryPhotoSourcesR102(): void {
     ],
     [
       'conversation-meal-registration-service.ts',
-      '88cfd7e030e7c08e75717a46bddc4d5d4d3608bfbbfe3a248605a2db92348a3a',
+      '2ddab88c41d1391424f75427f5c7d4a81b97feef417a6f61c705a7ed3aaddfd9',
     ],
     [
       'conversation-meal-edit-contracts.ts',
@@ -864,7 +864,7 @@ function certifyStructuredMealHelperT51() {
   expect(providerChunks).toHaveLength(1)
   const providerWireChunk = providerChunks[0] ?? ''
   expect(createHash('sha256').update(readFileSync(providerWireChunk)).digest('hex')).toBe(
-    'c0c08e84a86761756505e2378af6feaeb9eb7e8cdc7120c67f4a0e09eb0ccf58',
+    '8f3410463b82ef324b381898b2020288e49b2719646b86c4d09ea90af90219b0',
   )
   const interpreter = readFileSync(
     resolve(appRoot, '../admin/src/lib/mobile-api/conversation-meal-interpreter.ts'),

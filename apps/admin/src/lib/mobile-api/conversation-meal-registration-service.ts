@@ -617,7 +617,7 @@ export async function registerPersistedConversationMeal(
     // admission-bounded routine read and only use its result after nutrition
     // has qualified. A failed lookup cannot grant a guessed meal slot.
     const routine =
-      !mealType && evidence.source_units.includes('vision_items') && typeof timezone === 'string'
+      !mealType && typeof timezone === 'string'
         ? getPersonalMealWindows(db, owner, timezone, admittedAt, {
             excludeAtOrAfterReference: true,
           }).catch(() => null)

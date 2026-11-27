@@ -846,10 +846,29 @@ describe('actual source-to-factual meal registration composition', () => {
       expect.objectContaining({ resolved: expect.objectContaining({ meal_type: 'cafe' }) }),
     )
   })
-  it('does not silently invent a meal slot when both selection and explicit type are absent', async () => {
+  it.each([
+    { audio: false, historyTypes: [], expected: 'cafe' },
+    { audio: false, historyTypes: ['almoco'], expected: 'almoco' },
+    { audio: false, historyTypes: ['almoco', 'lanche'], expected: null },
+    { audio: true, historyTypes: ['almoco'], expected: 'almoco' },
+  ])('uses the owned routine and local hour for an unlabelled meal (%j)', async ({
+    audio,
+    historyTypes,
+    expected,
+  }) => {
     const d = dependencies(),
-      { meal_type: omitted, ...raw } = writerCommand().command
-    expect(omitted).toBe('almoco')
+      { meal_type: _omitted, ...textCommand } = writerCommand().command
+    const audioID = '10000000-0000-4000-8000-000000000020'
+    const raw = audio
+      ? {
+          ...textCommand,
+          source: {
+            channel: 'media',
+            media_asset_id: audioID,
+            user_action: 'register_consumed_meal',
+          },
+        }
+      : textCommand
     const bound = bindConversationCommand(
       writerCommand().ownerId,
       `cmsg1:${writerCommand().commandId}`,
@@ -862,11 +881,98 @@ describe('actual source-to-factual meal registration composition', () => {
     })
     d.interpret.mockResolvedValue({ ...interpretation(), input_hash: bound.inputHash })
     d.materialize.mockResolvedValue({ ...material(), input_hash: bound.inputHash })
-    expect(await run(d, raw)).toMatchObject({
-      status: 'not_recorded',
-      reason: 'meal_type_required',
-    })
-    expect(d.writer.prepare).not.toHaveBeenCalled()
+    if (audio && textCommand.source.channel === 'text') {
+      const unit = 'media_transcript'
+      const transcript = textCommand.source.text
+      const timestamp = '2026-11-04T11:59:00Z'
+      Object.assign(d.source.context, {
+        source_units: [unit],
+        source_evidence: { caption: null, transcript },
+        media: {
+          asset_id: audioID,
+          kind: 'audio_note',
+          status: 'processed',
+          processed_at: timestamp,
+          updated_at: timestamp,
+          context_text: null,
+          processing_result: { text: transcript },
+        },
+      })
+      const parsed = interpretation()
+      const originalFood = parsed.foods[0]
+      if (!originalFood) throw new Error('fixture food absent')
+      const food = {
+        ...originalFood,
+        name: { ...originalFood.name, unit },
+        quantity: { ...originalFood.quantity, unit },
+        unit: { ...originalFood.unit, unit },
+      }
+      d.interpret.mockResolvedValue({
+        ...parsed,
+        input_hash: bound.inputHash,
+        source_units: [unit],
+        sources: parsed.sources.map((source) => ({ ...source, unit })),
+        foods: [food],
+      })
+      const extracted = material()
+      d.materialize.mockResolvedValue({
+        ...extracted,
+        input_hash: bound.inputHash,
+        source_groups: extracted.source_groups.map((group) => ({
+          ...group,
+          source_positions: group.source_positions.map((position) => ({
+            ...position,
+            unit,
+            name: food.name,
+            quantity: food.quantity,
+            unit_ref: food.unit,
+          })),
+        })),
+      })
+    }
+    const history = {
+      select: () => history,
+      eq: vi.fn(() => history),
+      gte: () => history,
+      not: () => history,
+      lt: vi.fn(() => history),
+      order: () => history,
+      limit: async () => ({
+        data: Array.from({ length: 5 }, (_, index) =>
+          historyTypes.map((meal_type, offset) => ({
+            meal_type,
+            consumed_at: `2026-10-${20 + index}T12:0${offset}:00Z`,
+            raw_provider_message_id: null,
+            food_name: 'arroz',
+          })),
+        ).flat(),
+        error: null,
+      }),
+    }
+    if (expected) {
+      d.writer.commit.mockResolvedValue({
+        action: 'committed',
+        receipt: { ...writerReceipt(), input_hash: bound.inputHash, meal_type: expected },
+      })
+    }
+    const result = await registerPersistedConversationMeal(
+      { from: () => history } as unknown as ServiceClient,
+      candidateAuth,
+      `cmsg1:${bound.commandId}`,
+      raw,
+      d,
+    )
+    expect(history.eq).toHaveBeenCalledWith('user_id', bound.ownerId)
+    expect(history.lt).toHaveBeenCalledWith('consumed_at', '2026-11-04T12:00:00.000Z')
+    if (expected) {
+      expect(result).toMatchObject({ status: 'saved', receipt: { meal_type: expected } })
+      expect(d.writer.prepare).toHaveBeenCalledWith(
+        expect.objectContaining({ resolved: expect.objectContaining({ meal_type: expected }) }),
+      )
+    } else {
+      expect(result).toMatchObject({ status: 'not_recorded', reason: 'meal_type_required' })
+      expect(d.writer.prepare).not.toHaveBeenCalled()
+    }
   })
   it('does not retry a recovered winner commit when its receipt read also becomes unavailable', async () => {
     const d = dependencies()
